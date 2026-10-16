@@ -210,8 +210,49 @@
   - 各明細の監査ログ（`action: "CREATE"`）を記録。
   - レスポンス: `{ success: true, importedCount, checkpointId, message }`
 
-### 6.5 `GET /api/admin/logs`
-- 直近の世帯内監査ログ（最大100件）を取得。
+### 6.5 `GET /api/admin/logs` (条件付き操作ログ取得 & CSV/JSONエクスポート) ※家庭管理者限定
+- **概要**: 世帯内の操作ログ・監査ログ（`audit_logs`）の条件付き検索・取得、およびCSV/JSON形式でのエクスポート。
+- **クエリパラメータ**:
+  - `userId?: string`: 操作者・ユーザーIDによる絞り込み（`all` で全件）
+  - `action?: string`: 操作種別（`CREATE` | `UPDATE` | `DELETE` | `REVERT`、`all` で全種別）
+  - `startDate?: string`: 開始日時（`YYYY-MM-DD` または ISO形式）
+  - `endDate?: string`: 終了日時（`YYYY-MM-DD` または ISO形式）
+  - `format?: 'json' | 'csv'`: 出力形式
+  - `download?: 'true' | '1'`: ファイルダウンロード指示（または `format=csv` 時自動適用）
+  - `limit?: number`: 取得上限件数（通常表示時は最大200件、ダウンロード時は最大5000件）
+- **ビジネスロジック**:
+  1. 家庭管理者権限（`session.role === 'admin'`）の検証。
+  2. `masterDb` の `household_memberships` と `users` を結合し、操作者IDからメールアドレス（`operatorEmail`）を自動マッピング。
+  3. テナントスキーマの `audit_logs` から条件合致レコードを時系列降順（`createdAt DESC`）で抽出。
+  4. **CSV形式出力**:
+     - 文字コード: UTF-8 (BOM付き `\uFEFF`)
+     - ヘッダー: `ログID`, `日時`, `操作者メール`, `操作者ユーザーID`, `操作種別`, `対象種別`, `対象ID`, `概要`, `チェックポイントID`, `変更前データ`, `変更後データ`
+     - RFC 4180準拠エスケープ、ファイル名: `komame_audit_logs_{householdId}_{YYYY-MM-DD}.csv`
+  5. **JSON形式ダウンロード**:
+     - ヘッダー: `Content-Disposition: attachment; filename="komame_audit_logs_{householdId}_{YYYY-MM-DD}.json"`
+- **レスポンス (通常JSON 200 OK)**:
+  ```json
+  {
+    "logs": [
+      {
+        "id": "log_xxx",
+        "userId": "usr_xxx",
+        "operatorUserId": "usr_xxx",
+        "operatorEmail": "admin@komame.local",
+        "action": "CREATE",
+        "entityType": "transaction",
+        "entityId": "tx_xxx",
+        "summary": "セブン-イレブン (850円) の登録",
+        "beforeDataJson": null,
+        "afterDataJson": { "amount": 850, "shopName": "セブン-イレブン" },
+        "checkpointId": "cp_xxx",
+        "createdAt": "2026-10-17T03:30:00.000Z"
+      }
+    ],
+    "totalCount": 1
+  }
+  ```
+
 
 ### 6.6 家族メンバー管理 API (`/api/admin/members`) ※家庭管理者限定
 - **`GET /api/admin/members`**:
@@ -282,7 +323,10 @@
 ---
 
 ## 改訂履歴
+- **2026-10-17**: `GET /api/admin/logs` の仕様を拡張（ユーザー、操作種別、期間の条件付き絞り込み、操作者メールアドレスマッピング、RFC 4180準拠UTF-8 BOM付きCSVおよびJSON形式でのエクスポートダウンロード）。
 - **2026-10-17**: `GET/PUT /api/admin/settings` の仕様を追加（通貨記号、日付表示形式、最小文字数・英数記号必須等のパスワード強度ポリシー動的設定・保存・監査ログ・認証検証連動）。
+
+
 - **2026-10-17**: `GET/POST/PUT/DELETE /api/admin/members` および `GET/POST /api/auth/invite` の仕様を追加（家族メンバー一覧取得、直接追加・招待リンク発行、ロール変更、論理削除無効化、管理者ガードレール、パスワード再設定）。
 - **2026-10-17**: `POST /api/admin/csv` の仕様を追加（CSVパース、自動カラムマッピング、重複候補検知、チェックポイント付き一括インポート登録）。
 - **2026-10-17**: `GET /api/transactions/suggest` の仕様を追加（過去明細履歴からの店舗名補完・最多利用費目/支払元動的サジェスト）。

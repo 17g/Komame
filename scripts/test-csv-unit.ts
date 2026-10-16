@@ -4,7 +4,10 @@ import {
   normalizeDate,
   normalizeAmount,
   normalizeType,
+  generateCsv,
+  escapeCsvCell,
 } from "../src/lib/csv";
+
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -67,6 +70,27 @@ assert(normalizeType("収入") === "income", "Type 収入");
 assert(normalizeType("振替") === "transfer", "Type 振替");
 assert(normalizeType(undefined) === "expense", "Default type expense");
 
+// Test 7: escapeCsvCell
+assert(escapeCsvCell("simple") === '"simple"', "Simple string cell escaped");
+assert(escapeCsvCell('with "quote"') === '"with ""quote"""', "Quote cell escaped");
+assert(escapeCsvCell(null) === '""', "Null cell escaped to empty quotes");
+assert(escapeCsvCell(1234) === '"1234"', "Number cell escaped");
+
+// Test 8: generateCsv (BOM + RFC 4180)
+const genCsv = generateCsv(
+  ["ログID", "操作種別", "概要"],
+  [
+    ["log_1", "CREATE", 'セブン-イレブン, 新宿店 "お弁当"'],
+    ["log_2", "DELETE", "明細の削除"],
+  ]
+);
+assert(genCsv.startsWith("\uFEFF"), "Generated CSV starts with UTF-8 BOM");
+const parsedBack = parseCsv(genCsv);
+assert(parsedBack.headers.length === 3, "Parsed headers count is 3");
+assert(parsedBack.rows.length === 2, "Parsed rows count is 2");
+assert(parsedBack.rows[0][2] === 'セブン-イレブン, 新宿店 "お弁当"', "Generated and parsed round-trip matches");
+
 console.log("=========================================");
 console.log("🎉 All CSV Unit Tests Passed!");
 console.log("=========================================");
+

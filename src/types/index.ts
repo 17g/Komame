@@ -112,13 +112,17 @@ export interface AuditLogItem {
   id: string;
   userId: string;
   operatorUserId: string;
+  operatorEmail?: string;
   action: "CREATE" | "UPDATE" | "DELETE" | "REVERT";
   entityType: string;
   entityId?: string;
   summary: string;
+  beforeDataJson?: unknown;
+  afterDataJson?: unknown;
   createdAt: string;
   checkpointId?: string;
 }
+
 
 export interface CheckpointItem {
   id: string;

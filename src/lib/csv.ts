@@ -207,3 +207,27 @@ export function normalizeType(input?: string): "expense" | "income" | "transfer"
   }
   return "expense";
 }
+
+/**
+ * セル値をRFC 4180準拠でエスケープ
+ */
+export function escapeCsvCell(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '""';
+  }
+  const str = typeof value === "object" ? JSON.stringify(value) : String(value);
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+/**
+ * ヘッダーと行データから UTF-8 BOM付き CSV 文字列を生成
+ */
+export function generateCsv(headers: string[], rows: unknown[][]): string {
+  let csv = "\uFEFF";
+  csv += headers.map(escapeCsvCell).join(",") + "\n";
+  for (const row of rows) {
+    csv += row.map(escapeCsvCell).join(",") + "\n";
+  }
+  return csv;
+}
+

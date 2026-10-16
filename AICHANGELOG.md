@@ -2,7 +2,56 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-17] 【要件 3-3】条件付き操作ログエクスポート機能の実装 (`src/app/api/admin/logs/route.ts` & `AdminTab.tsx` & `AuditLogDetailModal.tsx`)
+
+### 1. 概要
+世帯管理者が世帯内の操作ログ・監査ログ（`audit_logs`）をユーザー・期間（開始日〜終了日）・操作種別（CREATE/UPDATE/DELETE/REVERT）で柔軟に条件指定して絞り込み、RFC 4180準拠のUTF-8 BOM付きCSV形式およびJSON形式でワンクリックダウンロードできるエクスポート機能（APIおよびUI）を実装した。また、操作者IDから家族メンバーのメールアドレスを自動解決して可読性を高め、ログの詳細（変更前・変更後データJSON）を閲覧できる詳細モーダルを統合した。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `GET /api/admin/logs` は直近100件のログを無条件に取得するのみで、クエリパラメータによる絞り込みやエクスポート機能に対応していなかった。
+  - ログの操作者はユーザーID（`usr_xxx`）のみで、誰が実行したのか視覚的に識別しづらかった。
+  - `AdminTab.tsx` では直近ログの概要と日時が簡易リスト表示されるのみで、ユーザーや期間・操作種別によるフィルタリング、CSV/JSONでのエクスポート、変更前・変更後データの詳細確認ができなかった。
+- **After**:
+  - `src/lib/csv.ts`:
+    - セル値をRFC 4180準拠で安全にエスケープする `escapeCsvCell` 関数、およびUTF-8 BOM（`\uFEFF`）付きCSV文字列を生成する `generateCsv` 関数を追加。
+  - `src/types/index.ts`:
+    - `AuditLogItem` インターフェースに `operatorEmail?`, `beforeDataJson?`, `afterDataJson?` を追加。
+  - `src/app/api/admin/logs/route.ts`:
+    - `userId` (または `all`), `action` (`CREATE` | `UPDATE` | `DELETE` | `REVERT` | `all`), `startDate`, `endDate`, `format` (`csv` | `json`), `download` (`true`), `limit` のクエリパラメータに対応。
+    - `masterDb` の `household_memberships` と `users` を結合して世帯メンバーの `userId -> email` マップを作成し、各ログに `operatorEmail` を自動付与。
+    - `format=csv` 時: RFC 4180準拠・UTF-8 BOM付きCSVデータ（ログID, 日時, 操作者メール, 操作者ユーザーID, 操作種別, 対象種別, 対象ID, 概要, チェックポイントID, 変更前データ, 変更後データ）を `Content-Disposition: attachment; filename="komame_audit_logs_..."` で返却。
+    - `format=json&download=true` 時: 整形済みJSONファイルをダウンロード添付形式で返却。
+    - 通常のAPI呼び出し時は条件に合致するログ配列と `totalCount` を返却。
+  - `src/components/AuditLogDetailModal.tsx` (新規):
+    - 操作ログの詳細情報（ログID、操作種別バッジ、日時、実行者メール、対象エンティティ、概要、チェックポイントID、変更前JSON、変更後JSON）をシンタックスハイライト風に表示するモーダルを実装。
+  - `src/components/AdminTab.tsx`:
+    - 「世帯監査ログ & 操作履歴」セクションを大幅刷新。
+    - ユーザー選択（家族メンバーセレクト）、操作種別選択、開始日・終了日入力コントロール、リセットボタンを配置。
+    - 「CSV出力」および「JSON出力」のエクスポートボタンを上部に配置し、現在設定されている絞り込み条件を動的に反映したダウンロードURLを自動生成して実行。
+    - ログリストに種別別カラーバッジ（CREATE: 緑, UPDATE: 青, DELETE: 赤, REVERT: 黄）、操作者メール、日時、概要、および「詳細」ボタンを配置。
+  - `src/lib/i18n.ts`:
+    - 監査ログの絞り込み、エクスポート、詳細表示に関する日・英の翻訳リソースを追加。
+  - `for_agent/04_api_specifications.md`:
+    - `6.5 GET /api/admin/logs` の仕様を条件付き取得およびエクスポート仕様に改訂・追記。
+  - `scripts/test-csv-unit.ts`:
+    - `escapeCsvCell` および `generateCsv`（BOM付きCSV生成と往復パース整合性）の単体テストを追加し、全33件のテストパス（Exit Code 0）を確認。
+
+### 3. 変更理由
+- 要件 3-3「条件付き操作ログエクスポート機能（ユーザー・期間・操作種別を指定してCSV/JSON出力）」に完全準拠し、家計の管理者が誰がいつどのような変更を行ったかを確実に把握・監査し、外部ツールでの分析やバックアップができるようにするため。
+
+### 4. 影響範囲
+- `src/lib/csv.ts`
+- `src/types/index.ts`
+- `src/app/api/admin/logs/route.ts`
+- `src/components/AuditLogDetailModal.tsx` (新規)
+- `src/components/AdminTab.tsx`
+- `src/lib/i18n.ts`
+- `for_agent/04_api_specifications.md`
+- `scripts/test-csv-unit.ts`
+
 ## [2026-10-17] 【要件 1-3 & 3-4】システム設定 & パスワードポリシー動的設定の実装 (`src/app/api/admin/settings/route.ts` & `AdminTab.tsx`)
+
 
 ### 1. 概要
 世帯管理者が通貨表示記号、日付表示形式、および家族メンバーのパスワードセキュリティ基準（最小文字数、英大文字・小文字・数字・特殊文字の必須有無）を動的に設定・保存・運用できるシステム設定機能（APIおよびUI）を実装した。設定されたパスワードポリシーは、世帯内のメンバー招待・登録時やパスワード再設定時の検証ロジックとリアルタイムに連動する。

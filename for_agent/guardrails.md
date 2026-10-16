@@ -85,3 +85,6 @@
 ## 4. コード編集・ファイル更新時の鉄則
 - 編集時は `view_file` で事前に内容を確認し、既存ロジックやコメント・docstringを破壊しないこと。
 - `Plan.md` を更新する際は既存の完了済みタスク（`- [x]`）を絶対に消去せず、差分をマージすること。
+- **React 19 / TypeScript における `unknown` 型プロパティの JSX 条件レンダリングガードレール**:
+  `AuditLogItem` 等の `unknown` 型プロパティ（`beforeDataJson`, `afterDataJson` 等）を JSX 内で `{item.data && <Component />}` と直接評価すると、戻り値の型が `unknown | ReactNode` と推論され `TS2322: Type 'unknown' is not assignable to type 'ReactNode'` エラーが発生する。必ず `{item.data != null && <Component />}` または `{Boolean(item.data) && <Component />}` を使用して明示的に真偽値に変換すること。
+
