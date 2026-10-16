@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { formatCurrency, calculateWithdrawalDate } from "@/lib/utils";
 import { AccountItem, TransactionItem, PaymentMethodItem } from "@/types";
 import {
@@ -33,7 +33,7 @@ export function DashboardTab({
   onOpenRegister,
   onOpenAllTransactions,
 }: DashboardTabProps) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const [selectedCardIdx, setSelectedCardIdx] = useState(0);
 
   // 1. 総資産と実質利用可能額の集計
@@ -159,6 +159,99 @@ export function DashboardTab({
     }, {} as Record<string, number>);
 
   const totalExpense = Object.values(expenseByCategory).reduce((sum, val) => sum + val, 0) || 1;
+
+  // 5. こまめ活動 (Activity Heatmap) & 連続記録ストリークの動的集計
+  const { streakDays, heatmapRows, totalPast4WeeksTx } = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const formatDateStr = (d: Date) => {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const todayStr = formatDateStr(today);
+
+    // 日付ごとの明細件数マップ
+    const txCountByDate = (transactions || []).reduce((acc, t) => {
+      const d = t.date ? t.date.split("T")[0] : t.createdAt ? t.createdAt.split("T")[0] : null;
+      if (d) {
+        acc[d] = (acc[d] || 0) + 1;
+      }
+      return acc;
+    }, {} as Record<string, number>);
+
+    // 連続記録ストリーク計算（今日記録があれば今日から、なければ昨日から遡って連続記録日数をカウント）
+    const hasTodayTx = (txCountByDate[todayStr] || 0) > 0;
+    let streak = 0;
+    const checkDate = new Date(today);
+    if (!hasTodayTx) {
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+    while (true) {
+      const checkStr = formatDateStr(checkDate);
+      if ((txCountByDate[checkStr] || 0) > 0) {
+        streak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+
+    // 4週間のマトリックス計算（月曜始まり: 月=0, ..., 日=6）
+    const dayOfWeek = (today.getDay() + 6) % 7;
+    const thisMonday = new Date(today);
+    thisMonday.setDate(today.getDate() - dayOfWeek);
+
+    const startMonday = new Date(thisMonday);
+    startMonday.setDate(thisMonday.getDate() - 21); // 3週間前の月曜日
+
+    const dayLabels = [
+      t.common.mon,
+      t.common.tue,
+      t.common.wed,
+      t.common.thu,
+      t.common.fri,
+      t.common.sat,
+      t.common.sun,
+    ];
+
+    let total4Weeks = 0;
+
+    const rows = dayLabels.map((dayLabel, dayIdx) => {
+      const weekCells = [0, 1, 2, 3].map((weekIdx) => {
+        const cellDate = new Date(startMonday);
+        cellDate.setDate(startMonday.getDate() + weekIdx * 7 + dayIdx);
+        const dateStr = formatDateStr(cellDate);
+        const count = txCountByDate[dateStr] || 0;
+        const isToday = dateStr === todayStr;
+        const isFuture = cellDate.getTime() > today.getTime();
+
+        total4Weeks += count;
+
+        return {
+          dateStr,
+          displayDate: `${cellDate.getMonth() + 1}/${cellDate.getDate()}`,
+          count,
+          isToday,
+          isFuture,
+        };
+      });
+
+      return {
+        day: dayLabel,
+        cells: weekCells,
+      };
+    });
+
+    return {
+      streakDays: streak,
+      heatmapRows: rows,
+      totalPast4WeeksTx: total4Weeks,
+    };
+  }, [transactions, t]);
 
   return (
     <div className="flex flex-col gap-6 pb-20">
@@ -367,16 +460,26 @@ export function DashboardTab({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-primary bg-primary-light px-3 py-1 rounded-full border border-primary-border">
-              🔥 {t.dashboard.streakDays}
+            <span className="text-xs font-bold text-primary bg-primary-light px-3 py-1 rounded-full border border-primary-border flex items-center gap-1">
+              <span>🔥</span>
+              <span>
+                {streakDays > 0
+                  ? language === "ja"
+                    ? `${streakDays}日連続こまめ記録中`
+                    : `${streakDays}-day recording streak`
+                  : language === "ja"
+                  ? "今日からこまめに記録！"
+                  : "Start your streak today!"}
+              </span>
             </span>
           </div>
         </div>
 
         {/* 4週間のカレンダー風ストリークグリッド */}
         <div className="p-3 bg-app-subtle border border-border rounded-xl">
-          {/* 週ヘッダー (3週前, 2週前, 先週, 今週) */}
-          <div className="grid grid-cols-4 gap-2 mb-2 text-center text-[10px] font-bold text-content-muted border-b border-border/60 pb-1">
+          {/* 週ヘッダー (曜日列 + 3週前, 2週前, 先週, 今週) */}
+          <div className="grid grid-cols-5 gap-2 mb-2 text-center text-[10px] font-bold text-content-muted border-b border-border/60 pb-1">
+            <span className="text-content-subtle">曜日</span>
             <span>{t.common.threeWeeksAgo}</span>
             <span>{t.common.twoWeeksAgo}</span>
             <span>{t.common.lastWeek}</span>
@@ -385,15 +488,7 @@ export function DashboardTab({
 
           {/* 曜日ラベル + 4週 × 7日のマトリックス */}
           <div className="space-y-1.5">
-            {[
-              { day: t.common.mon, records: [1, 2, 0, 3] },
-              { day: t.common.tue, records: [0, 1, 2, 2] },
-              { day: t.common.wed, records: [3, 0, 1, 4] },
-              { day: t.common.thu, records: [2, 3, 2, 1] },
-              { day: t.common.fri, records: [1, 2, 4, 3] },
-              { day: t.common.sat, records: [4, 5, 3, 2] },
-              { day: t.common.sun, records: [2, 1, 2, 1] },
-            ].map((row, rIdx) => (
+            {heatmapRows.map((row, rIdx) => (
               <div key={rIdx} className="grid grid-cols-5 items-center gap-2">
                 {/* 曜日ラベル */}
                 <span className="text-[10px] font-bold text-content-muted text-center">
@@ -401,27 +496,37 @@ export function DashboardTab({
                 </span>
 
                 {/* 4週分のセル */}
-                {row.records.map((count, cIdx) => {
+                {row.cells.map((cell, cIdx) => {
                   let bgClass = "bg-app-surface border-border";
                   let textClass = "text-content-subtle";
-                  if (count === 1) {
+
+                  if (cell.isFuture) {
+                    bgClass = "bg-app-surface/30 border-border/40";
+                    textClass = "text-transparent";
+                  } else if (cell.count === 1) {
                     bgClass = "bg-primary/25 border-primary/40";
                     textClass = "text-primary font-semibold";
-                  } else if (count === 2) {
+                  } else if (cell.count === 2) {
                     bgClass = "bg-primary/50 border-primary/60";
                     textClass = "text-white font-bold";
-                  } else if (count >= 3) {
-                    bgClass = "bg-primary text-white";
+                  } else if (cell.count >= 3) {
+                    bgClass = "bg-primary text-white border-primary";
                     textClass = "text-white font-extrabold";
                   }
+
+                  const todayRing = cell.isToday
+                    ? "ring-2 ring-primary ring-offset-1 font-bold"
+                    : "";
 
                   return (
                     <div
                       key={cIdx}
-                      className={`h-7 rounded-md border flex items-center justify-center text-[10px] transition-transform hover:scale-105 cursor-pointer shadow-2xs ${bgClass} ${textClass}`}
-                      title={`${count}件の記録`}
+                      className={`h-7 rounded-md border flex items-center justify-center text-[10px] transition-transform hover:scale-105 cursor-pointer shadow-2xs ${bgClass} ${textClass} ${todayRing}`}
+                      title={`${cell.dateStr} (${row.day}): ${cell.count}件の記録${
+                        cell.isToday ? " [今日]" : ""
+                      }`}
                     >
-                      {count > 0 ? count : ""}
+                      {cell.count > 0 ? cell.count : cell.isToday ? "・" : ""}
                     </div>
                   );
                 })}
@@ -430,13 +535,20 @@ export function DashboardTab({
           </div>
 
           {/* 凡例 (Less -> More) */}
-          <div className="flex items-center justify-end gap-1.5 mt-3 pt-2 border-t border-border/60 text-[10px] text-content-muted font-medium">
-            <span>{t.common.less}</span>
-            <div className="w-3 h-3 rounded-xs bg-app-surface border border-border" />
-            <div className="w-3 h-3 rounded-xs bg-primary/25 border border-primary/40" />
-            <div className="w-3 h-3 rounded-xs bg-primary/50 border border-primary/60" />
-            <div className="w-3 h-3 rounded-xs bg-primary" />
-            <span>{t.common.more}</span>
+          <div className="flex items-center justify-between gap-1.5 mt-3 pt-2 border-t border-border/60 text-[10px] text-content-muted font-medium">
+            <span className="text-content-subtle">
+              {language === "ja"
+                ? `直近4週間: 合計 ${totalPast4WeeksTx}件記録`
+                : `4-Week Total: ${totalPast4WeeksTx} entries`}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span>{t.common.less}</span>
+              <div className="w-3 h-3 rounded-xs bg-app-surface border border-border" />
+              <div className="w-3 h-3 rounded-xs bg-primary/25 border border-primary/40" />
+              <div className="w-3 h-3 rounded-xs bg-primary/50 border border-primary/60" />
+              <div className="w-3 h-3 rounded-xs bg-primary" />
+              <span>{t.common.more}</span>
+            </div>
           </div>
         </div>
 
