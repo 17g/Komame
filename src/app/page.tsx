@@ -445,7 +445,14 @@ export default function Home() {
           )}
 
           {activeTab === "goals" && (
-            <GoalsTab goals={goals} onTriggerToast={triggerToast} />
+            <GoalsTab
+              goals={goals}
+              transactions={transactions}
+              accounts={accounts}
+              categories={categories}
+              onTriggerToast={triggerToast}
+              onRefreshGoals={fetchAllData}
+            />
           )}
 
           {activeTab === "admin" && (
