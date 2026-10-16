@@ -124,3 +124,39 @@ export interface CheckpointItem {
     affectedUsers: string[];
   };
 }
+
+export interface CsvImportRow {
+  rowNumber: number;
+  date: string;
+  type: "expense" | "income" | "transfer";
+  amount: number;
+  shopName?: string;
+  categoryId?: string;
+  categoryName?: string;
+  paymentMethodId?: string;
+  paymentMethodName?: string;
+  fromAccountId?: string;
+  toAccountId?: string;
+  note?: string;
+  isDuplicateCandidate: boolean;
+  isValid: boolean;
+  errorMessage?: string;
+}
+
+export interface CsvPreviewResult {
+  headers: string[];
+  totalRows: number;
+  validRows: number;
+  duplicateCount: number;
+  mapping: {
+    dateCol: number;
+    amountCol: number;
+    shopNameCol: number;
+    typeCol?: number;
+    categoryCol?: number;
+    paymentMethodCol?: number;
+    noteCol?: number;
+  };
+  rows: CsvImportRow[];
+}
+

@@ -1,9 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getTenantDb } from "@/db";
-import { desc, isNull } from "drizzle-orm";
+import { desc, isNull, eq } from "drizzle-orm";
 import { logger } from "@/lib/logger";
+import {
+  parseCsv,
+  detectColumnMapping,
+  normalizeDate,
+  normalizeAmount,
+  normalizeType,
+  ColumnMapping,
+} from "@/lib/csv";
+import { calculateWithdrawalDate } from "@/lib/utils";
+import { CsvImportRow, CsvPreviewResult } from "@/types";
 
+// GET: CSVエクスポート
 export async function GET(req: NextRequest) {
   const session = await getCurrentSession();
   if (!session) {
@@ -53,5 +64,404 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     logger.error({ error }, "Error exporting CSV");
     return NextResponse.json({ error: "CSV出力処理中にエラーが発生しました。" }, { status: 500 });
+  }
+}
+
+// POST: CSVパース・プレビュー・重複検証・インポート登録 (管理者限定)
+export async function POST(req: NextRequest) {
+  const session = await getCurrentSession();
+  if (!session) {
+    return NextResponse.json({ error: "認証が必要です。" }, { status: 401 });
+  }
+
+  // 要件 7: CSVインポートは管理者権限限定
+  if (session.role !== "admin") {
+    return NextResponse.json({ error: "CSVインポートには管理者権限が必要です。" }, { status: 403 });
+  }
+
+  try {
+    const { db, schema, raw } = getTenantDb(session.schemaName);
+
+    let action = "preview";
+    let csvText = "";
+    let customMapping: ColumnMapping | null = null;
+    let itemsToImport: Array<{
+      date: string;
+      amount: number;
+      type: "expense" | "income" | "transfer";
+      shopName?: string;
+      categoryId?: string;
+      paymentMethodId?: string;
+      fromAccountId?: string;
+      toAccountId?: string;
+      note?: string;
+    }> = [];
+
+    const contentType = req.headers.get("content-type") || "";
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await req.formData();
+      action = (formData.get("action") as string) || "preview";
+      const file = formData.get("file") as File | null;
+      if (file) {
+        csvText = await file.text();
+      } else {
+        csvText = (formData.get("csvText") as string) || "";
+      }
+      const mappingStr = formData.get("mapping") as string | null;
+      if (mappingStr) {
+        try {
+          customMapping = JSON.parse(mappingStr);
+        } catch {
+          // ignore
+        }
+      }
+      const itemsStr = formData.get("items") as string | null;
+      if (itemsStr) {
+        try {
+          itemsToImport = JSON.parse(itemsStr);
+        } catch {
+          // ignore
+        }
+      }
+    } else {
+      const body = await req.json();
+      action = body.action || "preview";
+      csvText = body.csvText || "";
+      customMapping = body.mapping || null;
+      itemsToImport = body.items || [];
+    }
+
+    // ==========================================
+    // ACTION 1: プレビュー & 重複候補検証
+    // ==========================================
+    if (action === "preview") {
+      if (!csvText || csvText.trim().length === 0) {
+        return NextResponse.json({ error: "CSVデータが空です。" }, { status: 400 });
+      }
+
+      const { headers, rows } = parseCsv(csvText);
+      if (headers.length === 0 || rows.length === 0) {
+        return NextResponse.json(
+          { error: "有効なCSVデータ（行データ）が見つかりませんでした。" },
+          { status: 400 }
+        );
+      }
+
+      const mapping = customMapping || detectColumnMapping(headers);
+
+      // 既存マスターデータの取得（名前マッピング用）
+      const [categories, paymentMethods, accounts] = await Promise.all([
+        db.select().from(schema.categories),
+        db.select().from(schema.paymentMethods),
+        db.select().from(schema.accounts),
+      ]);
+
+      // 既存明細の取得（重複候補チェック用）
+      const existingTxs = await db
+        .select({
+          date: schema.transactions.date,
+          amount: schema.transactions.amount,
+          shopName: schema.transactions.shopName,
+        })
+        .from(schema.transactions)
+        .where(isNull(schema.transactions.deletedAt));
+
+      const existingSet = new Set<string>();
+      for (const tx of existingTxs) {
+        const key = `${tx.date}__${tx.amount}__${(tx.shopName || "").trim().toLowerCase()}`;
+        existingSet.add(key);
+      }
+
+      const previewRows: CsvImportRow[] = [];
+      let validRows = 0;
+      let duplicateCount = 0;
+
+      rows.forEach((row, index) => {
+        const rowNumber = index + 1;
+        const rawDate = row[mapping.dateCol] || "";
+        const rawAmount = row[mapping.amountCol] || "";
+        const rawShopName = mapping.shopNameCol >= 0 ? row[mapping.shopNameCol] || "" : "";
+        const rawType = mapping.typeCol !== undefined && mapping.typeCol >= 0 ? row[mapping.typeCol] : undefined;
+        const rawCategory = mapping.categoryCol !== undefined && mapping.categoryCol >= 0 ? row[mapping.categoryCol] : undefined;
+        const rawPm = mapping.paymentMethodCol !== undefined && mapping.paymentMethodCol >= 0 ? row[mapping.paymentMethodCol] : undefined;
+        const rawNote = mapping.noteCol !== undefined && mapping.noteCol >= 0 ? row[mapping.noteCol] : undefined;
+
+        const date = normalizeDate(rawDate);
+        const amount = normalizeAmount(rawAmount);
+        const type = normalizeType(rawType);
+        const shopName = rawShopName.trim();
+        const note = rawNote?.trim() || undefined;
+
+        // 費目の名前/IDマッピング
+        let categoryId: string | undefined;
+        let categoryName: string | undefined;
+        if (rawCategory) {
+          const trimmedCat = rawCategory.trim();
+          const matchCat = categories.find(
+            (c) => c.id === trimmedCat || c.name.toLowerCase() === trimmedCat.toLowerCase()
+          );
+          if (matchCat) {
+            categoryId = matchCat.id;
+            categoryName = matchCat.name;
+          }
+        }
+
+        // 決済手段の名前/IDマッピング
+        let paymentMethodId: string | undefined;
+        let paymentMethodName: string | undefined;
+        if (rawPm) {
+          const trimmedPm = rawPm.trim();
+          const matchPm = paymentMethods.find(
+            (pm) => pm.id === trimmedPm || pm.name.toLowerCase() === trimmedPm.toLowerCase()
+          );
+          if (matchPm) {
+            paymentMethodId = matchPm.id;
+            paymentMethodName = matchPm.name;
+          }
+        }
+
+        const isValid = !!date && amount !== null && amount > 0;
+        let errorMessage: string | undefined;
+        if (!date) {
+          errorMessage = "日付の形式が不正です";
+        } else if (amount === null || amount <= 0) {
+          errorMessage = "金額の形式が不正です";
+        }
+
+        // 重複判定（同一日・店舗・金額）
+        let isDuplicateCandidate = false;
+        if (isValid) {
+          validRows++;
+          const duplicateKey = `${date}__${amount}__${shopName.toLowerCase()}`;
+          if (existingSet.has(duplicateKey)) {
+            isDuplicateCandidate = true;
+            duplicateCount++;
+          }
+        }
+
+        previewRows.push({
+          rowNumber,
+          date: date || rawDate,
+          type,
+          amount: amount || 0,
+          shopName: shopName || undefined,
+          categoryId,
+          categoryName,
+          paymentMethodId,
+          paymentMethodName,
+          note,
+          isValid,
+          errorMessage,
+          isDuplicateCandidate,
+        });
+      });
+
+      const result: CsvPreviewResult = {
+        headers,
+        totalRows: rows.length,
+        validRows,
+        duplicateCount,
+        mapping,
+        rows: previewRows,
+      };
+
+      return NextResponse.json(result);
+    }
+
+    // ==========================================
+    // ACTION 2: インポート実行 & 登録
+    // ==========================================
+    if (action === "import") {
+      if (!itemsToImport || itemsToImport.length === 0) {
+        return NextResponse.json(
+          { error: "インポートする明細データがありません。" },
+          { status: 400 }
+        );
+      }
+
+      // 1. 24時間チェックポイントの作成（安全なロールバック担保）
+      const checkpointId = `cp_${crypto.randomUUID().replace(/-/g, "")}`;
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      await db.insert(schema.checkpoints).values({
+        id: checkpointId,
+        userId: session.userId,
+        description: `CSVインポート (${itemsToImport.length}件)`,
+        expiresAt,
+      });
+
+      const createdTxIds: string[] = [];
+
+      // 2. 各明細の登録および残高・ログ連動処理
+      for (const item of itemsToImport) {
+        const txId = `tx_${crypto.randomUUID().replace(/-/g, "")}`;
+        createdTxIds.push(txId);
+
+        let scheduledWithdrawalDate: string | null = null;
+        let isSettled = false;
+
+        if (item.type === "transfer") {
+          if (item.fromAccountId) {
+            await raw.unsafe(`
+              UPDATE "${session.schemaName}".accounts 
+              SET balance = balance - ${item.amount}
+              WHERE id = '${item.fromAccountId}'
+            `);
+          }
+          if (item.toAccountId) {
+            await raw.unsafe(`
+              UPDATE "${session.schemaName}".accounts 
+              SET balance = balance + ${item.amount}
+              WHERE id = '${item.toAccountId}'
+            `);
+          }
+          isSettled = true;
+        } else if (item.type === "income") {
+          if (item.toAccountId) {
+            await raw.unsafe(`
+              UPDATE "${session.schemaName}".accounts 
+              SET balance = balance + ${item.amount}
+              WHERE id = '${item.toAccountId}'
+            `);
+            isSettled = true;
+          }
+        } else if (item.type === "expense") {
+          if (item.paymentMethodId) {
+            const [pm] = await db
+              .select()
+              .from(schema.paymentMethods)
+              .where(eq(schema.paymentMethods.id, item.paymentMethodId))
+              .limit(1);
+
+            if (pm) {
+              if (pm.type === "credit_card") {
+                scheduledWithdrawalDate = calculateWithdrawalDate(
+                  item.date,
+                  pm.closingDay || 99,
+                  pm.withdrawalDay || 27,
+                  pm.withdrawalMonthOffset ?? 1
+                );
+                isSettled = false;
+              } else if (pm.sourceAccountId) {
+                await raw.unsafe(`
+                  UPDATE "${session.schemaName}".accounts 
+                  SET balance = balance - ${item.amount}
+                  WHERE id = '${pm.sourceAccountId}'
+                `);
+                isSettled = true;
+              } else if (pm.type === "cash") {
+                const [cashAcc] = await db
+                  .select()
+                  .from(schema.accounts)
+                  .where(eq(schema.accounts.type, "cash"))
+                  .limit(1);
+                if (cashAcc) {
+                  await raw.unsafe(`
+                    UPDATE "${session.schemaName}".accounts 
+                    SET balance = balance - ${item.amount}
+                    WHERE id = '${cashAcc.id}'
+                  `);
+                }
+                isSettled = true;
+              } else if (pm.type === "qr_code") {
+                const [walletAcc] = await db
+                  .select()
+                  .from(schema.accounts)
+                  .where(eq(schema.accounts.type, "prepaid_wallet"))
+                  .limit(1);
+                if (walletAcc) {
+                  await raw.unsafe(`
+                    UPDATE "${session.schemaName}".accounts 
+                    SET balance = balance - ${item.amount}
+                    WHERE id = '${walletAcc.id}'
+                  `);
+                }
+                isSettled = true;
+              }
+            }
+          }
+
+          // 貯蓄・投資等で移動先口座が指定されている場合
+          if (item.toAccountId) {
+            await raw.unsafe(`
+              UPDATE "${session.schemaName}".accounts 
+              SET balance = balance + ${item.amount}
+              WHERE id = '${item.toAccountId}'
+            `);
+          }
+        }
+
+        // 明細レコード作成
+        await db.insert(schema.transactions).values({
+          id: txId,
+          userId: session.userId,
+          type: item.type,
+          date: item.date,
+          amount: item.amount,
+          categoryId: item.categoryId || null,
+          paymentMethodId: item.paymentMethodId || null,
+          fromAccountId: item.fromAccountId || null,
+          toAccountId: item.toAccountId || null,
+          shopName: item.shopName || null,
+          note: item.note || null,
+          isSettled,
+          scheduledWithdrawalDate,
+          checkpointId,
+        });
+
+        // 監査ログ作成
+        await db.insert(schema.auditLogs).values({
+          id: `log_${crypto.randomUUID().replace(/-/g, "")}`,
+          userId: session.userId,
+          operatorUserId: session.userId,
+          action: "CREATE",
+          entityType: "transaction",
+          entityId: txId,
+          summary: `CSVインポート: ${item.shopName || "明細"} (${item.amount}円)`,
+          afterDataJson: item,
+          checkpointId,
+        });
+
+        // 貯蓄・投資の受入明細生成
+        if (item.type === "expense" && item.toAccountId) {
+          const transferTxId = `tx_${crypto.randomUUID().replace(/-/g, "")}`;
+          await db.insert(schema.transactions).values({
+            id: transferTxId,
+            userId: session.userId,
+            type: "transfer",
+            date: item.date,
+            amount: item.amount,
+            categoryId: item.categoryId || null,
+            toAccountId: item.toAccountId,
+            shopName: item.shopName ? `[振替受入] ${item.shopName}` : "振替受入",
+            note: item.note ? `自動振替受入: ${item.note}` : "貯蓄・投資支出に伴う自動振替受入",
+            isSettled: true,
+            parentTransactionId: txId,
+            checkpointId,
+          });
+        }
+      }
+
+      logger.info(
+        { importedCount: itemsToImport.length, checkpointId },
+        "CSV transactions imported successfully"
+      );
+
+      return NextResponse.json({
+        success: true,
+        importedCount: itemsToImport.length,
+        checkpointId,
+        message: `${itemsToImport.length}件の明細をインポートしました。`,
+      });
+    }
+
+    return NextResponse.json({ error: "無効なアクションです。" }, { status: 400 });
+  } catch (error) {
+    logger.error({ error }, "Error processing CSV import");
+    return NextResponse.json(
+      { error: "CSVインポート処理中にエラーが発生しました。" },
+      { status: 500 }
+    );
   }
 }

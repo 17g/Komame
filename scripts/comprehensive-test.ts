@@ -363,8 +363,103 @@ async function runComprehensiveTest() {
   assert(logsRes.ok, "監査ログ一覧取得成功");
   assert(Array.isArray(logsRes.json.logs) && logsRes.json.logs.length > 0, "監査ログに操作履歴が記録されていることを確認");
 
+  // 11. CSVエクスポート & インポート (プレビュー・重複候補検知・インポート・リバート) テスト
+  console.log("\n--- 11. CSV エクスポート & インポート機能テスト ---");
+
+  // 11.1 エクスポート検証
+  const exportFullRes = await apiFetch("/api/admin/csv?type=full");
+  assert(exportFullRes.ok, "全明細CSVエクスポート成功 (GET /api/admin/csv?type=full)");
+  assert(exportFullRes.text.startsWith("\uFEFF"), "エクスポートCSVがUTF-8 BOM付きであることを確認");
+  assert(exportFullRes.text.includes("明細ID,日付,種別,金額"), "CSVヘッダーの整合性確認");
+
+  const exportAccRes = await apiFetch("/api/admin/csv?type=accounts");
+  assert(exportAccRes.ok, "口座一覧CSVエクスポート成功 (GET /api/admin/csv?type=accounts)");
+  assert(exportAccRes.text.includes("口座ID,口座名,種別,現在残高"), "口座CSVヘッダーの整合性確認");
+
+  // 11.2 重複候補の事前明細登録
+  const dupCheckDate = "2026-10-15";
+  const dupCheckAmount = 2980;
+  const dupCheckShop = "CSV重複検知スーパー";
+  await apiFetch("/api/transactions", {
+    method: "POST",
+    body: JSON.stringify({
+      type: "expense",
+      date: dupCheckDate,
+      amount: dupCheckAmount,
+      shopName: dupCheckShop,
+    }),
+  });
+
+  // 11.3 CSVパース・プレビュー・重複候補検知
+  const testCsvContent = `日付,店舗・取引先,金額,費目,支払手段,メモ
+${dupCheckDate},${dupCheckShop},${dupCheckAmount},食費,,重複検証用
+2026-10-16,新規CSVインポート店舗,5400,日用品,,新規明細
+不正な日付,テスト店,1000,,,エラー行
+`;
+
+  const previewRes = await apiFetch("/api/admin/csv", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "preview",
+      csvText: testCsvContent,
+    }),
+  });
+
+  assert(previewRes.ok, "CSVプレビュー解析成功 (POST action=preview)");
+  assert(previewRes.json.totalRows === 3, `総行数が3件であることを確認 (${previewRes.json.totalRows})`);
+  assert(previewRes.json.validRows === 2, `有効行数が2件であることを確認 (${previewRes.json.validRows})`);
+  assert(previewRes.json.duplicateCount === 1, `重複候補が1件検出されたことを確認 (${previewRes.json.duplicateCount})`);
+
+  const previewRowDup = previewRes.json.rows.find((r: any) => r.shopName === dupCheckShop);
+  assert(previewRowDup?.isDuplicateCandidate === true, "既存明細と一致する行に重複候補フラグが付与されていることを確認");
+
+  const previewRowNew = previewRes.json.rows.find((r: any) => r.shopName === "新規CSVインポート店舗");
+  assert(previewRowNew?.isDuplicateCandidate === false && previewRowNew?.isValid === true, "新規明細行が有効かつ非重複であることを確認");
+
+  const previewRowInvalid = previewRes.json.rows.find((r: any) => r.rowNumber === 3);
+  assert(previewRowInvalid?.isValid === false, "不正日付行が無効判定されていることを確認");
+
+  // 11.4 CSVインポート実行 (チェックポイント生成 & 明細登録)
+  const importRes = await apiFetch("/api/admin/csv", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "import",
+      items: [
+        {
+          date: "2026-10-16",
+          amount: 5400,
+          type: "expense",
+          shopName: "新規CSVインポート店舗",
+          note: "CSVインポートテスト明細",
+        },
+      ],
+    }),
+  });
+
+  assert(importRes.ok, "CSVインポート実行成功 (POST action=import)");
+  assert(importRes.json.importedCount === 1, "インポート件数が1件であることを確認");
+  assert(!!importRes.json.checkpointId, "インポート時にチェックポイントIDが発行されたことを確認");
+
+  const csvCheckpointId = importRes.json.checkpointId;
+
+  // インポート明細の確認
+  const txListAfterImport = await apiFetch("/api/transactions");
+  const importedTx = txListAfterImport.json.transactions.find((t: any) => t.shopName === "新規CSVインポート店舗");
+  assert(!!importedTx && importedTx.amount === 5400, "インポートされた明細がDBに正しく存在することを確認");
+
+  // 11.5 インポートしたチェックポイントのロールバック (24hリバート連携)
+  const revertImportRes = await apiFetch("/api/admin/revert", {
+    method: "POST",
+    body: JSON.stringify({ checkpointId: csvCheckpointId }),
+  });
+  assert(revertImportRes.ok, "CSVインポートのチェックポイント巻き戻し成功 (POST /api/admin/revert)");
+
+  const txListAfterRevert = await apiFetch("/api/transactions");
+  const importedTxAfterRevert = txListAfterRevert.json.transactions.find((t: any) => t.shopName === "新規CSVインポート店舗");
+  assert(!importedTxAfterRevert, "リバート後にインポート明細が安全に取り消されていることを確認");
+
   console.log("\n==========================================================");
-  console.log("🎉 すべてのテスト（全10カテゴリ・CRUD・ビジネスロジック）に完全合格しました！");
+  console.log("🎉 すべてのテスト（全11カテゴリ・CSV・CRUD・残高整合性）に完全合格しました！");
   console.log("==========================================================");
 }
 

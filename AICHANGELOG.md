@@ -2,6 +2,43 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-17] 【要件 7】明細CSVインポート機能の実装
+
+### 1. 概要
+管理者が明細CSVファイルを取り込み、カラム対応（日付・店舗・金額・種別・費目・支払手段）の自動検出、既存明細との同一日・店舗・金額の重複候補警告判定、および24時間リバート対応チェックポイントを付与した一括インポート登録を行える機能を実装した。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `src/app/api/admin/csv/route.ts` には `GET` (CSVエクスポート) のみ存在し、CSVインポート用エンドポイントが存在しなかった。
+  - `AdminTab.tsx` にCSVインポートを行うUIが存在しなかった。
+  - CSVパースおよびカラムマッピング自動検出の共通ユーティリティが存在しなかった。
+- **After**:
+  - `src/lib/csv.ts`: RFC 4180準拠のCSVパーサー（引用符・エスケープ・改行・BOM除去対応）、ヘッダー自動検出（`detectColumnMapping`）、日付・金額・種別の正規化関数を新規実装。
+  - `src/app/api/admin/csv/route.ts`: `POST` ハンドラーを追加。
+    - `action: "preview"`: CSVパース、カラム検出、既存未削除明細との突き合わせによる重複候補警告フラグ（`isDuplicateCandidate`）付与、費目・決済手段の名前/ID自動マッピングを返却。
+    - `action: "import"`: 24時間ロールバック用のチェックポイント（`cp_xxx`）を自動生成し、明細登録・決済手段に応じた口座残高同期・投資受入明細生成・監査ログ記録を一括実行。
+  - `src/components/CsvImportModal.tsx`: ファイルドラッグ＆ドロップ、カラム対応手動変更、プレビューテーブル、重複候補の一括除外・選択、インポート実行ダイアログを新規実装。
+  - `src/components/AdminTab.tsx`: 「CSV データ管理」セクションに「CSVインポート (.csv) ›」ボタンを配置し、`CsvImportModal` と連携。
+  - `src/lib/i18n.ts`: CSVインポートおよびモーダル用の多言語リソース（日本語 / 英語）を追加。
+  - `scripts/test-csv-unit.ts`: CSVパース、エスケープ、BOM、正規化の単体テストを作成し、全パスを確認。
+  - `scripts/comprehensive-test.ts`: CSVエクスポート、プレビュー、重複候補検知、インポート登録、およびインポート明細のチェックポイントリバート巻き戻しテストを追加。
+  - `for_agent/04_api_specifications.md`: `POST /api/admin/csv` の仕様および改訂履歴を追記。
+
+### 3. 変更理由
+- 要件 7「データインポート・エクスポート (CSV)」に完全準拠し、外部や過去の家計簿データからのスムーズな移行を実現するとともに、二重記帳事故を防ぐ重複候補警告および誤インポート時の24時間安全ロールバックを提供するため。
+
+### 4. 影響範囲
+- `src/lib/csv.ts` (新規)
+- `src/types/index.ts`
+- `src/app/api/admin/csv/route.ts`
+- `src/components/CsvImportModal.tsx` (新規)
+- `src/components/AdminTab.tsx`
+- `src/lib/i18n.ts`
+- `scripts/test-csv-unit.ts` (新規), `scripts/comprehensive-test.ts`
+- `for_agent/04_api_specifications.md`
+
+---
+
 ## [2026-10-17] 投資・積立支出の修正・削除時の受入明細連動処理の安全化
 
 ### 1. 概要

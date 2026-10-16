@@ -165,5 +165,25 @@
 - **クエリ**: `type=full` (全明細), `type=accounts` (口座一覧)
 - **文字コード**: UTF-8 BOM付き (`\uFEFF`)。
 
-### 6.4 `GET /api/admin/logs`
+### 6.4 `POST /api/admin/csv` (管理者限定)
+- **概要**: CSVファイルのプレビュー（カラム自動検出・マッピング・重複候補警告）およびインポート一括登録。
+- **入力形式**: `multipart/form-data` または `application/json`
+- **Action 1: `preview`**:
+  - `csvText` を受け取り、RFC 4180準拠でパース。ヘッダー名から `date`, `amount`, `shopName`, `type`, `category`, `paymentMethod`, `note` の各列を自動検出（マッピング指定も可）。
+  - 各行の日付・金額を正規化しバリデーション。
+  - テナント内の既存明細（未削除）と突き合わせ、同一日・店舗・金額の組み合わせに `isDuplicateCandidate: true` を付与。
+  - レスポンス: `{ headers, totalRows, validRows, duplicateCount, mapping, rows }`
+- **Action 2: `import`**:
+  - `items` 配列を受け取り、24時間リバート用チェックポイント (`description: CSVインポート (X件)`) を自動作成。
+  - 各明細を登録し、即時決済手段の場合は口座残高を減額、投資・積立の場合は移動先加算および受入明細を自動生成。
+  - 各明細の監査ログ（`action: "CREATE"`）を記録。
+  - レスポンス: `{ success: true, importedCount, checkpointId, message }`
+
+### 6.5 `GET /api/admin/logs`
 - 直近の世帯内監査ログ（最大100件）を取得。
+
+---
+
+## 改訂履歴
+- **2026-10-17**: `POST /api/admin/csv` の仕様を追加（CSVパース、自動カラムマッピング、重複候補検知、チェックポイント付き一括インポート登録）。
+

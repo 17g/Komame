@@ -42,7 +42,7 @@
 ---
 
 ## Phase 2: 未実装・不完全なコア家計簿機能の実装（仕様完全準拠）
-- [ ] **2.1 【要件 7】明細CSVインポート機能の実装 (`src/app/api/admin/csv/route.ts` & `AdminTab.tsx`)**:
+- [x] **2.1 【要件 7】明細CSVインポート機能の実装 (`src/app/api/admin/csv/route.ts` & `AdminTab.tsx`)**:
   - API: `POST /api/admin/csv` によるCSVファイルのアップロード・パース・カラムマッピング・登録処理。
   - 重複候補警告: 同一日・店舗・金額の既存明細が存在する場合に警告フラグを返却。
   - UI: `AdminTab.tsx` にCSVファイル選択、プレビュー表示、インポート実行ダイアログを実装。

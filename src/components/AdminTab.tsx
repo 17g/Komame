@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from "react";
 import { AuditLogItem, CheckpointItem } from "@/types";
-import { History, Download, RotateCcw, Shield } from "lucide-react";
+import { History, Download, RotateCcw, Shield, Upload } from "lucide-react";
 import { RevertModal } from "./RevertModal";
+import { CsvImportModal } from "./CsvImportModal";
 import { useTranslation } from "@/lib/i18n";
 
 interface AdminTabProps {
@@ -17,6 +18,7 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
   const [checkpoints, setCheckpoints] = useState<CheckpointItem[]>([]);
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<CheckpointItem | null>(null);
+  const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
 
   const fetchAdminData = async () => {
     try {
@@ -134,25 +136,48 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
         </div>
       </div>
 
-      {/* CSV エクスポート セクション */}
-      <div className="p-4 bg-app-surface border border-border rounded-xl shadow-sm flex items-center justify-between">
-        <div>
-          <div className="text-xs font-bold text-content-main flex items-center gap-1.5">
-            <Download className="w-4 h-4 text-primary" />
-            <span>{t.admin.exportTitle}</span>
+      {/* CSV データ管理 (エクスポート & インポート) セクション */}
+      <div className="p-4 bg-app-surface border border-border rounded-xl shadow-sm space-y-3">
+        {/* CSV エクスポート */}
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-xs font-bold text-content-main flex items-center gap-1.5">
+              <Download className="w-4 h-4 text-primary" />
+              <span>{t.admin.exportTitle}</span>
+            </div>
+            <p className="text-[11px] text-content-muted mt-0.5">
+              {t.admin.exportDesc}
+            </p>
           </div>
-          <p className="text-[11px] text-content-muted mt-0.5">
-            {t.admin.exportDesc}
-          </p>
+
+          <a
+            href="/api/admin/csv"
+            download
+            className="py-2 px-3 bg-app-subtle border border-border text-content-main text-xs font-bold rounded-lg shadow-xs hover:bg-border transition-colors shrink-0 cursor-pointer"
+          >
+            {t.admin.exportBtn}
+          </a>
         </div>
 
-        <a
-          href="/api/admin/csv"
-          download
-          className="py-2 px-3 bg-primary text-white text-xs font-bold rounded-lg shadow-xs hover:bg-primary-hover transition-colors shrink-0 cursor-pointer"
-        >
-          {t.admin.exportBtn}
-        </a>
+        {/* CSV インポート */}
+        <div className="border-t border-border pt-3 flex items-center justify-between gap-2">
+          <div>
+            <div className="text-xs font-bold text-content-main flex items-center gap-1.5">
+              <Upload className="w-4 h-4 text-primary" />
+              <span>{t.admin.importTitle}</span>
+            </div>
+            <p className="text-[11px] text-content-muted mt-0.5">
+              {t.admin.importDesc}
+            </p>
+          </div>
+
+          <button
+            onClick={() => setIsCsvImportOpen(true)}
+            className="py-2 px-3 bg-primary text-white text-xs font-bold rounded-lg shadow-xs hover:bg-primary-hover transition-colors shrink-0 cursor-pointer"
+          >
+            {t.admin.importBtn}
+          </button>
+        </div>
       </div>
 
       {/* リバート二重確認モーダル */}
@@ -162,6 +187,19 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
         onClose={() => setSelectedCheckpoint(null)}
         onConfirmRevert={handleConfirmRevert}
       />
+
+      {/* CSVインポートモーダル */}
+      <CsvImportModal
+        isOpen={isCsvImportOpen}
+        onClose={() => setIsCsvImportOpen(false)}
+        onSuccess={(importedCount) => {
+          onTriggerToast(`✓ ${importedCount}件の明細をインポートしました (24hリバート対象)`);
+          fetchAdminData();
+          onRefreshAll();
+        }}
+        onTriggerToast={onTriggerToast}
+      />
     </div>
   );
 }
+
