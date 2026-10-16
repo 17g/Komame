@@ -2,6 +2,61 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-17] 【要件 2-4】タグ付け & カラーラベリングのUI統合 (`tags`, `transaction_tags`)
+
+### 1. 概要
+支出・収入・振替明細への色付きタグ（`#固定費`, `#自己投資`, `#ご褒美` 等）の付与・管理・カラーラベリング機能を実装し、新規タグ作成、明細登録時のタグ付け、明細修正モーダルでのタグ編集、および検索・明細一覧画面でのカラーバッジ表示とタグ絞り込みフィルターを統合した。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - DBスキーマ（`tags`, `transaction_tags`）は定義されていたものの、APIエンドポイント（`/api/tags`）や明細APIでのタグ保存・取得ロジックが存在せず、タグ機能が未使用の状態だった。
+  - 明細登録画面（`RegisterTab.tsx`）および明細修正モーダル（`EditTransactionModal.tsx`）にタグ選択・作成UIがなく、タグを登録・変更できなかった。
+  - 明細一覧・検索画面（`SearchTab.tsx`）にタグの表示（カラーバッジ）やタグによる絞り込み機能が存在しなかった。
+- **After**:
+  - `src/types/index.ts`:
+    - `TagItem` インターフェース（`id`, `name`, `color`）を定義し、`TransactionItem` に `tags?: TagItem[]` を追加。
+  - `src/app/api/tags/route.ts` (新規):
+    - `GET /api/tags`: 世帯内のタグ一覧取得。初回未登録時は標準プリセットタグ（`固定費`, `変動費`, `自己投資`, `特別費`, `ご褒美`）を自動投入。
+    - `POST /api/tags`: 新規タグの作成（`#` プレフィックスの自動正規化、同名重複防止、カラー指定）。
+  - `src/app/api/transactions/route.ts`:
+    - `GET`: `tagId` クエリパラメータによる絞り込みに対応。明細一覧取得時に `transaction_tags` と `tags` を結合して各明細に `tags: TagItem[]` を付与して返却。
+    - `POST`: 各明細登録時に `tagIds` / `tags` を受け取り、`transaction_tags` テーブルに紐付けレコードを登録（新規タグ名指定時は自動作成）。
+    - `PUT`: 明細更新時に `tagIds` を受け取り、既存の紐付けを解除・再登録してタグを完全同期更新。
+  - `src/components/RegisterTab.tsx`:
+    - タグ選択チップUIおよびインライン新規タグ作成UI（カラーパレット付き）を追加。
+    - 一時保存（手動・自動ドラフト）および離脱ガードの入力検知に `selectedTagIds` を統合。
+    - 登録実行時に `tagIds` をAPIへ送信し、登録成功時にタグ選択状態をリセット。
+  - `src/components/EditTransactionModal.tsx`:
+    - 既存明細のタグ初期化、タグ選択トグル、およびインライン新規タグ作成UIを追加。
+    - 更新実行（PUT）時に `tagIds` を送信してタグ紐付けを同期更新。
+  - `src/components/SearchTab.tsx`:
+    - フィルター部に「タグフィルター（すべてのタグ / 各タグ）」ドロップダウンを追加し、選択したタグが付与された明細のみを抽出するフィルタリングを実装。
+    - 各明細行に色付きタグバッジ（`#タグ名`）をカラーコード連動でレンダリング。
+    - 明細編集モーダルに `tags` を連携。
+  - `src/app/page.tsx`:
+    - `tags` 状態管理を追加し、`fetchAllData` で `/api/tags` から一括取得。
+    - `SearchTab` および `RegisterTab` に `tags` と更新コールバックを伝播。
+  - `src/db/seed.ts`:
+    - デモシードデータに標準タグ5件およびサンプル明細へのタグ紐付けを追加。
+  - `for_agent/04_api_specifications.md`:
+    - `GET /api/tags` および `POST /api/tags` の仕様、明細APIのタグ連携仕様、改訂履歴を追記。
+
+### 3. 変更理由
+- 要件 2-4「タグ付け & カラーラベリング（支出や資金移動に色付きタグ `#固定費`, `#自己投資`等を付与）」に完全準拠し、費目（カテゴリー）を跨いだ横断的なラベル分類と分析を可能にするため。
+
+### 4. 影響範囲
+- `src/types/index.ts`
+- `src/app/api/tags/route.ts` (新規)
+- `src/app/api/transactions/route.ts`
+- `src/components/RegisterTab.tsx`
+- `src/components/EditTransactionModal.tsx`
+- `src/components/SearchTab.tsx`
+- `src/app/page.tsx`
+- `src/db/seed.ts`
+- `for_agent/04_api_specifications.md`
+
+---
+
 ## [2026-10-17] 【要件 5】機械的サジェストの過去履歴動的集計化
 
 ### 1. 概要

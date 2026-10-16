@@ -136,6 +136,26 @@ export async function seedDatabase() {
         ('tx-005', '${userId}', 'transfer', '2026-08-10', 30000, 'cat-invest', NULL, 'acc-bank-01', 'acc-nisa-01', 'NISA定期積立', '毎月10日自動振替', TRUE, NULL)
       ON CONFLICT (id) DO NOTHING;
 
+      -- タグマスターの投入
+      INSERT INTO "${schemaName}".tags (id, name, color)
+      VALUES
+        ('tag-fixed', '固定費', '#4F46E5'),
+        ('tag-variable', '変動費', '#0284C7'),
+        ('tag-invest', '自己投資', '#16A34A'),
+        ('tag-special', '特別費', '#9333EA'),
+        ('tag-reward', 'ご褒美', '#EA580C')
+      ON CONFLICT (id) DO NOTHING;
+
+      -- 明細タグ付けの投入
+      INSERT INTO "${schemaName}".transaction_tags (transaction_id, tag_id)
+      VALUES
+        ('tx-001', 'tag-variable'),
+        ('tx-002', 'tag-fixed'),
+        ('tx-003', 'tag-reward'),
+        ('tx-004', 'tag-variable'),
+        ('tx-005', 'tag-invest')
+      ON CONFLICT DO NOTHING;
+
       -- 操作ログ
       INSERT INTO "${schemaName}".audit_logs (id, user_id, operator_user_id, action, entity_type, entity_id, summary)
       VALUES

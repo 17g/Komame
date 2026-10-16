@@ -21,6 +21,7 @@ import {
   CategoryItem,
   TransactionItem,
   SavingsGoalItem,
+  TagItem,
 } from "@/types";
 import { ArrowRight } from "lucide-react";
 
@@ -70,6 +71,7 @@ export default function Home() {
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [goals, setGoals] = useState<SavingsGoalItem[]>([]);
+  const [tags, setTags] = useState<TagItem[]>([]);
 
   // 通知状態 (アプリ内通知ボックス)
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -140,11 +142,12 @@ export default function Home() {
   // 全データ取得
   const fetchAllData = async () => {
     try {
-      const [accRes, catRes, txRes, goalRes] = await Promise.all([
+      const [accRes, catRes, txRes, goalRes, tagRes] = await Promise.all([
         fetch("/api/accounts"),
         fetch("/api/categories"),
         fetch("/api/transactions"),
         fetch("/api/goals"),
+        fetch("/api/tags"),
       ]);
 
       if (accRes.ok) {
@@ -164,6 +167,10 @@ export default function Home() {
       if (goalRes.ok) {
         const d = await goalRes.json();
         setGoals(d.goals || []);
+      }
+      if (tagRes.ok) {
+        const d = await tagRes.json();
+        setTags(d.tags || []);
       }
     } catch {
       // ignore
@@ -403,6 +410,7 @@ export default function Home() {
               transactions={transactions}
               categories={categories}
               paymentMethods={paymentMethods}
+              tags={tags}
               onTriggerToast={triggerToast}
               onRefresh={fetchAllData}
             />
@@ -413,6 +421,8 @@ export default function Home() {
               categories={categories}
               paymentMethods={paymentMethods}
               accounts={accounts}
+              tags={tags}
+              onRefreshTags={fetchAllData}
               onSubmitSuccess={() => {
                 fetchAllData();
                 setIsRegisterDirty(false);

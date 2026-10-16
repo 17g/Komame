@@ -87,29 +87,32 @@
 ## 3. 明細データ API (`/api/transactions`)
 
 ### 3.1 `GET /api/transactions`
-- **クエリパラメータ**: `categoryId`, `paymentMethodId`, `startDate`, `endDate`, `keyword`
-- **レスポンス**: 論理削除されていない明細一覧（費目名・決済手段名をJOIN）。
+- **クエリパラメータ**: `categoryId`, `paymentMethodId`, `startDate`, `endDate`, `keyword`, `tagId`
+- **レスポンス**: 論理削除されていない明細一覧（費目名・決済手段名・紐づくタグ情報 `tags: TagItem[]` を取得・結合返却）。`tagId` 指定時は該当タグが付与された明細のみを抽出。
 
 ### 3.2 `POST /api/transactions`
 - **概要**: 支出・収入・振替明細の新規登録。
 - **リクエストボディ**: 単一オブジェクトまたはオブジェクトの配列 `TransactionCreateInput[]`
+  - 追加可能フィールド: `tagIds?: string[]`, `tags?: string[]` (タグ名指定時は自動検索または新規作成)
 - **ビジネスロジック**:
   1. 24時間リバート用チェックポイント (`checkpoints`) の自動生成。
   2. 決済手段がクレジットカードの場合、締め日・引き落とし日・月オフセットから引き落とし予定日 (`scheduledWithdrawalDate`) を算出（即時残高減額は行わない）。
   3. 現金・デビット・QR等の即時決済の場合、引き落とし元口座から即時減額 (`balance = balance - amount`)。
   4. 資金移動 (`type === "transfer"`) の場合、`fromAccountId` を減額し、`toAccountId` を増額。
   5. 貯蓄・投資等の振替（`type === "expense"` かつ `toAccountId` 指定）の場合、出金元から引かれ、`toAccountId` へ残高加算されると同時に受入振替明細が自動生成される。
-  6. 監査ログ (`audit_logs`) の自動記録。
+  6. 明細とタグの紐付け (`transaction_tags`) を登録。
+  7. 監査ログ (`audit_logs`) の自動記録。
 
 ### 3.3 `PUT /api/transactions`
-- **概要**: 明細の更新。支払手段の変更や金額変更時、旧口座と新口座の残高を双方向で完全同期。
+- **概要**: 明細の更新。支払手段の変更や金額変更時、旧口座と新口座の残高を双方向で完全同期。タグ紐付けの完全同期更新。
 - **ビジネスロジック**:
   1. 旧出金元口座の残高ロールバック (即時決済されていた場合 `balance + oldAmount`)。
   2. 旧受入先口座の残高ロールバック (投資・積立支出だった場合 `balance - oldAmount`)。
   3. 新出金元口座の残高減額 (即時決済の場合 `balance - newAmount`)。クレジットカードは予定日再計算。
   4. 新受入先口座の残高加算 (`balance + newAmount`)。
   5. ペア受入明細 (`parentTransactionId` またはフォールバック検索) の連動更新 (金額・日付・受入口座・店名)。受入先が解除された場合は連動論理削除。
-  6. 親明細の更新および監査ログの自動記録。
+  6. タグ紐付け (`tagIds`) が渡された場合、旧タグを全解除して新規タグを再登録。
+  7. 親明細の更新および監査ログの自動記録。
 
 ### 3.4 `DELETE /api/transactions?id=...`
 - **概要**: 明細の論理削除 (`deletedAt = NOW()`)。即時決済済みだった場合は残高を元に戻す。
@@ -208,7 +211,47 @@
 
 ---
 
+## 7. タグ管理 API (`/api/tags`)
+
+### 7.1 `GET /api/tags`
+- **概要**: ログイン中世帯に登録されているタグ一覧の取得。
+- **初回フォールバック**: タグが0件の場合、標準プリセット（`#固定費`, `#変動費`, `#自己投資`, `#特別費`, `#ご褒美`）を自動投入して返却。
+- **レスポンス (200 OK)**:
+  ```json
+  {
+    "tags": [
+      { "id": "tag_fixed", "name": "固定費", "color": "#4F46E5" },
+      { "id": "tag_variable", "name": "変動費", "color": "#0284C7" },
+      { "id": "tag_invest", "name": "自己投資", "color": "#16A34A" }
+    ]
+  }
+  ```
+
+### 7.2 `POST /api/tags`
+- **概要**: 新規タグの作成（名前の `#` 自動正規化、同一世帯内での重複防止）。
+- **リクエストボディ**:
+  ```json
+  {
+    "name": "自己投資",
+    "color": "#16A34A"
+  }
+  ```
+- **レスポンス (200 OK)**:
+  ```json
+  {
+    "tag": {
+      "id": "tag_xxx",
+      "name": "自己投資",
+      "color": "#16A34A"
+    },
+    "existed": false
+  }
+  ```
+
+---
+
 ## 改訂履歴
 - **2026-10-17**: `POST /api/admin/csv` の仕様を追加（CSVパース、自動カラムマッピング、重複候補検知、チェックポイント付き一括インポート登録）。
 - **2026-10-17**: `GET /api/transactions/suggest` の仕様を追加（過去明細履歴からの店舗名補完・最多利用費目/支払元動的サジェスト）。
+- **2026-10-17**: `GET /api/tags` および `POST /api/tags` の仕様を追加。`GET /api/transactions` の `tagId` 絞り込みとタグ結合返却、`POST` / `PUT` でのタグ紐付け仕様を追記。
 

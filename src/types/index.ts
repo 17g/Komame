@@ -57,6 +57,12 @@ export interface CategoryItem {
   isArchived: boolean;
 }
 
+export interface TagItem {
+  id: string;
+  name: string;
+  color?: string;
+}
+
 export interface TransactionItem {
   id: string;
   userId: string;
@@ -76,6 +82,7 @@ export interface TransactionItem {
   isSettled: boolean;
   scheduledWithdrawalDate?: string;
   parentTransactionId?: string;
+  tags?: TagItem[];
   createdAt: string;
 }
 

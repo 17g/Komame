@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getTenantDb } from "@/db";
-import { eq, and, isNull, desc, gte, lte, like, or } from "drizzle-orm";
+import { eq, and, isNull, desc, gte, lte, like, or, inArray } from "drizzle-orm";
 import { calculateWithdrawalDate } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 
@@ -20,6 +20,19 @@ export async function GET(req: NextRequest) {
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
     const paymentMethodId = searchParams.get("paymentMethodId");
+    const tagId = searchParams.get("tagId");
+
+    let tagFilteredTxIds: string[] | null = null;
+    if (tagId) {
+      const matched = await db
+        .select({ transactionId: schema.transactionTags.transactionId })
+        .from(schema.transactionTags)
+        .where(eq(schema.transactionTags.tagId, tagId));
+      tagFilteredTxIds = matched.map((m) => m.transactionId);
+      if (tagFilteredTxIds.length === 0) {
+        return NextResponse.json({ transactions: [] });
+      }
+    }
 
     const query = db
       .select({
@@ -56,6 +69,7 @@ export async function GET(req: NextRequest) {
           paymentMethodId ? eq(schema.transactions.paymentMethodId, paymentMethodId) : undefined,
           startDate ? gte(schema.transactions.date, startDate) : undefined,
           endDate ? lte(schema.transactions.date, endDate) : undefined,
+          tagFilteredTxIds ? inArray(schema.transactions.id, tagFilteredTxIds) : undefined,
           keyword
             ? or(
                 like(schema.transactions.shopName, `%${keyword}%`),
@@ -67,7 +81,41 @@ export async function GET(req: NextRequest) {
       .orderBy(desc(schema.transactions.date), desc(schema.transactions.createdAt));
 
     const transactions = await query;
-    return NextResponse.json({ transactions });
+
+    // 明細に紐づくタグ情報を一括取得
+    const txIds = transactions.map((t) => t.id);
+    const tagsMap: Record<string, { id: string; name: string; color?: string }[]> = {};
+
+    if (txIds.length > 0) {
+      const txTags = await db
+        .select({
+          transactionId: schema.transactionTags.transactionId,
+          id: schema.tags.id,
+          name: schema.tags.name,
+          color: schema.tags.color,
+        })
+        .from(schema.transactionTags)
+        .innerJoin(schema.tags, eq(schema.transactionTags.tagId, schema.tags.id))
+        .where(inArray(schema.transactionTags.transactionId, txIds));
+
+      for (const tt of txTags) {
+        if (!tagsMap[tt.transactionId]) {
+          tagsMap[tt.transactionId] = [];
+        }
+        tagsMap[tt.transactionId].push({
+          id: tt.id,
+          name: tt.name,
+          color: tt.color ?? undefined,
+        });
+      }
+    }
+
+    const transactionsWithTags = transactions.map((t) => ({
+      ...t,
+      tags: tagsMap[t.id] || [],
+    }));
+
+    return NextResponse.json({ transactions: transactionsWithTags });
   } catch (error) {
     logger.error({ error }, "Error fetching transactions");
     return NextResponse.json({ error: "明細データの取得に失敗しました。" }, { status: 500 });
@@ -94,6 +142,8 @@ export async function POST(req: NextRequest) {
       toAccountId?: string;
       shopName?: string;
       note?: string;
+      tagIds?: string[];
+      tags?: string[];
     }> = Array.isArray(body) ? body : [body];
 
     if (items.length === 0) {
@@ -113,7 +163,7 @@ export async function POST(req: NextRequest) {
 
     const createdTxIds: string[] = [];
 
-    // 2. トランザクション処理 (明細登録 + 残高更新 + ログ記録)
+    // 2. トランザクション処理 (明細登録 + 残高更新 + ログ記録 + タグ紐付け)
     for (const item of items) {
       const txId = `tx_${crypto.randomUUID().replace(/-/g, "")}`;
       createdTxIds.push(txId);
@@ -235,6 +285,43 @@ export async function POST(req: NextRequest) {
         checkpointId,
       });
 
+      // タグの紐付け処理
+      const targetTagIds = new Set<string>();
+      if (item.tagIds && Array.isArray(item.tagIds)) {
+        item.tagIds.forEach((id) => {
+          if (id) targetTagIds.add(id);
+        });
+      }
+      if (item.tags && Array.isArray(item.tags)) {
+        for (const tagName of item.tags) {
+          const clean = tagName.trim().replace(/^#+/, "");
+          if (!clean) continue;
+          const [existing] = await db
+            .select()
+            .from(schema.tags)
+            .where(eq(schema.tags.name, clean))
+            .limit(1);
+          if (existing) {
+            targetTagIds.add(existing.id);
+          } else {
+            const newTagId = `tag_${crypto.randomUUID().replace(/-/g, "")}`;
+            await db.insert(schema.tags).values({
+              id: newTagId,
+              name: clean,
+              color: "#10B981",
+            });
+            targetTagIds.add(newTagId);
+          }
+        }
+      }
+
+      for (const tId of targetTagIds) {
+        await db.insert(schema.transactionTags).values({
+          transactionId: txId,
+          tagId: tId,
+        });
+      }
+
       // 監査ログ記録
       await db.insert(schema.auditLogs).values({
         id: `log_${crypto.randomUUID().replace(/-/g, "")}`,
@@ -311,7 +398,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     const { db, schema, raw } = getTenantDb(session.schemaName);
-    const { id, date, amount, categoryId, paymentMethodId, toAccountId, shopName, note } = await req.json();
+    const { id, date, amount, categoryId, paymentMethodId, toAccountId, shopName, note, tagIds } = await req.json();
 
     if (!id || amount === undefined) {
       return NextResponse.json({ error: "更新パラメータが不足しています。" }, { status: 400 });
@@ -560,6 +647,22 @@ export async function PUT(req: NextRequest) {
         updatedAt: new Date(),
       })
       .where(eq(schema.transactions.id, id));
+
+    // タグの紐付け更新
+    if (tagIds !== undefined && Array.isArray(tagIds)) {
+      await db
+        .delete(schema.transactionTags)
+        .where(eq(schema.transactionTags.transactionId, id));
+
+      for (const tId of tagIds) {
+        if (tId) {
+          await db.insert(schema.transactionTags).values({
+            transactionId: id,
+            tagId: tId,
+          });
+        }
+      }
+    }
 
     // 監査ログ記録
     await db.insert(schema.auditLogs).values({

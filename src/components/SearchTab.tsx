@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { TransactionItem, CategoryItem, PaymentMethodItem } from "@/types";
+import { TransactionItem, CategoryItem, PaymentMethodItem, TagItem } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 import { Search, Filter, Calendar, ArrowUpDown, Tag, DollarSign, Wallet, Store, Edit2, TrendingUp, TrendingDown, ArrowRightLeft, PiggyBank, Sparkles } from "lucide-react";
 import { EditTransactionModal } from "./EditTransactionModal";
@@ -11,6 +11,7 @@ interface SearchTabProps {
   transactions: TransactionItem[];
   categories: CategoryItem[];
   paymentMethods: PaymentMethodItem[];
+  tags?: TagItem[];
   onTriggerToast: (msg: string) => void;
   onRefresh: () => void;
 }
@@ -19,6 +20,7 @@ export function SearchTab({
   transactions,
   categories,
   paymentMethods,
+  tags = [],
   onTriggerToast,
   onRefresh,
 }: SearchTabProps) {
@@ -29,6 +31,7 @@ export function SearchTab({
   const [keyword, setKeyword] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("all");
+  const [selectedTag, setSelectedTag] = useState("all");
   const [period, setPeriod] = useState<"all" | "this_month" | "last_month">("all");
   const [sortBy, setSortBy] = useState<"date_desc" | "date_asc" | "amount_desc">("date_desc");
 
@@ -65,7 +68,12 @@ export function SearchTab({
       return false;
     }
 
-    // 4. 期間フィルター
+    // 4. タグフィルター
+    if (selectedTag !== "all" && !tx.tags?.some((t) => t.id === selectedTag)) {
+      return false;
+    }
+
+    // 5. 期間フィルター
     if (period === "this_month") {
       const txDate = new Date(tx.date);
       if (txDate.getFullYear() !== currentYear || txDate.getMonth() !== currentMonth) {
@@ -198,8 +206,8 @@ export function SearchTab({
           <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-content-subtle" />
         </div>
 
-        {/* ドロップダウンフィルター 4種グリッド */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {/* ドロップダウンフィルター 5種グリッド */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
           {/* 費目フィルター */}
           <div>
             <select
@@ -228,6 +236,22 @@ export function SearchTab({
               {paymentMethods.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* タグフィルター */}
+          <div>
+            <select
+              value={selectedTag}
+              onChange={(e) => setSelectedTag(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-app-subtle border border-border rounded-lg text-xs text-content-main cursor-pointer"
+            >
+              <option value="all">すべてのタグ</option>
+              {tags.map((tag) => (
+                <option key={tag.id} value={tag.id}>
+                  #{tag.name}
                 </option>
               ))}
             </select>
@@ -372,6 +396,19 @@ export function SearchTab({
                     <div className="text-[10px] text-content-subtle mt-0.5">
                       {tx.date} • {tx.paymentMethodName || (tx.type === "income" ? "口座入金" : tx.type === "transfer" ? "資産口座振替" : "現金")}
                     </div>
+                    {tx.tags && tx.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {tx.tags.map((t) => (
+                          <span
+                            key={t.id}
+                            className="inline-flex items-center text-[10px] font-bold px-1.5 py-0.2 rounded-md text-white shadow-2xs"
+                            style={{ backgroundColor: t.color || "#4F46E5" }}
+                          >
+                            #{t.name}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -430,6 +467,8 @@ export function SearchTab({
         transaction={selectedTx}
         categories={categories}
         paymentMethods={paymentMethods}
+        tags={tags}
+        onRefreshTags={onRefresh}
         isOpen={!!selectedTx}
         onClose={() => setSelectedTx(null)}
         onSuccess={(msg) => {

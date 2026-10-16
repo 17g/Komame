@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { CategoryItem, PaymentMethodItem, AccountItem, SuggestionItem, SuggestionResult } from "@/types";
-import { Sparkles, Save, Check, Plus, Trash2, RotateCcw, Clock, AlertTriangle, X, ArrowRightLeft, TrendingUp } from "lucide-react";
+import { CategoryItem, PaymentMethodItem, AccountItem, SuggestionItem, SuggestionResult, TagItem } from "@/types";
+import { Sparkles, Save, Check, Plus, Trash2, RotateCcw, Clock, AlertTriangle, X, ArrowRightLeft, TrendingUp, Tag } from "lucide-react";
 import { HelpTooltip } from "./HelpTooltip";
 import { formatCurrency } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
@@ -11,6 +11,8 @@ interface RegisterTabProps {
   categories: CategoryItem[];
   paymentMethods: PaymentMethodItem[];
   accounts?: AccountItem[];
+  tags?: TagItem[];
+  onRefreshTags?: () => void;
   onSubmitSuccess: () => void;
   onTriggerToast: (msg: string) => void;
   onDirtyChange?: (isDirty: boolean) => void;
@@ -28,6 +30,8 @@ export function RegisterTab({
   categories,
   paymentMethods,
   accounts = [],
+  tags = [],
+  onRefreshTags,
   onSubmitSuccess,
   onTriggerToast,
   onDirtyChange,
@@ -41,6 +45,11 @@ export function RegisterTab({
   const [amount, setAmount] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [paymentMethodId, setPaymentMethodId] = useState("");
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [availableTags, setAvailableTags] = useState<TagItem[]>(tags);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState("#4F46E5");
+  const [isCreatingTag, setIsCreatingTag] = useState(false);
   const [toAccountId, setToAccountId] = useState(
     accounts.find((a) => a.type === "nisa_investment" || a.type === "term_deposit")?.id || accounts[0]?.id || ""
   );
@@ -114,6 +123,46 @@ export function RegisterTab({
     }
   }, [categories, paymentMethods]);
 
+  // タグ一覧の同期
+  useEffect(() => {
+    setAvailableTags(tags || []);
+  }, [tags]);
+
+  // タグ選択のトグル
+  const toggleTag = (tagId: string) => {
+    setSelectedTagIds((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+    );
+  };
+
+  // 新規タグ作成
+  const handleCreateTag = async () => {
+    const clean = newTagName.trim().replace(/^#+/, "");
+    if (!clean) return;
+    try {
+      const res = await fetch("/api/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: clean, color: newTagColor }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const tag = data.tag;
+        if (!availableTags.some((t) => t.id === tag.id)) {
+          setAvailableTags((prev) => [...prev, tag]);
+        }
+        if (!selectedTagIds.includes(tag.id)) {
+          setSelectedTagIds((prev) => [...prev, tag.id]);
+        }
+        setNewTagName("");
+        setIsCreatingTag(false);
+        if (onRefreshTags) onRefreshTags();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   // ドラフト復元実行
   const handleRestoreDraft = (draft: DraftData) => {
     try {
@@ -131,6 +180,7 @@ export function RegisterTab({
       if (p.taxDeduction !== undefined) setTaxDeduction(p.taxDeduction);
       if (p.batchRows && Array.isArray(p.batchRows)) setBatchRows(p.batchRows);
       if (p.categoryBatchRows && Array.isArray(p.categoryBatchRows)) setCategoryBatchRows(p.categoryBatchRows);
+      if (p.selectedTagIds && Array.isArray(p.selectedTagIds)) setSelectedTagIds(p.selectedTagIds);
 
       if (draft.formType) setFormMode(draft.formType);
       if (p.grossAmount || p.taxDeduction) {
@@ -239,6 +289,7 @@ export function RegisterTab({
     note.trim() ||
     grossAmount.trim() ||
     taxDeduction.trim() ||
+    selectedTagIds.length > 0 ||
     (formMode === "shop_batch" &&
       batchRows.some((r) => r.amount.trim() !== "" || r.note.trim() !== "")) ||
     (formMode === "category_batch" &&
@@ -301,6 +352,7 @@ export function RegisterTab({
                 taxDeduction,
                 batchRows,
                 categoryBatchRows,
+                selectedTagIds,
               },
             }),
           });
@@ -327,6 +379,7 @@ export function RegisterTab({
     formMode,
     batchRows,
     categoryBatchRows,
+    selectedTagIds,
     hasEnteredData,
     isSubmitting,
   ]);
@@ -352,6 +405,7 @@ export function RegisterTab({
             taxDeduction,
             batchRows,
             categoryBatchRows,
+            selectedTagIds,
           },
         }),
       });
@@ -394,6 +448,7 @@ export function RegisterTab({
             toAccountId: incomeAccountId,
             shopName: shopName || (isTemporaryIncome ? "臨時収入・賞与" : "給与振込"),
             note: `額面:${grossAmount || amount} 控除:${taxDeduction || 0} ${note}`,
+            tagIds: selectedTagIds,
           },
         ];
       } else if (formMode === "single") {
@@ -407,6 +462,7 @@ export function RegisterTab({
             toAccountId: isSavingsOrInvestmentCategory ? toAccountId : undefined,
             shopName: shopName || (isSavingsOrInvestmentCategory ? "積立・投資実行" : "支出"),
             note,
+            tagIds: selectedTagIds,
           },
         ];
       } else if (formMode === "category_batch") {
@@ -425,6 +481,7 @@ export function RegisterTab({
           toAccountId: isSavingsOrInvestmentCategory ? toAccountId : undefined,
           shopName: r.shopName || selectedCategoryObj?.name || "支出",
           note: r.note,
+          tagIds: selectedTagIds,
         }));
       } else {
         const validRows = batchRows.filter((r) => r.amount && parseInt(r.amount, 10) > 0);
@@ -441,6 +498,7 @@ export function RegisterTab({
           paymentMethodId,
           shopName: shopName || "支出",
           note: r.note,
+          tagIds: selectedTagIds,
         }));
       }
 
@@ -462,6 +520,7 @@ export function RegisterTab({
         setShowCandidateDropdown(false);
         setIsSuggestApplied(false);
         setNote("");
+        setSelectedTagIds([]);
         setBatchRows([
           { categoryId: "", amount: "", note: "" },
           { categoryId: "", amount: "", note: "" },
@@ -1227,6 +1286,86 @@ export function RegisterTab({
               </div>
             </div>
           )}
+
+          {/* タグ付け & カラーラベリング */}
+          <div className="pt-2 border-t border-border/60">
+            <label className="block text-xs font-bold text-content-muted mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <Tag className="w-3.5 h-3.5 text-primary" />
+                <span>タグ・カラーラベル</span>
+                <HelpTooltip text="支出や振替に色付きタグ（#固定費、#自己投資など）を付与できます。" />
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsCreatingTag(!isCreatingTag)}
+                className="text-[11px] text-primary hover:underline font-bold flex items-center gap-0.5 cursor-pointer"
+              >
+                <Plus className="w-3 h-3" />
+                <span>{isCreatingTag ? "閉じる" : "新規タグ"}</span>
+              </button>
+            </label>
+
+            {isCreatingTag && (
+              <div className="mb-2.5 p-2.5 bg-app-subtle border border-border rounded-xl space-y-2 animate-in fade-in duration-150">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="タグ名 (例: 固定費, ご褒美)"
+                    value={newTagName}
+                    onChange={(e) => setNewTagName(e.target.value)}
+                    className="flex-1 px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-xs text-content-main outline-none focus:border-primary"
+                  />
+                  <div className="flex items-center gap-1">
+                    {["#4F46E5", "#0284C7", "#16A34A", "#EA580C", "#9333EA", "#E11D48"].map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        onClick={() => setNewTagColor(c)}
+                        className={`w-4 h-4 rounded-full transition-transform cursor-pointer ${
+                          newTagColor === c ? "ring-2 ring-primary scale-110" : ""
+                        }`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCreateTag}
+                    className="px-2.5 py-1.5 bg-primary text-white text-xs font-bold rounded-lg hover:bg-primary-hover cursor-pointer"
+                  >
+                    追加
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-1.5">
+              {availableTags.length === 0 ? (
+                <span className="text-[11px] text-content-subtle">登録されているタグがありません</span>
+              ) : (
+                availableTags.map((tag) => {
+                  const isSelected = selectedTagIds.includes(tag.id);
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleTag(tag.id)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+                        isSelected
+                          ? "border-transparent text-white shadow-2xs"
+                          : "bg-app-subtle border-border text-content-muted hover:border-primary/40 hover:text-content-main"
+                      }`}
+                      style={{
+                        backgroundColor: isSelected ? tag.color || "#10B981" : undefined,
+                      }}
+                    >
+                      <span>#{tag.name}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
 
           {/* ボタンエリア: 一時保存 & 登録 */}
           <div className="flex gap-2.5 pt-3 border-t border-border">
