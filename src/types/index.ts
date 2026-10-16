@@ -160,3 +160,18 @@ export interface CsvPreviewResult {
   rows: CsvImportRow[];
 }
 
+export interface SuggestionItem {
+  shopName: string;
+  categoryId?: string;
+  categoryName?: string;
+  categoryIcon?: string;
+  categoryColor?: string;
+  paymentMethodId?: string;
+  paymentMethodName?: string;
+  count: number;
+}
+
+export interface SuggestionResult {
+  candidates: string[];
+  suggestion: SuggestionItem | null;
+}

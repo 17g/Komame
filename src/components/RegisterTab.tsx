@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { CategoryItem, PaymentMethodItem, AccountItem } from "@/types";
+import { CategoryItem, PaymentMethodItem, AccountItem, SuggestionItem, SuggestionResult } from "@/types";
 import { Sparkles, Save, Check, Plus, Trash2, RotateCcw, Clock, AlertTriangle, X, ArrowRightLeft, TrendingUp } from "lucide-react";
 import { HelpTooltip } from "./HelpTooltip";
 import { formatCurrency } from "@/lib/utils";
@@ -45,7 +45,12 @@ export function RegisterTab({
     accounts.find((a) => a.type === "nisa_investment" || a.type === "term_deposit")?.id || accounts[0]?.id || ""
   );
   const [note, setNote] = useState("");
-  const [showSuggest, setShowSuggest] = useState(false);
+  const [candidateShops, setCandidateShops] = useState<string[]>([]);
+  const [currentSuggestion, setCurrentSuggestion] = useState<SuggestionItem | null>(null);
+  const [showCandidateDropdown, setShowCandidateDropdown] = useState(false);
+  const [isSuggestApplied, setIsSuggestApplied] = useState(false);
+  const suggestTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 収入用フィールド
@@ -154,26 +159,78 @@ export function RegisterTab({
     }
   };
 
-  // 機械的サジェスト
-  const handleShopNameChange = (val: string) => {
-    setShopName(val);
-    if (val.includes("セブン") || val.includes("ローソン") || val.includes("マルエツ")) {
-      setShowSuggest(true);
-    } else {
-      setShowSuggest(false);
+  // 機械的サジェスト (過去の明細データから動的集計)
+  const fetchSuggestions = async (name: string) => {
+    try {
+      const q = name.trim();
+      const res = await fetch(`/api/transactions/suggest?q=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data: SuggestionResult = await res.json();
+        setCandidateShops(data.candidates || []);
+        setCurrentSuggestion(data.suggestion || null);
+        setIsSuggestApplied(false);
+      }
+    } catch {
+      // ignore
     }
   };
 
-  const applySuggestion = () => {
-    const foodCat = categories.find((c) => c.name.includes("食費"));
-    const qrPm = paymentMethods.find((p) => p.type === "qr_code" || p.type === "credit_card");
+  const handleShopNameChange = (val: string) => {
+    setShopName(val);
+    setShowCandidateDropdown(true);
 
-    if (foodCat) setCategoryId(foodCat.id);
-    if (qrPm) setPaymentMethodId(qrPm.id);
+    if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+    if (!val.trim()) {
+      setCandidateShops([]);
+      setCurrentSuggestion(null);
+      setIsSuggestApplied(false);
+      setShowCandidateDropdown(false);
+      return;
+    }
 
-    setShowSuggest(false);
-    onTriggerToast("💡 過去の利用から費目と決済手段を適用しました");
+    suggestTimerRef.current = setTimeout(() => {
+      fetchSuggestions(val);
+    }, 250);
   };
+
+  const handleSelectCandidate = (name: string) => {
+    setShopName(name);
+    setShowCandidateDropdown(false);
+    fetchSuggestions(name);
+  };
+
+  const applySuggestion = () => {
+    if (!currentSuggestion) return;
+
+    if (currentSuggestion.categoryId) {
+      const cat = categories.find((c) => c.id === currentSuggestion.categoryId);
+      if (cat) setCategoryId(cat.id);
+    }
+
+    if (currentSuggestion.paymentMethodId) {
+      const pm = paymentMethods.find((p) => p.id === currentSuggestion.paymentMethodId);
+      if (pm) setPaymentMethodId(pm.id);
+    }
+
+    setIsSuggestApplied(true);
+    const catName = currentSuggestion.categoryName || "";
+    const pmName = currentSuggestion.paymentMethodName || "";
+    onTriggerToast(`💡 過去の利用実績から「${catName}」「${pmName}」を適用しました`);
+  };
+
+  // ドロップダウン外クリック時の閉じる制御
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowCandidateDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+    };
+  }, []);
 
   // フォームに入力途中の値があるかどうかの判定 (未保存変更の検出)
   const hasEnteredData = Boolean(
@@ -400,6 +457,10 @@ export function RegisterTab({
         setIsDraftRestored(false);
         setAmount("");
         setShopName("");
+        setCandidateShops([]);
+        setCurrentSuggestion(null);
+        setShowCandidateDropdown(false);
+        setIsSuggestApplied(false);
         setNote("");
         setBatchRows([
           { categoryId: "", amount: "", note: "" },
@@ -634,7 +695,7 @@ export function RegisterTab({
             <>
               {/* 店舗名 ＆ 機械的サジェスト (single または shop_batch のみ) */}
               {formMode !== "category_batch" && (
-                <div>
+                <div className="relative" ref={dropdownRef}>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-bold text-content-muted flex items-center gap-1">
                       <span>{t.register.shopName}</span>
@@ -646,19 +707,61 @@ export function RegisterTab({
                     placeholder="例: セブンイレブン, マルエツ, SBI証券"
                     value={shopName}
                     onChange={(e) => handleShopNameChange(e.target.value)}
+                    onFocus={() => {
+                      if (candidateShops.length > 0) {
+                        setShowCandidateDropdown(true);
+                      } else if (shopName.trim()) {
+                        fetchSuggestions(shopName);
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs font-medium focus:border-primary outline-none"
+                    autoComplete="off"
                   />
 
-                  {showSuggest && (
+                  {/* 候補店舗名のドロップダウン */}
+                  {showCandidateDropdown && candidateShops.length > 0 && (
+                    <div className="absolute z-30 left-0 right-0 mt-1 bg-app-surface border border-border rounded-xl shadow-lg overflow-hidden animate-in fade-in duration-150">
+                      <div className="px-3 py-1.5 bg-app-subtle/80 border-b border-border/50 text-[10px] font-bold text-content-subtle flex items-center justify-between">
+                        <span>過去の利用履歴</span>
+                        <span>{candidateShops.length}件の候補</span>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto divide-y divide-border/40">
+                        {candidateShops.map((name) => (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => handleSelectCandidate(name)}
+                            className="w-full px-3 py-2 text-left text-xs text-content-main hover:bg-primary-light hover:text-primary transition-colors flex items-center justify-between cursor-pointer"
+                          >
+                            <span className="font-medium truncate">{name}</span>
+                            <span className="text-[10px] text-content-subtle shrink-0 ml-2">履歴から選択</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 動的サジェスト適用バナー */}
+                  {currentSuggestion && !isSuggestApplied && (currentSuggestion.categoryName || currentSuggestion.paymentMethodName) && (
                     <div
                       onClick={applySuggestion}
-                      className="mt-1.5 p-2.5 bg-primary-light border border-primary-border rounded-xl flex items-center justify-between cursor-pointer hover:bg-primary/20 transition-colors"
+                      className="mt-1.5 p-2.5 bg-primary-light border border-primary-border rounded-xl flex items-center justify-between cursor-pointer hover:bg-primary/20 transition-colors animate-in fade-in slide-in-from-top-1 duration-150"
                     >
-                      <div className="flex items-center gap-2 text-xs text-primary font-bold">
-                        <Sparkles className="w-4 h-4" />
-                        <span>{t.register.suggestPrompt} 「食費」 / 「PayPay」</span>
+                      <div className="flex items-center gap-2 text-xs text-primary font-bold overflow-hidden">
+                        <Sparkles className="w-4 h-4 shrink-0 text-primary" />
+                        <span className="truncate">
+                          {t.register.suggestPrompt}{" "}
+                          {currentSuggestion.categoryName && `「${currentSuggestion.categoryIcon ? currentSuggestion.categoryIcon + " " : ""}${currentSuggestion.categoryName}」`}
+                          {currentSuggestion.categoryName && currentSuggestion.paymentMethodName && " / "}
+                          {currentSuggestion.paymentMethodName && `「${currentSuggestion.paymentMethodName}」`}
+                          {currentSuggestion.count > 0 && (
+                            <span className="text-[10px] font-normal text-primary/80 ml-1">
+                              (過去{currentSuggestion.count}回利用)
+                            </span>
+                          )}
+                        </span>
                       </div>
-                      <span className="text-xs font-bold text-primary">{t.register.applySuggest}</span>
+                      <span className="text-xs font-bold text-primary shrink-0 ml-2">{t.register.applySuggest}</span>
                     </div>
                   )}
                 </div>
