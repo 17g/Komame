@@ -230,6 +230,16 @@
 - **`DELETE /api/admin/members?membershipId=...`**:
   - メンバーの論理削除（ステータスを `inactive` に更新してログイン遮断）。自分自身および最後の管理者の無効化は禁止。
 
+### 6.7 システム設定 & パスワードポリシー API (`/api/admin/settings`) ※家庭管理者限定
+- **`GET /api/admin/settings`**:
+  - 世帯のシステム設定（通貨記号 `currencySymbol`、日付表示形式 `dateFormat`、パスワード強度ポリシー `passwordPolicy`）を取得。未設定項目は標準デフォルト値で補完。
+- **`PUT /api/admin/settings`**:
+  - リクエストボディ: `{ currencySymbol?: string, dateFormat?: string, passwordPolicy?: { minLength: number, requireUppercase: boolean, requireLowercase: boolean, requireNumbers: boolean, requireSpecialChars: boolean } }`
+  - 入力バリデーション（通貨記号1〜5文字、許可された日付形式、最小文字数4〜32文字）。
+  - `public.system_settings` テーブルに世帯単位でUPSERT保存。
+  - テナント監査ログ（`action: "UPDATE", entityType: "system_settings"`）を自動記録。
+  - 世帯メンバー招待時およびパスワード変更時の動的ポリシー検証（`getHouseholdPasswordPolicy`）と連動。
+
 ---
 
 ## 7. タグ管理 API (`/api/tags`)
@@ -272,8 +282,10 @@
 ---
 
 ## 改訂履歴
+- **2026-10-17**: `GET/PUT /api/admin/settings` の仕様を追加（通貨記号、日付表示形式、最小文字数・英数記号必須等のパスワード強度ポリシー動的設定・保存・監査ログ・認証検証連動）。
 - **2026-10-17**: `GET/POST/PUT/DELETE /api/admin/members` および `GET/POST /api/auth/invite` の仕様を追加（家族メンバー一覧取得、直接追加・招待リンク発行、ロール変更、論理削除無効化、管理者ガードレール、パスワード再設定）。
 - **2026-10-17**: `POST /api/admin/csv` の仕様を追加（CSVパース、自動カラムマッピング、重複候補検知、チェックポイント付き一括インポート登録）。
 - **2026-10-17**: `GET /api/transactions/suggest` の仕様を追加（過去明細履歴からの店舗名補完・最多利用費目/支払元動的サジェスト）。
 - **2026-10-17**: `GET /api/tags` および `POST /api/tags` の仕様を追加。`GET /api/transactions` の `tagId` 絞り込みとタグ結合返却、`POST` / `PUT` でのタグ紐付け仕様を追記。
+
 

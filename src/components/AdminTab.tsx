@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { AuditLogItem, CheckpointItem, MemberItem } from "@/types";
+import { AuditLogItem, CheckpointItem, MemberItem, SystemSettingsConfig } from "@/types";
 import {
   History,
   Download,
@@ -14,6 +14,8 @@ import {
   KeyRound,
   UserCheck,
   UserX,
+  Settings,
+  Lock,
 } from "lucide-react";
 import { RevertModal } from "./RevertModal";
 import { CsvImportModal } from "./CsvImportModal";
@@ -38,12 +40,26 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [resetTargetMember, setResetTargetMember] = useState<MemberItem | null>(null);
 
+  const [settings, setSettings] = useState<SystemSettingsConfig>({
+    currencySymbol: "¥",
+    dateFormat: "YYYY/MM/DD",
+    passwordPolicy: {
+      minLength: 8,
+      requireUppercase: true,
+      requireLowercase: true,
+      requireNumbers: true,
+      requireSpecialChars: false,
+    },
+  });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
   const fetchAdminData = async () => {
     try {
-      const [membersRes, cpRes, logRes] = await Promise.all([
+      const [membersRes, cpRes, logRes, settingsRes] = await Promise.all([
         fetch("/api/admin/members"),
         fetch("/api/admin/checkpoints"),
         fetch("/api/admin/logs"),
+        fetch("/api/admin/settings"),
       ]);
 
       if (membersRes.ok) {
@@ -57,6 +73,12 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
       if (logRes.ok) {
         const data = await logRes.json();
         setLogs(data.logs || []);
+      }
+      if (settingsRes.ok) {
+        const data = await settingsRes.json();
+        if (data.settings) {
+          setSettings(data.settings);
+        }
       }
     } catch {
       // ignore
@@ -154,6 +176,33 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
       }
     } catch {
       onTriggerToast("リバート処理中にエラーが発生しました");
+    }
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingSettings(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        onTriggerToast(t.admin.settingsSavedToast);
+        if (data.settings) {
+          setSettings(data.settings);
+        }
+        fetchAdminData();
+      } else {
+        onTriggerToast(data.error || "設定の保存に失敗しました");
+      }
+    } catch {
+      onTriggerToast("設定の保存中に通信エラーが発生しました");
+    } finally {
+      setIsSavingSettings(false);
     }
   };
 
@@ -305,6 +354,185 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
             ))
           )}
         </div>
+      </div>
+
+      {/* システム設定 & セキュリティポリシー セクション */}
+      <div className="p-4 bg-app-surface border border-border rounded-xl shadow-sm">
+        <div className="flex items-center gap-1.5 text-xs font-bold text-content-main mb-2">
+          <Settings className="w-4 h-4 text-primary" />
+          <span>{t.admin.settingsSectionTitle}</span>
+        </div>
+        <p className="text-[11px] text-content-muted mb-3 leading-relaxed">
+          {t.admin.settingsSectionDesc}
+        </p>
+
+        <form onSubmit={handleSaveSettings} className="space-y-4">
+          {/* 通貨 & 日付表示設定 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold text-content-main mb-1">
+                {t.admin.currencySymbolLabel}
+              </label>
+              <div className="flex items-center gap-2">
+                {["¥", "$", "€"].map((sym) => (
+                  <button
+                    key={sym}
+                    type="button"
+                    onClick={() => setSettings((prev) => ({ ...prev, currencySymbol: sym }))}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                      settings.currencySymbol === sym
+                        ? "bg-primary text-white border-primary shadow-xs"
+                        : "bg-app-subtle border-border text-content-main hover:bg-border"
+                    }`}
+                  >
+                    {sym}
+                  </button>
+                ))}
+                <input
+                  type="text"
+                  maxLength={5}
+                  value={settings.currencySymbol}
+                  onChange={(e) =>
+                    setSettings((prev) => ({ ...prev, currencySymbol: e.target.value }))
+                  }
+                  placeholder="その他"
+                  className="w-16 px-2 py-1.5 text-xs border border-border rounded-lg bg-app-subtle text-content-main focus:outline-none focus:border-primary text-center"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-content-main mb-1">
+                {t.admin.dateFormatLabel}
+              </label>
+              <select
+                value={settings.dateFormat}
+                onChange={(e) =>
+                  setSettings((prev) => ({ ...prev, dateFormat: e.target.value }))
+                }
+                className="w-full px-2.5 py-1.5 text-xs border border-border rounded-lg bg-app-subtle text-content-main focus:outline-none focus:border-primary cursor-pointer"
+              >
+                <option value="YYYY/MM/DD">YYYY/MM/DD (例: 2026/10/17)</option>
+                <option value="YYYY-MM-DD">YYYY-MM-DD (例: 2026-10-17)</option>
+                <option value="YYYY.MM.DD">YYYY.MM.DD (例: 2026.10.17)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* パスワード強度ポリシー */}
+          <div className="p-3 bg-app-subtle border border-border rounded-lg space-y-3">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-content-main">
+              <Lock className="w-3.5 h-3.5 text-primary" />
+              <span>{t.admin.passwordPolicyTitle}</span>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-[11px] mb-1">
+                <span className="text-content-main">{t.admin.minLengthLabel}</span>
+                <span className="font-bold text-primary">{settings.passwordPolicy.minLength} 文字</span>
+              </div>
+              <input
+                type="range"
+                min={6}
+                max={24}
+                value={settings.passwordPolicy.minLength}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setSettings((prev) => ({
+                    ...prev,
+                    passwordPolicy: { ...prev.passwordPolicy, minLength: val },
+                  }));
+                }}
+                className="w-full accent-primary cursor-pointer"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+              <label className="flex items-center gap-2 p-1.5 bg-app-surface rounded border border-border/60 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.passwordPolicy.requireUppercase}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      passwordPolicy: {
+                        ...prev.passwordPolicy,
+                        requireUppercase: e.target.checked,
+                      },
+                    }))
+                  }
+                  className="rounded border-border text-primary focus:ring-primary w-3.5 h-3.5"
+                />
+                <span className="text-content-main">{t.admin.requireUpperLabel}</span>
+              </label>
+
+              <label className="flex items-center gap-2 p-1.5 bg-app-surface rounded border border-border/60 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.passwordPolicy.requireLowercase}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      passwordPolicy: {
+                        ...prev.passwordPolicy,
+                        requireLowercase: e.target.checked,
+                      },
+                    }))
+                  }
+                  className="rounded border-border text-primary focus:ring-primary w-3.5 h-3.5"
+                />
+                <span className="text-content-main">{t.admin.requireLowerLabel}</span>
+              </label>
+
+              <label className="flex items-center gap-2 p-1.5 bg-app-surface rounded border border-border/60 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.passwordPolicy.requireNumbers}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      passwordPolicy: {
+                        ...prev.passwordPolicy,
+                        requireNumbers: e.target.checked,
+                      },
+                    }))
+                  }
+                  className="rounded border-border text-primary focus:ring-primary w-3.5 h-3.5"
+                />
+                <span className="text-content-main">{t.admin.requireNumberLabel}</span>
+              </label>
+
+              <label className="flex items-center gap-2 p-1.5 bg-app-surface rounded border border-border/60 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.passwordPolicy.requireSpecialChars}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      passwordPolicy: {
+                        ...prev.passwordPolicy,
+                        requireSpecialChars: e.target.checked,
+                      },
+                    }))
+                  }
+                  className="rounded border-border text-primary focus:ring-primary w-3.5 h-3.5"
+                />
+                <span className="text-content-main">{t.admin.requireSpecialLabel}</span>
+              </label>
+            </div>
+          </div>
+
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={isSavingSettings}
+              className="py-1.5 px-4 bg-primary text-white text-xs font-bold rounded-lg shadow-xs hover:bg-primary-hover disabled:opacity-50 transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              <span>{isSavingSettings ? t.admin.savingSettings : t.admin.saveSettingsBtn}</span>
+            </button>
+          </div>
+        </form>
       </div>
 
       {/* 24時間チェックポイントリバート セクション */}

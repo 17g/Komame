@@ -192,3 +192,18 @@ export interface MemberItem {
   joinedAt: string;
   isCurrentUser?: boolean;
 }
+
+export interface PasswordPolicyConfig {
+  minLength: number;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireNumbers: boolean;
+  requireSpecialChars: boolean;
+}
+
+export interface SystemSettingsConfig {
+  currencySymbol: string;
+  dateFormat: string;
+  passwordPolicy: PasswordPolicyConfig;
+}
+

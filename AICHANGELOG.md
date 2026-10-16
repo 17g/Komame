@@ -2,6 +2,47 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-17] 【要件 1-3 & 3-4】システム設定 & パスワードポリシー動的設定の実装 (`src/app/api/admin/settings/route.ts` & `AdminTab.tsx`)
+
+### 1. 概要
+世帯管理者が通貨表示記号、日付表示形式、および家族メンバーのパスワードセキュリティ基準（最小文字数、英大文字・小文字・数字・特殊文字の必須有無）を動的に設定・保存・運用できるシステム設定機能（APIおよびUI）を実装した。設定されたパスワードポリシーは、世帯内のメンバー招待・登録時やパスワード再設定時の検証ロジックとリアルタイムに連動する。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `master.ts` に `public.system_settings` テーブル定義は存在したが、設定値を取得・保存するためのAPIが存在しなかった。
+  - `AdminTab.tsx` にシステム設定フォームが存在せず、通貨記号や日付形式、パスワードポリシーを変更する手段がなかった。
+  - `src/lib/auth.ts` の `validatePasswordPolicy` はハードコードされたデフォルト引数（最小8文字、英大小数字必須）のみに依存し、世帯ごとの動的ポリシーを取得して適用する仕組みがなかった。
+- **After**:
+  - `src/types/index.ts`:
+    - `PasswordPolicyConfig` および `SystemSettingsConfig` インターフェースを追加。
+  - `src/lib/auth.ts`:
+    - 世帯IDに紐づく動的パスワードポリシーを取得するヘルパー関数 `getHouseholdPasswordPolicy(householdId)` を実装。未設定時は安全な標準デフォルト値（最小8文字、英大小数字必須）へフォールバック。
+  - `src/app/api/admin/settings/route.ts` (新規):
+    - `GET`: 世帯管理者の認証のもと、`public.system_settings` から通貨記号、日付形式、パスワード強度ポリシーを取得・返却。
+    - `PUT`: 通貨記号（¥/$ /€/任意5文字以内）、日付形式（YYYY/MM/DD, YYYY-MM-DD, YYYY.MM.DD）、パスワードポリシー（最小文字数4〜32、各大文字/小文字/数字/記号の必須フラグ）をバリデーションし、世帯単位でUPSERT保存。テナント監査ログ（`audit_logs`）に更新履歴を記録。
+  - `src/app/api/admin/members/route.ts`:
+    - 新規メンバー招待・登録時およびパスワード再設定時に `getHouseholdPasswordPolicy` で取得した世帯動的ポリシーを適用するように改修。自動生成パスワードもポリシー長を満たすよう動的生成化。
+  - `src/components/AdminTab.tsx`:
+    - 家族メンバー管理セクションの下に「システム設定 & セキュリティポリシー」カードを追加。
+    - 通貨記号クイックトグル（¥/$ /€）＋カスタム入力、日付形式セレクト、最小文字数スライダー、4種類の必須チェックボックス、保存ボタンを配置。
+    - 初回ロード時に `GET /api/admin/settings` から設定値を読み込み、保存成功時にトースト通知を表示。
+  - `src/lib/i18n.ts`:
+    - システム設定・パスワードポリシーに関する日本語および英語の翻訳リソースを追加。
+  - `for_agent/04_api_specifications.md`:
+    - `6.7 システム設定 & パスワードポリシー API (/api/admin/settings)` の仕様および改訂履歴を追記。
+
+### 3. 変更理由
+- 要件 1-3「パスワードポリシー動的設定（最小文字数、英大小数字記号の必須設定）」および要件 3-4「システム設定（通貨表示、日付フォーマット、パスワード強度ポリシー）」に完全準拠し、世帯ごとの運用ルールやセキュリティ基準に柔軟に対応できるようにするため。
+
+### 4. 影響範囲
+- `src/types/index.ts`
+- `src/lib/auth.ts`
+- `src/app/api/admin/settings/route.ts` (新規)
+- `src/app/api/admin/members/route.ts`
+- `src/components/AdminTab.tsx`
+- `src/lib/i18n.ts`
+- `for_agent/04_api_specifications.md`
+
 ## [2026-10-17] 【要件 3-2】家族メンバー管理機能の実装 (`src/app/api/admin/members/route.ts` & `AdminTab.tsx`)
 
 ### 1. 概要

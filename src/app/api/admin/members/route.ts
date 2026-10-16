@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentSession, hashPassword, validatePasswordPolicy, createInviteToken } from "@/lib/auth";
+import { getCurrentSession, hashPassword, validatePasswordPolicy, getHouseholdPasswordPolicy, createInviteToken } from "@/lib/auth";
 import { masterDb, getTenantDb } from "@/db";
 import { users, householdMemberships } from "@/db/schema/master";
 import { eq, and, sql } from "drizzle-orm";
@@ -87,7 +87,8 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const pwdValidation = validatePasswordPolicy(newPassword);
+      const policy = await getHouseholdPasswordPolicy(session.activeHouseholdId);
+      const pwdValidation = validatePasswordPolicy(newPassword, policy);
       if (!pwdValidation.isValid) {
         return NextResponse.json({ error: pwdValidation.errors.join(" ") }, { status: 400 });
       }
@@ -231,8 +232,10 @@ export async function POST(req: NextRequest) {
     }
 
     // 新規ユーザーとしての登録
-    const initialPassword = password || `${crypto.randomUUID().slice(0, 8)}Aa1!`;
-    const pwdValidation = validatePasswordPolicy(initialPassword);
+    const policy = await getHouseholdPasswordPolicy(session.activeHouseholdId);
+    const generatedLength = Math.max(12, policy.minLength);
+    const initialPassword = password || `Km1!${crypto.randomUUID().replace(/-/g, "").slice(0, generatedLength - 4)}`;
+    const pwdValidation = validatePasswordPolicy(initialPassword, policy);
     if (!pwdValidation.isValid) {
       return NextResponse.json({ error: pwdValidation.errors.join(" ") }, { status: 400 });
     }

@@ -2,7 +2,7 @@ import { hash, verify } from "@node-rs/argon2";
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { masterDb } from "@/db";
-import { users, households, householdMemberships } from "@/db/schema/master";
+import { users, households, householdMemberships, systemSettings } from "@/db/schema/master";
 import { eq, and } from "drizzle-orm";
 
 const JWT_SECRET = new TextEncoder().encode(
@@ -147,3 +147,41 @@ export function validatePasswordPolicy(
     errors,
   };
 }
+
+// 9. 世帯の動的パスワードポリシー取得
+export async function getHouseholdPasswordPolicy(householdId: string): Promise<PasswordPolicy> {
+  try {
+    const [setting] = await masterDb
+      .select()
+      .from(systemSettings)
+      .where(
+        and(
+          eq(systemSettings.householdId, householdId),
+          eq(systemSettings.key, "password_policy")
+        )
+      )
+      .limit(1);
+
+    if (setting && setting.valueJson) {
+      const val = setting.valueJson as Partial<PasswordPolicy>;
+      return {
+        minLength: typeof val.minLength === "number" ? val.minLength : 8,
+        requireUppercase: typeof val.requireUppercase === "boolean" ? val.requireUppercase : true,
+        requireLowercase: typeof val.requireLowercase === "boolean" ? val.requireLowercase : true,
+        requireNumbers: typeof val.requireNumbers === "boolean" ? val.requireNumbers : true,
+        requireSpecialChars: typeof val.requireSpecialChars === "boolean" ? val.requireSpecialChars : false,
+      };
+    }
+  } catch {
+    // DBエラー時フォールバック
+  }
+
+  return {
+    minLength: 8,
+    requireUppercase: true,
+    requireLowercase: true,
+    requireNumbers: true,
+    requireSpecialChars: false,
+  };
+}
+
