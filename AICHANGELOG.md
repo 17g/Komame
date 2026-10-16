@@ -2,6 +2,39 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-17] プロジェクト全体の最終レビュー & 仕様書最新化の完了 (`/review`)
+
+### 1. 概要
+`review` スキル指示に基づき、`for_agent/` 内の全仕様書（00〜06, guardrails）と実装コード全体の突き合わせ点検を実施した。全23要件の完全実装、エッジケース（資金移動双方向残高連動、24時間リバート逆算、投資支出受入ペア明細連動、離脱ガード、家族管理者保護、RFC 4180準拠CSV入出力、3段階クレカ原資シグナル、草生やし28日マトリックス動的化、まめの樹4段階遷移、やさしいアドバイス動的生成）の網羅性を確認した。
+実装に伴う最新仕様を `for_agent/05_ui_ux_and_design_system.md`、`for_agent/06_operation_and_testing_guide.md`、`for_agent/01_requirements_specification.md` に反映・改訂履歴を更新し、単体テスト（33件＋12件 PASS）、TypeScript型チェック（Exit Code 0）、Next.jsプロダクションビルド（Exit Code 0, 全22ルート正常生成）を通過した。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `for_agent/05_ui_ux_and_design_system.md`: クレジットカード引き落とし予定額の3段階シグナル判定（充足・注意・不足）、こまめ草生やし（28日間マトリックス・ストリーク動的化）、まめの樹4段階動的遷移（種/双葉/新芽/実り）、やさしいスマートアドバイス動的生成、タグ付けUI、管理者UIコンポーネント（家族メンバー・システム設定・監査ログ詳細モーダル）の記載および改訂履歴が未記載だった。
+  - `for_agent/06_operation_and_testing_guide.md`: DB不要・高速実行可能な単体テスト（`test-csv-unit.ts`, `test-members-unit.ts`）の実行コマンドと改訂履歴が未記載だった。
+  - `for_agent/01_requirements_specification.md`: 全要件完了に伴う整合性検証の改訂履歴が未記載だった。
+- **After**:
+  - `for_agent/05_ui_ux_and_design_system.md`:
+    - セクション 3: ゲーミフィケーション・モチベーション向上UI仕様（草生やし動的マトリックス、まめの樹4段階遷移、やさしいアドバイス動的生成）を詳細化。
+    - セクション 5: クレジットカード引き落とし予定額 & 3段階原資シグナル表示（充足 / 注意 / 不足）仕様を追加。
+    - セクション 6: タグ付け & カラーラベリングUI仕様を追加。
+    - セクション 7: 管理者UIコンポーネント仕様を追加。
+    - セクション 8: 改訂履歴を最新化。
+  - `for_agent/06_operation_and_testing_guide.md`:
+    - セクション 2.2: 単体テスト実行手順（`test-csv-unit.ts`, `test-members-unit.ts`）を追加。
+    - セクション 4: 改訂履歴を追加。
+  - `for_agent/01_requirements_specification.md`:
+    - セクション 4: 改訂履歴を追加。
+
+### 3. 変更理由
+- `review` スキル（`SKILL.md`）の Instructions 1〜5 に完全準拠し、仕様書正本と実装コードの完全同期・検証の客観的担保・変更記録の永続化を行うため。
+
+### 4. 影響範囲
+- `for_agent/05_ui_ux_and_design_system.md`
+- `for_agent/06_operation_and_testing_guide.md`
+- `for_agent/01_requirements_specification.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-17] 総合ビジネスロジックテストの更新 & 検証実施 (`scripts/comprehensive-test.ts`)
 
 ### 1. 概要

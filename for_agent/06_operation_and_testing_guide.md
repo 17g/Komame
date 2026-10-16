@@ -46,8 +46,17 @@ npx tsc --noEmit
 npm run build
 ```
 
-### 2.2 E2E & ビジネスロジック総合自動テスト
-開発サーバーが起動している状態で以下を実行：
+### 2.2 単体テスト (DB不要・高速検証)
+```powershell
+# CSV パース・エスケープ・BOM検証単体テスト
+npx tsx scripts/test-csv-unit.ts
+
+# 家族メンバー管理・招待トークン・Argon2idハッシュ検証単体テスト
+npx tsx scripts/test-members-unit.ts
+```
+
+### 2.3 E2E & ビジネスロジック総合自動テスト
+PostgreSQL サービスおよび Next.js 開発サーバーが起動している状態で以下を実行：
 ```powershell
 npx tsx scripts/comprehensive-test.ts
 ```
@@ -67,3 +76,10 @@ npx tsx scripts/comprehensive-test.ts
 docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml exec app npm run db:migrate
 ```
+
+---
+
+## 4. 改訂履歴
+
+- **2026-10-17**: 検証手順に DB 不要・高速実行可能な単体テスト（`test-csv-unit.ts`, `test-members-unit.ts`）を追加。
+- **2026-10-17**: `AGENTS.md` の技術スタック（Next.js 15 / TypeScript / Drizzle ORM）との整合性を同期。
