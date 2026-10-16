@@ -400,6 +400,7 @@ export default function Home() {
             <DashboardTab
               accounts={accounts}
               transactions={transactions}
+              paymentMethods={paymentMethods}
               onOpenRegister={() => handleTabChange("register")}
               onOpenAllTransactions={() => handleTabChange("search")}
             />

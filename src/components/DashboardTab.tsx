@@ -1,14 +1,27 @@
 "use client";
 
-import React from "react";
-import { formatCurrency } from "@/lib/utils";
-import { AccountItem, TransactionItem } from "@/types";
-import { Lock, TrendingUp, CheckCircle2, Flame, ArrowRight, ShieldCheck, PieChart, Wallet } from "lucide-react";
+import React, { useState } from "react";
+import { formatCurrency, calculateWithdrawalDate } from "@/lib/utils";
+import { AccountItem, TransactionItem, PaymentMethodItem } from "@/types";
+import {
+  Lock,
+  TrendingUp,
+  CheckCircle2,
+  AlertTriangle,
+  AlertCircle,
+  Flame,
+  ArrowRight,
+  ShieldCheck,
+  PieChart,
+  Wallet,
+  CreditCard,
+} from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 
 interface DashboardTabProps {
   accounts: AccountItem[];
   transactions: TransactionItem[];
+  paymentMethods?: PaymentMethodItem[];
   onOpenRegister: () => void;
   onOpenAllTransactions: () => void;
 }
@@ -16,23 +29,125 @@ interface DashboardTabProps {
 export function DashboardTab({
   accounts,
   transactions,
+  paymentMethods = [],
   onOpenRegister,
   onOpenAllTransactions,
 }: DashboardTabProps) {
   const { t } = useTranslation();
+  const [selectedCardIdx, setSelectedCardIdx] = useState(0);
 
   // 1. 総資産と実質利用可能額の集計
   const totalAssets = accounts.reduce((sum, a) => sum + a.balance, 0);
   const totalReserved = accounts.reduce((sum, a) => sum + (a.reservedAmount || 0), 0);
   const availableBalance = totalAssets - totalReserved;
 
-  // 2. クレカ次回引き落とし予定額の集計 (未精算のクレカ明細)
-  const upcomingCardSettlements = transactions
-    .filter((t) => !t.isSettled && t.type === "expense" && t.scheduledWithdrawalDate)
-    .reduce((sum, t) => sum + t.amount, 0);
+  // 2. クレジットカード決済手段の抽出
+  const creditCards = (paymentMethods || []).filter(
+    (pm) => pm.type === "credit_card" && pm.isActive
+  );
 
-  // 3. 原資判定 (メイン口座等の利用可能額と比較)
-  const isFundsSufficient = availableBalance >= upcomingCardSettlements;
+  // 3. 各クレジットカードの未精算明細と次回引き落とし予定額の動的集計
+  const cardSummaries = creditCards.map((pm) => {
+    const cardUnsettledTxs = transactions.filter(
+      (t) =>
+        !t.isSettled &&
+        t.type === "expense" &&
+        (t.paymentMethodId === pm.id || (!t.paymentMethodId && t.paymentMethodName === pm.name))
+    );
+
+    const totalAmount = cardUnsettledTxs.reduce((sum, t) => sum + t.amount, 0);
+
+    // 引き落とし日特定
+    const validDates = cardUnsettledTxs
+      .map((t) => t.scheduledWithdrawalDate)
+      .filter((d): d is string => !!d)
+      .sort();
+
+    let nextWithdrawalDate = validDates[0] || null;
+
+    if (!nextWithdrawalDate) {
+      const todayStr = new Date().toISOString().split("T")[0];
+      nextWithdrawalDate = calculateWithdrawalDate(
+        todayStr,
+        pm.closingDay ?? 99,
+        pm.withdrawalDay ?? 27,
+        pm.withdrawalMonthOffset ?? 1
+      );
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const targetDate = new Date(nextWithdrawalDate);
+    targetDate.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((targetDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    // 引き落とし元口座の特定
+    const sourceAccount = accounts.find((a) => a.id === pm.sourceAccountId);
+    const accountBalance = sourceAccount?.balance ?? 0;
+    const accountReserved = sourceAccount?.reservedAmount ?? 0;
+    const accountAvailable = accountBalance - accountReserved;
+
+    // 3段階シグナル判定
+    // sufficient (充足): 引き落とし元口座の実質利用可能残高 >= 予定額
+    // warning (注意): 引き落とし元口座の総残高 >= 予定額 だが 実質利用可能残高 < 予定額 (貯蓄ロック取崩しが必要)
+    // shortage (不足): 引き落とし元口座の総残高 < 予定額 (口座資金自体が不足)
+    let signal: "sufficient" | "warning" | "shortage" = "sufficient";
+    let shortageAmount = 0;
+
+    if (totalAmount > 0) {
+      if (sourceAccount) {
+        if (accountAvailable >= totalAmount) {
+          signal = "sufficient";
+        } else if (accountBalance >= totalAmount) {
+          signal = "warning";
+          shortageAmount = totalAmount - accountAvailable;
+        } else {
+          signal = "shortage";
+          shortageAmount = totalAmount - accountBalance;
+        }
+      } else {
+        // 口座未設定時は全体の availableBalance で判定
+        if (availableBalance >= totalAmount) {
+          signal = "sufficient";
+        } else if (totalAssets >= totalAmount) {
+          signal = "warning";
+          shortageAmount = totalAmount - availableBalance;
+        } else {
+          signal = "shortage";
+          shortageAmount = totalAmount - totalAssets;
+        }
+      }
+    }
+
+    return {
+      paymentMethod: pm,
+      unsettledCount: cardUnsettledTxs.length,
+      totalAmount,
+      nextWithdrawalDate,
+      diffDays,
+      sourceAccount,
+      accountBalance,
+      accountAvailable,
+      signal,
+      shortageAmount,
+    };
+  });
+
+  // クレカ全体の未精算総額
+  const totalCardSettlements = cardSummaries.reduce((sum, c) => sum + c.totalAmount, 0);
+
+  // 全体シグナル (最も危険度の高いシグナルを採用)
+  const overallSignal: "sufficient" | "warning" | "shortage" = cardSummaries.some(
+    (c) => c.signal === "shortage"
+  )
+    ? "shortage"
+    : cardSummaries.some((c) => c.signal === "warning")
+    ? "warning"
+    : "sufficient";
+
+  // 現在表示対象のカード情報
+  const activeCardIdx = Math.min(selectedCardIdx, Math.max(0, cardSummaries.length - 1));
+  const activeCardSummary = cardSummaries[activeCardIdx] || null;
 
   // 4. 費目別の支出比率の集計
   const expenseByCategory = transactions
@@ -78,33 +193,161 @@ export function DashboardTab({
         </div>
 
         {/* クレジットカード引き落とし予定 アラートカード */}
-        <div className="p-5 bg-gradient-to-br from-app-surface to-app-subtle border border-primary-border border-l-4 border-l-primary rounded-2xl shadow-sm flex flex-col justify-between sm:col-span-2 lg:col-span-1">
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-bold text-primary flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4" />
-              <span>{t.dashboard.upcomingCardSettlement}</span>
+        <div
+          className={`p-5 bg-gradient-to-br from-app-surface to-app-subtle border border-l-4 rounded-2xl shadow-sm flex flex-col justify-between sm:col-span-2 lg:col-span-1 ${
+            overallSignal === "shortage"
+              ? "border-rose-300 dark:border-rose-900/60 border-l-rose-500"
+              : overallSignal === "warning"
+              ? "border-amber-300 dark:border-amber-900/60 border-l-amber-500"
+              : "border-primary-border border-l-primary"
+          }`}
+        >
+          {/* 上部ヘッダー & シグナルバッジ */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-xs font-bold text-primary flex items-center gap-1.5 truncate">
+              <ShieldCheck className="w-4 h-4 shrink-0" />
+              <span className="truncate">{t.dashboard.upcomingCardSettlement}</span>
             </div>
-            {isFundsSufficient ? (
-              <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 px-2 py-0.5 rounded-full">
-                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+
+            {/* 3段階シグナルバッジ */}
+            {overallSignal === "sufficient" ? (
+              <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 px-2 py-0.5 rounded-full shrink-0">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                 {t.dashboard.fundsReady}
               </span>
+            ) : overallSignal === "warning" ? (
+              <span
+                className="flex items-center gap-1 text-[11px] font-bold text-amber-800 bg-amber-100 dark:bg-amber-950/50 dark:text-amber-300 px-2 py-0.5 rounded-full shrink-0"
+                title="貯蓄ロック枠の取崩しが必要です"
+              >
+                <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                注意 (貯蓄枠取崩)
+              </span>
             ) : (
-              <span className="flex items-center gap-1 text-[11px] font-bold text-danger bg-danger-light px-2 py-0.5 rounded-full">
+              <span
+                className="flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300 px-2 py-0.5 rounded-full shrink-0"
+                title="口座残高が不足しています"
+              >
+                <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
                 {t.dashboard.fundsShortage}
               </span>
             )}
           </div>
 
-          <div className="my-2">
-            <div className="text-xs text-content-muted">楽天カード (三井住友銀行)</div>
-            <div className="font-display text-2xl font-extrabold text-content-main mt-0.5">
-              {formatCurrency(upcomingCardSettlements > 0 ? upcomingCardSettlements : 85420)}
-            </div>
-          </div>
+          {/* メイン詳細部 */}
+          {activeCardSummary ? (
+            <div className="my-2">
+              <div className="flex items-center justify-between text-xs text-content-muted">
+                <span className="font-semibold truncate">
+                  {activeCardSummary.paymentMethod.name}
+                  {activeCardSummary.sourceAccount
+                    ? ` (${activeCardSummary.sourceAccount.name})`
+                    : " (引落口座未設定)"}
+                </span>
+                {cardSummaries.length > 1 && (
+                  <span className="text-[10px] text-content-subtle shrink-0">
+                    {activeCardIdx + 1}/{cardSummaries.length}
+                  </span>
+                )}
+              </div>
 
-          <div className="text-[11px] text-content-subtle">
-            口座引落まであと <b>5日</b>
+              <div className="font-display text-2xl font-extrabold text-content-main mt-0.5 flex items-baseline gap-2">
+                <span>{formatCurrency(activeCardSummary.totalAmount)}</span>
+                {cardSummaries.length > 1 &&
+                  totalCardSettlements !== activeCardSummary.totalAmount && (
+                    <span className="text-[11px] font-medium text-content-muted">
+                      (全カード計: {formatCurrency(totalCardSettlements)})
+                    </span>
+                  )}
+              </div>
+
+              {/* 口座突合状態の補助テキスト */}
+              {activeCardSummary.totalAmount > 0 && activeCardSummary.sourceAccount && (
+                <div className="text-[11px] mt-1">
+                  {activeCardSummary.signal === "sufficient" ? (
+                    <span className="text-emerald-700 dark:text-emerald-400">
+                      利用可能残高 {formatCurrency(activeCardSummary.accountAvailable)} (原資充足)
+                    </span>
+                  ) : activeCardSummary.signal === "warning" ? (
+                    <span className="text-amber-700 dark:text-amber-400">
+                      総残高は充足。貯蓄ロック枠からあと <b>{formatCurrency(activeCardSummary.shortageAmount)}</b> の充当が必要
+                    </span>
+                  ) : (
+                    <span className="text-rose-600 dark:text-rose-400 font-semibold">
+                      口座残高があと <b>{formatCurrency(activeCardSummary.shortageAmount)}</b> 不足しています
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="my-2 py-1 text-center">
+              <div className="font-display text-2xl font-extrabold text-content-main">
+                {formatCurrency(0)}
+              </div>
+              <p className="text-xs text-content-muted mt-1">
+                {creditCards.length === 0
+                  ? "クレジットカード未登録"
+                  : "未精算のカード利用はありません"}
+              </p>
+            </div>
+          )}
+
+          {/* 下部: カウントダウン & 複数カード切替ピル */}
+          <div className="pt-2 border-t border-border/50 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-[11px] text-content-subtle">
+              {activeCardSummary ? (
+                <>
+                  <span>
+                    {activeCardSummary.diffDays === 0 ? (
+                      <b className="text-primary">本日引き落とし日</b>
+                    ) : activeCardSummary.diffDays > 0 ? (
+                      <>
+                        口座引落まであと <b>{activeCardSummary.diffDays}日</b> (
+                        {activeCardSummary.nextWithdrawalDate})
+                      </>
+                    ) : (
+                      <span className="text-rose-600 font-semibold">
+                        引落予定日経過 ({Math.abs(activeCardSummary.diffDays)}日前:{" "}
+                        {activeCardSummary.nextWithdrawalDate})
+                      </span>
+                    )}
+                  </span>
+                  <span>未精算 {activeCardSummary.unsettledCount}件</span>
+                </>
+              ) : (
+                <span>引き落とし予定なし</span>
+              )}
+            </div>
+
+            {/* 複数クレジットカード登録時のセレクターピル */}
+            {cardSummaries.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pt-1 no-scrollbar">
+                {cardSummaries.map((c, idx) => (
+                  <button
+                    key={c.paymentMethod.id}
+                    onClick={() => setSelectedCardIdx(idx)}
+                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold shrink-0 transition-all flex items-center gap-1 cursor-pointer ${
+                      activeCardIdx === idx
+                        ? "bg-primary text-white shadow-2xs"
+                        : "bg-app-surface text-content-muted border border-border hover:text-content-main"
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        c.signal === "shortage"
+                          ? "bg-rose-500"
+                          : c.signal === "warning"
+                          ? "bg-amber-500"
+                          : "bg-emerald-500"
+                      }`}
+                    />
+                    <span>{c.paymentMethod.name}</span>
+                    <span className="opacity-80">({formatCurrency(c.totalAmount)})</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
