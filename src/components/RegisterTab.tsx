@@ -52,10 +52,16 @@ export function RegisterTab({
   const [incomeAccountId, setIncomeAccountId] = useState(accounts[0]?.id || "");
   const [isTemporaryIncome, setIsTemporaryIncome] = useState(false);
 
-  // 一括登録用の行データ
+  // 一括登録用の行データ (同店舗一括)
   const [batchRows, setBatchRows] = useState([
     { categoryId: "", amount: "", note: "" },
     { categoryId: "", amount: "", note: "" },
+  ]);
+
+  // 一括登録用の行データ (同費目一括)
+  const [categoryBatchRows, setCategoryBatchRows] = useState([
+    { date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
+    { date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
   ]);
 
   // 一時保存ドラフト状態 (手動 / 自動)
@@ -117,6 +123,7 @@ export function RegisterTab({
       if (p.grossAmount !== undefined) setGrossAmount(p.grossAmount);
       if (p.taxDeduction !== undefined) setTaxDeduction(p.taxDeduction);
       if (p.batchRows && Array.isArray(p.batchRows)) setBatchRows(p.batchRows);
+      if (p.categoryBatchRows && Array.isArray(p.categoryBatchRows)) setCategoryBatchRows(p.categoryBatchRows);
 
       if (draft.formType) setFormMode(draft.formType);
       if (p.grossAmount || p.taxDeduction) {
@@ -169,7 +176,15 @@ export function RegisterTab({
   // 2秒デバウンス自動一時保存
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    if (shopName || amount || note || grossAmount) {
+    const hasData =
+      shopName ||
+      amount ||
+      note ||
+      grossAmount ||
+      (formMode === "shop_batch" && batchRows.some((r) => r.amount || r.note)) ||
+      (formMode === "category_batch" && categoryBatchRows.some((r) => r.shopName || r.amount || r.note));
+
+    if (hasData) {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = setTimeout(async () => {
         try {
@@ -190,6 +205,7 @@ export function RegisterTab({
                 grossAmount,
                 taxDeduction,
                 batchRows,
+                categoryBatchRows,
               },
             }),
           });
@@ -202,7 +218,21 @@ export function RegisterTab({
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [date, shopName, amount, categoryId, paymentMethodId, toAccountId, isSavingsOrInvestmentCategory, note, grossAmount, taxDeduction, formMode, batchRows]);
+  }, [
+    date,
+    shopName,
+    amount,
+    categoryId,
+    paymentMethodId,
+    toAccountId,
+    isSavingsOrInvestmentCategory,
+    note,
+    grossAmount,
+    taxDeduction,
+    formMode,
+    batchRows,
+    categoryBatchRows,
+  ]);
 
   // 手動一時保存
   const handleManualDraft = async () => {
@@ -224,6 +254,7 @@ export function RegisterTab({
             grossAmount,
             taxDeduction,
             batchRows,
+            categoryBatchRows,
           },
         }),
       });
@@ -281,18 +312,39 @@ export function RegisterTab({
             note,
           },
         ];
+      } else if (formMode === "category_batch") {
+        const validRows = categoryBatchRows.filter((r) => r.amount && parseInt(r.amount, 10) > 0);
+        if (validRows.length === 0) {
+          onTriggerToast("金額が入力された行がありません");
+          setIsSubmitting(false);
+          return;
+        }
+        payload = validRows.map((r) => ({
+          type: "expense",
+          date: r.date || date,
+          amount: parseInt(r.amount, 10),
+          categoryId,
+          paymentMethodId,
+          toAccountId: isSavingsOrInvestmentCategory ? toAccountId : undefined,
+          shopName: r.shopName || selectedCategoryObj?.name || "支出",
+          note: r.note,
+        }));
       } else {
-        payload = batchRows
-          .filter((r) => r.amount && parseInt(r.amount, 10) > 0)
-          .map((r) => ({
-            type: "expense",
-            date,
-            amount: parseInt(r.amount, 10),
-            categoryId: r.categoryId || categoryId,
-            paymentMethodId,
-            shopName,
-            note: r.note,
-          }));
+        const validRows = batchRows.filter((r) => r.amount && parseInt(r.amount, 10) > 0);
+        if (validRows.length === 0) {
+          onTriggerToast("金額が入力された行がありません");
+          setIsSubmitting(false);
+          return;
+        }
+        payload = validRows.map((r) => ({
+          type: "expense",
+          date,
+          amount: parseInt(r.amount, 10),
+          categoryId: r.categoryId || categoryId,
+          paymentMethodId,
+          shopName: shopName || "支出",
+          note: r.note,
+        }));
       }
 
       const res = await fetch("/api/transactions", {
@@ -306,6 +358,17 @@ export function RegisterTab({
         setManualDraft(null);
         setAutoDraft(null);
         setIsDraftRestored(false);
+        setAmount("");
+        setShopName("");
+        setNote("");
+        setBatchRows([
+          { categoryId: "", amount: "", note: "" },
+          { categoryId: "", amount: "", note: "" },
+        ]);
+        setCategoryBatchRows([
+          { date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
+          { date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
+        ]);
 
         onTriggerToast(`✓ ${payload.length}件のデータを登録しました！`);
         onSubmitSuccess();
@@ -318,6 +381,36 @@ export function RegisterTab({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const getDraftSummary = (draft: DraftData) => {
+    const p = draft.payloadJson;
+    if (!p) return "未設定";
+    if (draft.formType === "category_batch") {
+      const catName = categories.find((c) => c.id === p.categoryId)?.name || "費目一括";
+      const count = Array.isArray(p.categoryBatchRows)
+        ? p.categoryBatchRows.filter((r: any) => r.amount).length
+        : 0;
+      const total = Array.isArray(p.categoryBatchRows)
+        ? p.categoryBatchRows.reduce(
+            (sum: number, r: any) => sum + (parseInt(r.amount, 10) || 0),
+            0
+          )
+        : 0;
+      return `${catName}一括 • ${count}件 (${formatCurrency(total)})`;
+    }
+    if (draft.formType === "shop_batch") {
+      const shop = p.shopName || "店舗一括";
+      const count = Array.isArray(p.batchRows) ? p.batchRows.filter((r: any) => r.amount).length : 0;
+      const total = Array.isArray(p.batchRows)
+        ? p.batchRows.reduce(
+            (sum: number, r: any) => sum + (parseInt(r.amount, 10) || 0),
+            0
+          )
+        : 0;
+      return `${shop} • ${count}品目 (${formatCurrency(total)})`;
+    }
+    return `${p.shopName || "名称未設定"} • ${p.amount ? formatCurrency(parseInt(p.amount, 10)) : "金額未入力"}`;
   };
 
   return (
@@ -345,7 +438,7 @@ export function RegisterTab({
                     </span>
                   </div>
                   <div className="text-[11px] text-content-muted mt-1 truncate">
-                    {manualDraft.payloadJson?.shopName || "名称未設定"} • {manualDraft.payloadJson?.amount ? formatCurrency(parseInt(manualDraft.payloadJson.amount, 10)) : "金額未入力"}
+                    {getDraftSummary(manualDraft)}
                   </div>
                 </div>
 
@@ -383,7 +476,7 @@ export function RegisterTab({
                     </span>
                   </div>
                   <div className="text-[11px] text-content-muted mt-1 truncate">
-                    {autoDraft.payloadJson?.shopName || "名称未設定"} • {autoDraft.payloadJson?.amount ? formatCurrency(parseInt(autoDraft.payloadJson.amount, 10)) : "金額未入力"}
+                    {getDraftSummary(autoDraft)}
                   </div>
                 </div>
 
@@ -479,53 +572,57 @@ export function RegisterTab({
         )}
 
         <form onSubmit={handlePreSubmit} className="flex flex-col gap-4">
-          {/* 日付入力 */}
-          <div>
-            <label className="block text-xs font-bold text-content-muted mb-1 flex items-center gap-1">
-              <span>{t.register.date}</span>
-              <HelpTooltip text={t.register.dateTooltip} />
-            </label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs font-medium focus:border-primary outline-none"
-              required
-            />
-          </div>
+          {/* 日付入力 (single または shop_batch または income の場合) */}
+          {!(entryType === "expense" && formMode === "category_batch") && (
+            <div>
+              <label className="block text-xs font-bold text-content-muted mb-1 flex items-center gap-1">
+                <span>{t.register.date}</span>
+                <HelpTooltip text={t.register.dateTooltip} />
+              </label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs font-medium focus:border-primary outline-none"
+                required
+              />
+            </div>
+          )}
 
           {/* 支出フォーム */}
           {entryType === "expense" ? (
             <>
-              {/* 店舗名 ＆ 機械的サジェスト */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-bold text-content-muted flex items-center gap-1">
-                    <span>{t.register.shopName}</span>
-                    <HelpTooltip text={t.register.shopTooltip} />
-                  </label>
-                </div>
-                <input
-                  type="text"
-                  placeholder="例: セブンイレブン, マルエツ, SBI証券"
-                  value={shopName}
-                  onChange={(e) => handleShopNameChange(e.target.value)}
-                  className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs font-medium focus:border-primary outline-none"
-                />
-
-                {showSuggest && (
-                  <div
-                    onClick={applySuggestion}
-                    className="mt-1.5 p-2.5 bg-primary-light border border-primary-border rounded-xl flex items-center justify-between cursor-pointer hover:bg-primary/20 transition-colors"
-                  >
-                    <div className="flex items-center gap-2 text-xs text-primary font-bold">
-                      <Sparkles className="w-4 h-4" />
-                      <span>{t.register.suggestPrompt} 「食費」 / 「PayPay」</span>
-                    </div>
-                    <span className="text-xs font-bold text-primary">{t.register.applySuggest}</span>
+              {/* 店舗名 ＆ 機械的サジェスト (single または shop_batch のみ) */}
+              {formMode !== "category_batch" && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-content-muted flex items-center gap-1">
+                      <span>{t.register.shopName}</span>
+                      <HelpTooltip text={t.register.shopTooltip} />
+                    </label>
                   </div>
-                )}
-              </div>
+                  <input
+                    type="text"
+                    placeholder="例: セブンイレブン, マルエツ, SBI証券"
+                    value={shopName}
+                    onChange={(e) => handleShopNameChange(e.target.value)}
+                    className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs font-medium focus:border-primary outline-none"
+                  />
+
+                  {showSuggest && (
+                    <div
+                      onClick={applySuggestion}
+                      className="mt-1.5 p-2.5 bg-primary-light border border-primary-border rounded-xl flex items-center justify-between cursor-pointer hover:bg-primary/20 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 text-xs text-primary font-bold">
+                        <Sparkles className="w-4 h-4" />
+                        <span>{t.register.suggestPrompt} 「食費」 / 「PayPay」</span>
+                      </div>
+                      <span className="text-xs font-bold text-primary">{t.register.applySuggest}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 金額・費目・決済手段 */}
               {formMode === "single" && (
@@ -627,14 +724,37 @@ export function RegisterTab({
               {/* 同店舗一括登録モード */}
               {formMode === "shop_batch" && (
                 <div className="flex flex-col gap-3 border-t border-border pt-3">
-                  <div className="text-xs font-bold text-content-main flex items-center justify-between">
-                    <span>{t.register.batchItemsTitle}</span>
+                  <div>
+                    <label className="block text-xs font-bold text-content-muted mb-1 flex items-center gap-1">
+                      <span>{t.register.paymentMethod}</span>
+                      <HelpTooltip text={t.register.paymentMethodTooltip} />
+                    </label>
+                    <select
+                      value={paymentMethodId}
+                      onChange={(e) => setPaymentMethodId(e.target.value)}
+                      className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs font-medium focus:border-primary outline-none cursor-pointer"
+                    >
+                      {paymentMethods.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="text-xs font-bold text-content-main flex items-center justify-between mt-1">
+                    <div className="flex items-center gap-2">
+                      <span>{t.register.batchItemsTitle}</span>
+                      <span className="text-[11px] font-normal text-content-subtle">
+                        ({batchRows.filter((r) => r.amount && parseInt(r.amount, 10) > 0).length}品目入力中)
+                      </span>
+                    </div>
                     <button
                       type="button"
                       onClick={() =>
                         setBatchRows([...batchRows, { categoryId: "", amount: "", note: "" }])
                       }
-                      className="text-xs text-primary font-bold flex items-center gap-1 cursor-pointer"
+                      className="text-xs text-primary font-bold flex items-center gap-1 cursor-pointer hover:underline"
                     >
                       <Plus className="w-3.5 h-3.5" /> {t.register.addRow}
                     </button>
@@ -668,12 +788,12 @@ export function RegisterTab({
                           newRows[idx].amount = e.target.value.replace(/[^0-9]/g, "");
                           setBatchRows(newRows);
                         }}
-                        className="w-1/3 px-2.5 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs font-bold"
+                        className="w-1/3 px-2.5 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs font-bold text-right"
                       />
 
                       <input
                         type="text"
-                        placeholder="メモ"
+                        placeholder="メモ・品名"
                         value={row.note}
                         onChange={(e) => {
                           const newRows = [...batchRows];
@@ -687,13 +807,209 @@ export function RegisterTab({
                         <button
                           type="button"
                           onClick={() => setBatchRows(batchRows.filter((_, i) => i !== idx))}
-                          className="p-1.5 text-content-subtle hover:text-danger cursor-pointer"
+                          className="p-1.5 text-content-subtle hover:text-danger rounded-lg transition-colors cursor-pointer"
+                          title="行を削除"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       )}
                     </div>
                   ))}
+
+                  {/* 店舗一括 合計表示 */}
+                  <div className="flex items-center justify-between p-3 bg-app-subtle border border-border/80 rounded-xl text-xs font-bold text-content-main mt-1">
+                    <span>{t.register.totalBatchAmount || "合計金額"}</span>
+                    <span className="text-base text-primary font-display font-extrabold">
+                      {formatCurrency(
+                        batchRows.reduce((sum, r) => sum + (parseInt(r.amount, 10) || 0), 0)
+                      )}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* 同費目一括登録モード */}
+              {formMode === "category_batch" && (
+                <div className="flex flex-col gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-content-muted mb-1 flex items-center gap-1">
+                        <span>{t.register.category} (固定)</span>
+                        <HelpTooltip text={t.register.categoryTooltip} />
+                      </label>
+                      <select
+                        value={categoryId}
+                        onChange={(e) => setCategoryId(e.target.value)}
+                        className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs font-medium focus:border-primary outline-none cursor-pointer"
+                      >
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.icon} {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-content-muted mb-1 flex items-center gap-1">
+                        <span>{t.register.paymentMethod}</span>
+                        <HelpTooltip text={t.register.paymentMethodTooltip} />
+                      </label>
+                      <select
+                        value={paymentMethodId}
+                        onChange={(e) => setPaymentMethodId(e.target.value)}
+                        className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs font-medium focus:border-primary outline-none cursor-pointer"
+                      >
+                        {paymentMethods.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 貯蓄・投資(NISA・定期預金)選択時の資金移動先口座 */}
+                  {isSavingsOrInvestmentCategory && (
+                    <div className="p-3.5 bg-primary-light/30 border border-primary-border rounded-xl space-y-2 animate-in fade-in duration-150">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
+                        <ArrowRightLeft className="w-4 h-4" />
+                        <span>{t.register.savingsDestAccount}</span>
+                      </div>
+                      <select
+                        value={toAccountId}
+                        onChange={(e) => setToAccountId(e.target.value)}
+                        className="w-full px-3 py-2 bg-app-surface border border-border rounded-lg text-content-main text-xs font-medium focus:border-primary outline-none cursor-pointer"
+                      >
+                        {accounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.icon || "🏦"} {a.name} ({a.type === "nisa_investment" ? "投資信託/NISA" : a.type === "term_deposit" ? "定期預金" : a.type === "bank" ? "銀行口座" : "ウォレット"})
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-content-subtle">
+                        {t.register.savingsDestNotice}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 行リスト */}
+                  <div className="flex flex-col gap-3 border-t border-border pt-3">
+                    <div className="text-xs font-bold text-content-main flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span>{t.register.catBatchItemsTitle}</span>
+                        <span className="text-[11px] font-normal text-content-subtle">
+                          ({categoryBatchRows.filter((r) => r.amount && parseInt(r.amount, 10) > 0).length}件入力中)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCategoryBatchRows([
+                            ...categoryBatchRows,
+                            {
+                              date: categoryBatchRows[categoryBatchRows.length - 1]?.date || date,
+                              shopName: "",
+                              amount: "",
+                              note: "",
+                            },
+                          ])
+                        }
+                        className="text-xs text-primary font-bold flex items-center gap-1 cursor-pointer hover:underline"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> {t.register.addRow}
+                      </button>
+                    </div>
+
+                    {categoryBatchRows.map((row, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 bg-app-subtle border border-border/70 rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-2 transition-all hover:border-primary/40"
+                      >
+                        <div className="flex items-center gap-2 sm:w-36">
+                          <input
+                            type="date"
+                            value={row.date}
+                            onChange={(e) => {
+                              const newRows = [...categoryBatchRows];
+                              newRows[idx].date = e.target.value;
+                              setCategoryBatchRows(newRows);
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs outline-none focus:border-primary"
+                          />
+                        </div>
+
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            placeholder="店舗・取引先名"
+                            value={row.shopName}
+                            onChange={(e) => {
+                              const newRows = [...categoryBatchRows];
+                              newRows[idx].shopName = e.target.value;
+                              setCategoryBatchRows(newRows);
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs outline-none focus:border-primary"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2 sm:w-32">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="金額 (円)"
+                            value={row.amount}
+                            onChange={(e) => {
+                              const newRows = [...categoryBatchRows];
+                              newRows[idx].amount = e.target.value.replace(/[^0-9]/g, "");
+                              setCategoryBatchRows(newRows);
+                            }}
+                            className="w-full px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs font-bold outline-none focus:border-primary text-right"
+                          />
+                        </div>
+
+                        <div className="flex-1 flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="メモ・品名"
+                            value={row.note}
+                            onChange={(e) => {
+                              const newRows = [...categoryBatchRows];
+                              newRows[idx].note = e.target.value;
+                              setCategoryBatchRows(newRows);
+                            }}
+                            className="flex-1 px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs outline-none focus:border-primary"
+                          />
+
+                          {categoryBatchRows.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setCategoryBatchRows(categoryBatchRows.filter((_, i) => i !== idx))
+                              }
+                              className="p-1.5 text-content-subtle hover:text-danger rounded-lg transition-colors cursor-pointer"
+                              title="行を削除"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* 費目一括 合計表示 */}
+                    <div className="flex items-center justify-between p-3 bg-app-subtle border border-border/80 rounded-xl text-xs font-bold text-content-main">
+                      <span>{t.register.totalBatchAmount || "合計金額"}</span>
+                      <span className="text-base text-primary font-display font-extrabold">
+                        {formatCurrency(
+                          categoryBatchRows.reduce(
+                            (acc, r) => acc + (parseInt(r.amount, 10) || 0),
+                            0
+                          )
+                        )}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               )}
             </>
@@ -786,7 +1102,15 @@ export function RegisterTab({
               className="flex-2 py-2.5 px-4 bg-primary text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary-hover active:scale-98 transition-all disabled:opacity-50 cursor-pointer"
             >
               <Check className="w-4 h-4" />
-              <span>{isSubmitting ? t.register.submitting : t.register.submit}</span>
+              <span>
+                {isSubmitting
+                  ? t.register.submitting
+                  : formMode === "category_batch" && entryType === "expense"
+                  ? `${t.register.submit} (${categoryBatchRows.filter((r) => r.amount && parseInt(r.amount, 10) > 0).length}件)`
+                  : formMode === "shop_batch" && entryType === "expense"
+                  ? `${t.register.submit} (${batchRows.filter((r) => r.amount && parseInt(r.amount, 10) > 0).length}件)`
+                  : t.register.submit}
+              </span>
             </button>
           </div>
         </form>

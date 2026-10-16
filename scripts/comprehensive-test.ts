@@ -458,8 +458,87 @@ ${dupCheckDate},${dupCheckShop},${dupCheckAmount},食費,,重複検証用
   const importedTxAfterRevert = txListAfterRevert.json.transactions.find((t: any) => t.shopName === "新規CSVインポート店舗");
   assert(!importedTxAfterRevert, "リバート後にインポート明細が安全に取り消されていることを確認");
 
+  // 12. 同費目一括登録 (category_batch) の一括登録 & 残高・チェックポイント連携テスト
+  console.log("\n--- 12. 同費目一括登録 (category_batch) の一括登録 & 残高連動テスト ---");
+  const targetCategory = ctx.categories.find((c: any) => c.name.includes("食費")) || ctx.categories[0];
+  const cashPmItem = ctx.paymentMethods.find((p: any) => p.type === "cash") || ctx.paymentMethods[0];
+  const preBatchAccRes = await apiFetch("/api/accounts");
+  const preBatchCashAcc = preBatchAccRes.json.accounts.find((a: any) => a.type === "cash");
+  const initialCashBalForBatch = preBatchCashAcc.balance;
+
+  const batchPayload = [
+    {
+      type: "expense",
+      date: "2026-10-14",
+      amount: 1500,
+      categoryId: targetCategory.id,
+      paymentMethodId: cashPmItem.id,
+      shopName: "スーパーライフ（同費目一括テスト1）",
+      note: "野菜・肉",
+    },
+    {
+      type: "expense",
+      date: "2026-10-15",
+      amount: 450,
+      categoryId: targetCategory.id,
+      paymentMethodId: cashPmItem.id,
+      shopName: "セブンイレブン（同費目一括テスト2）",
+      note: "サンドイッチ",
+    },
+    {
+      type: "expense",
+      date: "2026-10-16",
+      amount: 680,
+      categoryId: targetCategory.id,
+      paymentMethodId: cashPmItem.id,
+      shopName: "吉野家（同費目一括テスト3）",
+      note: "牛丼ランチ",
+    },
+  ];
+
+  const batchSubmitRes = await apiFetch("/api/transactions", {
+    method: "POST",
+    body: JSON.stringify(batchPayload),
+  });
+  assert(batchSubmitRes.ok, "同費目一括登録API送信成功 (POST /api/transactions)");
+  assert(batchSubmitRes.json.createdTxIds?.length === 3, "3件の明細IDが返却されたことを確認");
+  const batchCheckpointId = batchSubmitRes.json.checkpointId;
+  assert(!!batchCheckpointId, "単一チェックポイントIDが付与されたことを確認");
+
+  // 現金残高の減額確認 (1500 + 450 + 680 = 2630円)
+  const totalBatchAmt = 1500 + 450 + 680;
+  const postBatchAccRes = await apiFetch("/api/accounts");
+  const postBatchCashAcc = postBatchAccRes.json.accounts.find((a: any) => a.id === preBatchCashAcc.id);
+  assert(
+    postBatchCashAcc.balance === initialCashBalForBatch - totalBatchAmt,
+    `現金残高が一括登録合計額 (${totalBatchAmt}円) 分減額されたことを確認 (${postBatchCashAcc.balance}円 == ${initialCashBalForBatch - totalBatchAmt}円)`
+  );
+
+  // 明細一覧での取得確認
+  const txListAfterBatch = await apiFetch("/api/transactions");
+  const batchTx1 = txListAfterBatch.json.transactions.find((t: any) => t.shopName === "スーパーライフ（同費目一括テスト1）");
+  const batchTx2 = txListAfterBatch.json.transactions.find((t: any) => t.shopName === "セブンイレブン（同費目一括テスト2）");
+  const batchTx3 = txListAfterBatch.json.transactions.find((t: any) => t.shopName === "吉野家（同費目一括テスト3）");
+  assert(!!batchTx1 && batchTx1.amount === 1500 && batchTx1.categoryId === targetCategory.id, "一括明細1の費目・金額一致確認");
+  assert(!!batchTx2 && batchTx2.amount === 450 && batchTx2.categoryId === targetCategory.id, "一括明細2の費目・金額一致確認");
+  assert(!!batchTx3 && batchTx3.amount === 680 && batchTx3.categoryId === targetCategory.id, "一括明細3の費目・金額一致確認");
+
+  // 一括登録のチェックポイントロールバック確認
+  const revertBatchRes = await apiFetch("/api/admin/revert", {
+    method: "POST",
+    body: JSON.stringify({ checkpointId: batchCheckpointId }),
+  });
+  assert(revertBatchRes.ok, "一括登録チェックポイントのロールバック成功 (POST /api/admin/revert)");
+
+  const postRevertAccRes = await apiFetch("/api/accounts");
+  const postRevertCashAcc = postRevertAccRes.json.accounts.find((a: any) => a.id === preBatchCashAcc.id);
+  assert(
+    postRevertCashAcc.balance === initialCashBalForBatch,
+    `リバート後に現金残高が元通り回復したことを確認 (${postRevertCashAcc.balance}円 == ${initialCashBalForBatch}円)`
+  );
+
   console.log("\n==========================================================");
-  console.log("🎉 すべてのテスト（全11カテゴリ・CSV・CRUD・残高整合性）に完全合格しました！");
+  console.log("🎉 すべてのテスト（全12カテゴリ・CSV・CRUD・一括登録・残高整合性）に完全合格しました！");
   console.log("==========================================================");
 }
 
