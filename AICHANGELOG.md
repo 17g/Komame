@@ -2,6 +2,29 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-17] 24時間リバート時の現金・QR・振替受入口座の残高逆算漏れ修正
+
+### 1. 概要
+`src/app/api/admin/revert/route.ts` において、24時間リバート実行時に現金決済（`cash`）やQR決済（`qr_code`）で手元現金口座やウォレットから自動特定・減額された取引、および投資・積立支出（`toAccountId` 指定）で加算された受入残高の逆算減額が漏れていた問題を修正した。
+
+### 2. 変更内容 (Before / After)
+- **Before (`src/app/api/admin/revert/route.ts`)**:
+  - `pm.sourceAccountId` が明示設定されている場合のみ `balance + amount` で逆算復元していた。そのため、`sourceAccountId` が未設定の手元現金決済（`type === 'cash'`）やQRウォレット決済（`type === 'qr_code'`）の取引で減額された口座残高が復元されなかった。
+  - 投資・積立支出（`expense` かつ `toAccountId` 指定）で移動先口座に加算された残高の逆算減額（`- amount`）が実行されず、リバート後も移動先残高が残存していた。
+  - 収入（`income` かつ `toAccountId` 指定）の残高逆算減額も漏れていた。
+- **After (`src/app/api/admin/revert/route.ts`)**:
+  - `tx.isSettled` をチェックし、未決済取引（クレジットカード）は残高逆算をスキップ。
+  - 支出明細（`expense`）において、登録時（`POST /api/transactions`）と同一のフォールバックロジックで手元現金口座（`accounts.type === 'cash'`）およびウォレット口座（`accounts.type === 'prepaid_wallet'`）を自動特定し、出金元口座へ残高を返戻（`balance + amount`）。
+  - 投資・積立支出（`expense` かつ `toAccountId`）について、移動先口座から確実に逆算減額（`balance - amount`）。
+  - 収入明細（`income` かつ `toAccountId`）について、受入口座から逆算減額（`balance - amount`）。
+  - 通常の資金移動（`transfer` かつ `fromAccountId && toAccountId`）について、双方向の残高逆算を実行。
+
+### 3. 変更理由
+- チェックポイント時点への巻き戻し時に、現金・QR決済の減額分が復元されず、また投資・積立先や収入の加算残高が残存してしまう会計ロジック破綻を防ぐため。
+
+### 4. 影響範囲
+- `POST /api/admin/revert` によるチェックポイント巻き戻し処理。
+
 ---
 
 ## [2026-10-17] 資金移動 (transfer) における移動元口座減額漏れバグの修正

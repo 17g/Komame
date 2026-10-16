@@ -45,7 +45,36 @@ export async function POST(req: NextRequest) {
 
     // 3. 残高の逆算復元
     for (const tx of affectedTxs) {
-      if (tx.isSettled) {
+      if (!tx.isSettled) {
+        // 未決済（クレジットカード決済等）は口座残高に影響していないため残高逆算は不要
+        continue;
+      }
+
+      if (tx.type === "transfer") {
+        // 通常の口座間振替の逆戻し (出金元へ戻し、受入先から引く)
+        if (tx.fromAccountId && tx.toAccountId) {
+          await raw.unsafe(`
+            UPDATE "${session.schemaName}".accounts 
+            SET balance = balance + ${tx.amount}
+            WHERE id = '${tx.fromAccountId}'
+          `);
+          await raw.unsafe(`
+            UPDATE "${session.schemaName}".accounts 
+            SET balance = balance - ${tx.amount}
+            WHERE id = '${tx.toAccountId}'
+          `);
+        }
+      } else if (tx.type === "income") {
+        // 収入の逆戻し (受入口座から引く)
+        if (tx.toAccountId) {
+          await raw.unsafe(`
+            UPDATE "${session.schemaName}".accounts 
+            SET balance = balance - ${tx.amount}
+            WHERE id = '${tx.toAccountId}'
+          `);
+        }
+      } else if (tx.type === "expense") {
+        // 1. 決済手段に応じた支払元口座への返戻 (+tx.amount)
         if (tx.paymentMethodId) {
           const [pm] = await db
             .select()
@@ -53,21 +82,39 @@ export async function POST(req: NextRequest) {
             .where(eq(schema.paymentMethods.id, tx.paymentMethodId))
             .limit(1);
 
-          if (pm && pm.sourceAccountId) {
-            // 口座から引かれていた金額を戻す (+amount)
-            await raw.unsafe(`
-              UPDATE "${session.schemaName}".accounts 
-              SET balance = balance + ${tx.amount}
-              WHERE id = '${pm.sourceAccountId}'
-            `);
+          if (pm) {
+            let sourceAccountId = pm.sourceAccountId;
+
+            // 現金決済で引き落とし元が未設定の場合、手元現金口座を自動特定して返戻
+            if (!sourceAccountId && pm.type === "cash") {
+              const [cashAcc] = await db
+                .select()
+                .from(schema.accounts)
+                .where(eq(schema.accounts.type, "cash"))
+                .limit(1);
+              sourceAccountId = cashAcc?.id;
+            } else if (!sourceAccountId && pm.type === "qr_code") {
+              // QR決済で引き落とし元が未設定の場合、プリペイド残高口座を自動特定して返戻
+              const [walletAcc] = await db
+                .select()
+                .from(schema.accounts)
+                .where(eq(schema.accounts.type, "prepaid_wallet"))
+                .limit(1);
+              sourceAccountId = walletAcc?.id;
+            }
+
+            if (sourceAccountId) {
+              await raw.unsafe(`
+                UPDATE "${session.schemaName}".accounts 
+                SET balance = balance + ${tx.amount}
+                WHERE id = '${sourceAccountId}'
+              `);
+            }
           }
-        } else if (tx.type === "transfer" && tx.fromAccountId && tx.toAccountId) {
-          // 口座間移動を逆戻し
-          await raw.unsafe(`
-            UPDATE "${session.schemaName}".accounts 
-            SET balance = balance + ${tx.amount}
-            WHERE id = '${tx.fromAccountId}'
-          `);
+        }
+
+        // 2. 貯蓄・投資等で移動先口座（toAccountId）が指定されていた場合、移動先口座から逆算減額 (-tx.amount)
+        if (tx.toAccountId) {
           await raw.unsafe(`
             UPDATE "${session.schemaName}".accounts 
             SET balance = balance - ${tx.amount}

@@ -32,7 +32,7 @@
 - [x] **1.1 資金移動 (transfer) 時の移動元口座減額漏れバグの修正 (`src/app/api/transactions/route.ts`)**:
   - 現象: `item.toAccountId` が最初に評価され、`item.type === "transfer"` であっても後続の `else if` に入らず、移動元口座 (`fromAccountId`) から減額されず残高が不正増殖する。
   - 対策: `item.type` を最優先で評価する安全な分岐構造に改修。`transfer` 時に `fromAccountId` の減額と `toAccountId` の増額を確実に実行する。
-- [ ] **1.2 24時間リバート時の現金・QR・振替受入口座の残高逆算漏れ修正 (`src/app/api/admin/revert/route.ts`)**:
+- [x] **1.2 24時間リバート時の現金・QR・振替受入口座の残高逆算漏れ修正 (`src/app/api/admin/revert/route.ts`)**:
   - 現象: `pm.sourceAccountId` が明示設定されている場合のみ逆算復元しており、現金（`type === 'cash'`）やQR（`type === 'qr_code'`）で自動減額された取引、および投資振替受入で加算された残高の逆算減額が漏れている。
   - 対策: 登録時と同じフォールバックロジックで対象口座を特定し、残高を完全に元の状態へ巻き戻す処理を実装。
 - [ ] **1.3 投資・積立支出の修正・削除時の受入明細連動処理の安全化**:
