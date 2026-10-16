@@ -120,92 +120,100 @@ export async function POST(req: NextRequest) {
       let scheduledWithdrawalDate: string | null = null;
       let isSettled = false;
 
-      // 決済手段に応じた残高変動と引き落とし予定日の判定
-      if (item.paymentMethodId) {
-        const [pm] = await db
-          .select()
-          .from(schema.paymentMethods)
-          .where(eq(schema.paymentMethods.id, item.paymentMethodId))
-          .limit(1);
+      // 取引種別 (item.type) を最優先で評価し、残高変動と決済判定を実施
+      if (item.type === "transfer") {
+        if (item.fromAccountId) {
+          await raw.unsafe(`
+            UPDATE "${session.schemaName}".accounts 
+            SET balance = balance - ${item.amount}
+            WHERE id = '${item.fromAccountId}'
+          `);
+        }
+        if (item.toAccountId) {
+          await raw.unsafe(`
+            UPDATE "${session.schemaName}".accounts 
+            SET balance = balance + ${item.amount}
+            WHERE id = '${item.toAccountId}'
+          `);
+        }
+        isSettled = true;
+      } else if (item.type === "income") {
+        if (item.toAccountId) {
+          await raw.unsafe(`
+            UPDATE "${session.schemaName}".accounts 
+            SET balance = balance + ${item.amount}
+            WHERE id = '${item.toAccountId}'
+          `);
+          isSettled = true;
+        }
+      } else if (item.type === "expense") {
+        // 決済手段に応じた残高変動と引き落とし予定日の判定
+        if (item.paymentMethodId) {
+          const [pm] = await db
+            .select()
+            .from(schema.paymentMethods)
+            .where(eq(schema.paymentMethods.id, item.paymentMethodId))
+            .limit(1);
 
-        if (pm) {
-          if (pm.type === "credit_card") {
-            scheduledWithdrawalDate = calculateWithdrawalDate(
-              item.date,
-              pm.closingDay || 99,
-              pm.withdrawalDay || 27,
-              pm.withdrawalMonthOffset ?? 1
-            );
-            isSettled = false;
-          } else if (pm.sourceAccountId) {
-            // 引き落とし元口座が明示的に設定されている即時決済
-            await raw.unsafe(`
-              UPDATE "${session.schemaName}".accounts 
-              SET balance = balance - ${item.amount}
-              WHERE id = '${pm.sourceAccountId}'
-            `);
-            isSettled = true;
-          } else if (pm.type === "cash") {
-            // 現金決済で引き落とし元が未設定の場合、手元現金口座を自動特定して減額
-            const [cashAcc] = await db
-              .select()
-              .from(schema.accounts)
-              .where(eq(schema.accounts.type, "cash"))
-              .limit(1);
-            if (cashAcc) {
+          if (pm) {
+            if (pm.type === "credit_card") {
+              scheduledWithdrawalDate = calculateWithdrawalDate(
+                item.date,
+                pm.closingDay || 99,
+                pm.withdrawalDay || 27,
+                pm.withdrawalMonthOffset ?? 1
+              );
+              isSettled = false;
+            } else if (pm.sourceAccountId) {
+              // 引き落とし元口座が明示的に設定されている即時決済
               await raw.unsafe(`
                 UPDATE "${session.schemaName}".accounts 
                 SET balance = balance - ${item.amount}
-                WHERE id = '${cashAcc.id}'
+                WHERE id = '${pm.sourceAccountId}'
               `);
+              isSettled = true;
+            } else if (pm.type === "cash") {
+              // 現金決済で引き落とし元が未設定の場合、手元現金口座を自動特定して減額
+              const [cashAcc] = await db
+                .select()
+                .from(schema.accounts)
+                .where(eq(schema.accounts.type, "cash"))
+                .limit(1);
+              if (cashAcc) {
+                await raw.unsafe(`
+                  UPDATE "${session.schemaName}".accounts 
+                  SET balance = balance - ${item.amount}
+                  WHERE id = '${cashAcc.id}'
+                `);
+              }
+              isSettled = true;
+            } else if (pm.type === "qr_code") {
+              // QR決済で引き落とし元が未設定の場合、プリペイド残高口座を自動特定して減額
+              const [walletAcc] = await db
+                .select()
+                .from(schema.accounts)
+                .where(eq(schema.accounts.type, "prepaid_wallet"))
+                .limit(1);
+              if (walletAcc) {
+                await raw.unsafe(`
+                  UPDATE "${session.schemaName}".accounts 
+                  SET balance = balance - ${item.amount}
+                  WHERE id = '${walletAcc.id}'
+                `);
+              }
+              isSettled = true;
             }
-            isSettled = true;
-          } else if (pm.type === "qr_code") {
-            // QR決済で引き落とし元が未設定の場合、プリペイド残高口座を自動特定して減額
-            const [walletAcc] = await db
-              .select()
-              .from(schema.accounts)
-              .where(eq(schema.accounts.type, "prepaid_wallet"))
-              .limit(1);
-            if (walletAcc) {
-              await raw.unsafe(`
-                UPDATE "${session.schemaName}".accounts 
-                SET balance = balance - ${item.amount}
-                WHERE id = '${walletAcc.id}'
-              `);
-            }
-            isSettled = true;
           }
         }
-      }
 
-      // 貯蓄・投資等の資金移動先口座（toAccountId）への残高加算
-      if (item.toAccountId) {
-        await raw.unsafe(`
-          UPDATE "${session.schemaName}".accounts 
-          SET balance = balance + ${item.amount}
-          WHERE id = '${item.toAccountId}'
-        `);
-        isSettled = true;
-      } else if (item.type === "income" && item.toAccountId) {
-        await raw.unsafe(`
-          UPDATE "${session.schemaName}".accounts 
-          SET balance = balance + ${item.amount}
-          WHERE id = '${item.toAccountId}'
-        `);
-        isSettled = true;
-      } else if (item.type === "transfer" && item.fromAccountId && item.toAccountId) {
-        await raw.unsafe(`
-          UPDATE "${session.schemaName}".accounts 
-          SET balance = balance - ${item.amount}
-          WHERE id = '${item.fromAccountId}'
-        `);
-        await raw.unsafe(`
-          UPDATE "${session.schemaName}".accounts 
-          SET balance = balance + ${item.amount}
-          WHERE id = '${item.toAccountId}'
-        `);
-        isSettled = true;
+        // 貯蓄・投資等で移動先口座（toAccountId）が指定されている場合、移動先口座へ残高加算
+        if (item.toAccountId) {
+          await raw.unsafe(`
+            UPDATE "${session.schemaName}".accounts 
+            SET balance = balance + ${item.amount}
+            WHERE id = '${item.toAccountId}'
+          `);
+        }
       }
 
       // 明細レコード作成 (支出レコード)

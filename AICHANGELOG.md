@@ -4,6 +4,27 @@
 
 ---
 
+## [2026-10-17] 資金移動 (transfer) における移動元口座減額漏れバグの修正
+
+### 1. 概要
+`src/app/api/transactions/route.ts` において、資金移動 (`transfer`) 時に移動元口座 (`fromAccountId`) から残高が減額されず、移動先口座 (`toAccountId`) のみが増額されて残高が不正増殖するバグを修正した。
+
+### 2. 変更内容 (Before / After)
+- **Before (`src/app/api/transactions/route.ts`)**:
+  - `if (item.toAccountId)` が取引種別判定の前に配置されていたため、`item.type === "transfer"` であっても後続の `else if (item.type === "transfer" && item.fromAccountId && item.toAccountId)` に到達せず、`toAccountId` の加算のみが行われていた。
+- **After (`src/app/api/transactions/route.ts`)**:
+  - 取引種別 (`item.type`) を最優先で評価する安全な分岐構造に刷新。
+  - `item.type === "transfer"` の場合、`item.fromAccountId` からの減額と `item.toAccountId` への加算を確実に両方実行し、`isSettled = true` を設定するように修正。
+  - `income`、`expense`（即時決済減額、クレカ引き落とし日計算、投資・積立支出の加算）についても独立して安全に処理される構造に整理。
+
+### 3. 変更理由
+- 資金移動取引において移動元口座の残高が維持されたまま移動先残高が増加し、世帯全体の総資産が不正に増加してしまう会計ロジック破綻を防ぐため。
+
+### 4. 影響範囲
+- `POST /api/transactions` による資金移動登録時の残高更新ロジック。
+
+---
+
 ## [2026-10-17] 仕様書整理 (`for_agent/`) & 既存コード精査 & 実装計画 (`Plan.md`) 策定
 
 ### 1. 概要

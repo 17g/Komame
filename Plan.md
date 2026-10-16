@@ -29,7 +29,7 @@
 ---
 
 ## Phase 1: コアビジネスロジック・残高整合性バグの修正（最優先）
-- [ ] **1.1 資金移動 (transfer) 時の移動元口座減額漏れバグの修正 (`src/app/api/transactions/route.ts`)**:
+- [x] **1.1 資金移動 (transfer) 時の移動元口座減額漏れバグの修正 (`src/app/api/transactions/route.ts`)**:
   - 現象: `item.toAccountId` が最初に評価され、`item.type === "transfer"` であっても後続の `else if` に入らず、移動元口座 (`fromAccountId`) から減額されず残高が不正増殖する。
   - 対策: `item.type` を最優先で評価する安全な分岐構造に改修。`transfer` 時に `fromAccountId` の減額と `toAccountId` の増額を確実に実行する。
 - [ ] **1.2 24時間リバート時の現金・QR・振替受入口座の残高逆算漏れ修正 (`src/app/api/admin/revert/route.ts`)**:
