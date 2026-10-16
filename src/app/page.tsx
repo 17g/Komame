@@ -12,6 +12,7 @@ import { GoalsTab } from "@/components/GoalsTab";
 import { AdminTab } from "@/components/AdminTab";
 import { Toast } from "@/components/Toast";
 import { NotificationBox, NotificationItem } from "@/components/NotificationBox";
+import { LeaveGuardModal } from "@/components/LeaveGuardModal";
 import {
   UserSession,
   AccountItem,
@@ -27,6 +28,40 @@ export default function Home() {
   const [user, setUser] = useState<(UserSession & { householdName: string }) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("dashboard");
+
+  // 入力離脱ガード (未保存警告)
+  const [isRegisterDirty, setIsRegisterDirty] = useState(false);
+  const [pendingTab, setPendingTab] = useState<TabType | null>(null);
+  const [showLeaveGuardModal, setShowLeaveGuardModal] = useState(false);
+
+  const handleTabChange = (targetTab: TabType) => {
+    if (activeTab === targetTab) return;
+    if (activeTab === "register" && isRegisterDirty) {
+      setPendingTab(targetTab);
+      setShowLeaveGuardModal(true);
+      return;
+    }
+    setActiveTab(targetTab);
+  };
+
+  const handleCancelLeave = () => {
+    setShowLeaveGuardModal(false);
+    setPendingTab(null);
+  };
+
+  const handleConfirmLeave = async () => {
+    setShowLeaveGuardModal(false);
+    setIsRegisterDirty(false);
+    try {
+      await fetch("/api/drafts?draftType=auto", { method: "DELETE" });
+    } catch {
+      // ignore
+    }
+    if (pendingTab) {
+      setActiveTab(pendingTab);
+      setPendingTab(null);
+    }
+  };
 
   // アプリデータ
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
@@ -183,6 +218,11 @@ export default function Home() {
 
   // ログアウト実行
   const handleLogout = async () => {
+    if (activeTab === "register" && isRegisterDirty) {
+      if (!window.confirm("入力途中のデータがあります。破棄してログアウトしますか？")) {
+        return;
+      }
+    }
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
     triggerToast("ログアウトしました");
@@ -329,7 +369,7 @@ export default function Home() {
         user={user}
         unreadCount={unreadNotifCount}
         activeTab={activeTab}
-        onChangeTab={setActiveTab}
+        onChangeTab={handleTabChange}
         onOpenNotification={() => setIsNotifOpen(true)}
         onLogout={handleLogout}
         onTriggerToast={triggerToast}
@@ -342,7 +382,7 @@ export default function Home() {
           user={user}
           unreadCount={unreadNotifCount}
           onOpenNotification={() => setIsNotifOpen(true)}
-          onOpenAdmin={() => setActiveTab("admin")}
+          onOpenAdmin={() => handleTabChange("admin")}
           onLogout={handleLogout}
           onTriggerToast={triggerToast}
         />
@@ -353,8 +393,8 @@ export default function Home() {
             <DashboardTab
               accounts={accounts}
               transactions={transactions}
-              onOpenRegister={() => setActiveTab("register")}
-              onOpenAllTransactions={() => setActiveTab("search")}
+              onOpenRegister={() => handleTabChange("register")}
+              onOpenAllTransactions={() => handleTabChange("search")}
             />
           )}
 
@@ -375,9 +415,11 @@ export default function Home() {
               accounts={accounts}
               onSubmitSuccess={() => {
                 fetchAllData();
+                setIsRegisterDirty(false);
                 setActiveTab("dashboard");
               }}
               onTriggerToast={triggerToast}
+              onDirtyChange={setIsRegisterDirty}
             />
           )}
 
@@ -401,7 +443,7 @@ export default function Home() {
         </main>
 
         {/* スマホ・タブレット表示用 ボトムナビゲーション (lg未満) */}
-        <BottomNav activeTab={activeTab} onChangeTab={setActiveTab} />
+        <BottomNav activeTab={activeTab} onChangeTab={handleTabChange} />
 
         {/* アプリ内通知ボックス (画面最上位・全画面オーバーレイ) */}
         <NotificationBox
@@ -416,6 +458,13 @@ export default function Home() {
           message={toastMsg}
           isOpen={isToastOpen}
           onClose={() => setIsToastOpen(false)}
+        />
+
+        {/* 入力離脱時ガード確認モーダル */}
+        <LeaveGuardModal
+          isOpen={showLeaveGuardModal}
+          onStay={handleCancelLeave}
+          onDiscardAndLeave={handleConfirmLeave}
         />
       </div>
     </div>

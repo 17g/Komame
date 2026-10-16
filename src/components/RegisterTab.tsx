@@ -13,6 +13,7 @@ interface RegisterTabProps {
   accounts?: AccountItem[];
   onSubmitSuccess: () => void;
   onTriggerToast: (msg: string) => void;
+  onDirtyChange?: (isDirty: boolean) => void;
 }
 
 interface DraftData {
@@ -29,6 +30,7 @@ export function RegisterTab({
   accounts = [],
   onSubmitSuccess,
   onTriggerToast,
+  onDirtyChange,
 }: RegisterTabProps) {
   const { t } = useTranslation();
 
@@ -173,18 +175,54 @@ export function RegisterTab({
     onTriggerToast("💡 過去の利用から費目と決済手段を適用しました");
   };
 
+  // フォームに入力途中の値があるかどうかの判定 (未保存変更の検出)
+  const hasEnteredData = Boolean(
+    shopName.trim() ||
+    amount.trim() ||
+    note.trim() ||
+    grossAmount.trim() ||
+    taxDeduction.trim() ||
+    (formMode === "shop_batch" &&
+      batchRows.some((r) => r.amount.trim() !== "" || r.note.trim() !== "")) ||
+    (formMode === "category_batch" &&
+      categoryBatchRows.some(
+        (r) => r.shopName.trim() !== "" || r.amount.trim() !== "" || r.note.trim() !== ""
+      ))
+  );
+
+  const isFormDirty = !isSubmitting && hasEnteredData;
+
+  // 親コンポーネントに入力状態（未保存変更の有無）を通知
+  useEffect(() => {
+    onDirtyChange?.(isFormDirty);
+  }, [isFormDirty, onDirtyChange]);
+
+  // アンマウント時に入力フラグを解除
+  useEffect(() => {
+    return () => {
+      onDirtyChange?.(false);
+    };
+  }, [onDirtyChange]);
+
+  // 離脱時ガード: ブラウザを閉じようとした場合・リロード時の警告 (beforeunload)
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isFormDirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isFormDirty]);
+
   // 2秒デバウンス自動一時保存
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    const hasData =
-      shopName ||
-      amount ||
-      note ||
-      grossAmount ||
-      (formMode === "shop_batch" && batchRows.some((r) => r.amount || r.note)) ||
-      (formMode === "category_batch" && categoryBatchRows.some((r) => r.shopName || r.amount || r.note));
-
-    if (hasData) {
+    if (hasEnteredData && !isSubmitting) {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = setTimeout(async () => {
         try {
@@ -232,6 +270,8 @@ export function RegisterTab({
     formMode,
     batchRows,
     categoryBatchRows,
+    hasEnteredData,
+    isSubmitting,
   ]);
 
   // 手動一時保存

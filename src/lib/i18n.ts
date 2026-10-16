@@ -130,6 +130,10 @@ export const translations = {
       draftWarningDesc: "以前に手動保存された 一時保存スロットのデータ が存在します。呼び出さずにこのまま新規登録を完了すると、保存されていた下書きデータは消去されます。よろしいですか？",
       returnToRestore: "戻って復元を確認",
       discardAndSubmit: "破棄して登録を完了",
+      leaveWarningTitle: "未保存の入力データがあります",
+      leaveWarningDesc: "入力途中のデータがあります。この画面を離れると、入力中の内容は破棄されます。本当に移動しますか？",
+      stayOnPage: "入力を続ける",
+      discardAndLeave: "破棄して移動",
     },
     search: {
       allTab: "全明細",
@@ -382,6 +386,10 @@ export const translations = {
       draftWarningDesc: "You have an unrestored draft. Proceeding with this new entry will discard existing draft data. Continue?",
       returnToRestore: "Return & View Draft",
       discardAndSubmit: "Discard Draft & Save",
+      leaveWarningTitle: "Unsaved Changes",
+      leaveWarningDesc: "You have unsaved changes. Leaving this page will discard your entered data. Are you sure you want to leave?",
+      stayOnPage: "Continue Editing",
+      discardAndLeave: "Discard & Leave",
     },
     search: {
       allTab: "All Transactions",
