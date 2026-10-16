@@ -277,6 +277,59 @@ async function runComprehensiveTest() {
   assert(finalBankAcc.balance === initialBankBalance - investAmount, `出金元銀行口座から減額 (${initialBankBalance}円 -> ${finalBankAcc.balance}円)`);
   assert(finalNisaAcc.balance === initialNisaBalance + investAmount, `移動先NISA口座に残高加算 (${initialNisaBalance}円 -> ${finalNisaAcc.balance}円)`);
 
+  // 8.1 投資明細の金額変更 (PUT) 時の双方向残高同期 & 受入明細連動更新テスト
+  console.log("\n--- 8.1 投資支出明細の修正 & 連動受入明細更新テスト ---");
+  const parentInvestTxId = investTxRes.json.createdTxIds[0];
+  const linkedIncomeTxId = investTxRes.json.createdTxIds[1];
+  const updatedInvestAmount = 25000;
+
+  const updateInvestRes = await apiFetch("/api/transactions", {
+    method: "PUT",
+    body: JSON.stringify({
+      id: parentInvestTxId,
+      amount: updatedInvestAmount,
+      categoryId: investCat.id,
+      paymentMethodId: debitPm.id,
+      toAccountId: nisaAcc?.id,
+      shopName: "SBI証券（積立増額）",
+      note: "増額設定",
+    }),
+  });
+  assert(updateInvestRes.ok, "投資支出明細の更新成功 (PUT)");
+
+  const accAfterUpdateInvest = await apiFetch("/api/accounts");
+  const bankAfterUpdate = accAfterUpdateInvest.json.accounts.find((a: any) => a.id === mainBank.id);
+  const nisaAfterUpdate = accAfterUpdateInvest.json.accounts.find((a: any) => a.id === nisaAcc?.id);
+
+  assert(bankAfterUpdate.balance === initialBankBalance - updatedInvestAmount, `出金元銀行口座が新金額 (${updatedInvestAmount}円) で正しく減額同期 (${bankAfterUpdate.balance}円)`);
+  assert(nisaAfterUpdate.balance === initialNisaBalance + updatedInvestAmount, `移動先NISA口座が新金額 (${updatedInvestAmount}円) で正しく増額同期 (${nisaAfterUpdate.balance}円)`);
+
+  const txListRes = await apiFetch("/api/transactions");
+  const linkedTxInDb = txListRes.json.transactions.find((t: any) => t.id === linkedIncomeTxId || t.parentTransactionId === parentInvestTxId);
+  assert(!!linkedTxInDb, "連動受入明細が存在することを確認");
+  assert(linkedTxInDb.amount === updatedInvestAmount, `連動受入明細の金額も自動的に更新されていることを確認 (${linkedTxInDb.amount}円 == ${updatedInvestAmount}円)`);
+
+  // 8.2 投資明細の削除 (DELETE) 時の残高完全復元 & 連動受入明細の自動削除テスト
+  console.log("\n--- 8.2 投資支出明細の削除 & 連動受入明細削除テスト ---");
+  const deleteInvestRes = await apiFetch(`/api/transactions?id=${parentInvestTxId}`, {
+    method: "DELETE",
+  });
+  assert(deleteInvestRes.ok, "投資親明細の削除成功 (DELETE)");
+
+  const accAfterDeleteInvest = await apiFetch("/api/accounts");
+  const bankAfterDel = accAfterDeleteInvest.json.accounts.find((a: any) => a.id === mainBank.id);
+  const nisaAfterDel = accAfterDeleteInvest.json.accounts.find((a: any) => a.id === nisaAcc?.id);
+
+  assert(bankAfterDel.balance === initialBankBalance, `出金元銀行口座の残高が初期値に完全回復 (${bankAfterDel.balance}円 == ${initialBankBalance}円)`);
+  assert(nisaAfterDel.balance === initialNisaBalance, `移動先NISA口座の残高も初期値に完全回復 (${nisaAfterDel.balance}円 == ${initialNisaBalance}円)`);
+
+  const txListAfterDelRes = await apiFetch("/api/transactions");
+  const parentInList = txListAfterDelRes.json.transactions.find((t: any) => t.id === parentInvestTxId);
+  const linkedInList = txListAfterDelRes.json.transactions.find((t: any) => t.id === linkedIncomeTxId || t.parentTransactionId === parentInvestTxId);
+
+  assert(!parentInList, "親支出明細が一覧から削除されていることを確認");
+  assert(!linkedInList, "連動受入明細も同時に論理削除されていることを確認");
+
   // 9. 一時保存 (手動・自動) & 復元 & 破棄テスト
   console.log("\n--- 9. 一時保存 (ドラフト) 機能テスト ---");
   const saveDraftRes = await apiFetch("/api/drafts", {

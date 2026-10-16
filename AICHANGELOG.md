@@ -2,6 +2,43 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-17] 投資・積立支出の修正・削除時の受入明細連動処理の安全化
+
+### 1. 概要
+貯蓄・投資（`toAccountId` 指定）で作成された支出明細を更新（PUT）または削除（DELETE）した際、受入先口座の残高同期ロールバックおよび自動生成された受入振替明細（`type === "transfer"`）のペア更新・連動削除を安全に実行する処理を実装した。
+
+### 2. 変更内容 (Before / After)
+- **Before (`src/app/api/transactions/route.ts` 等)**:
+  - 支出明細の登録時、受入明細（`type === "transfer"`）に親明細との紐付け情報が保存されていなかった。
+  - 投資・積立支出明細を更新（PUT）した際、出金元の残高変更のみが計算され、受入先口座（`toAccountId`）の残高調整や受入振替明細の内容更新（金額・日付・店名等）が一切連動していなかった。
+  - 投資・積立支出明細を削除（DELETE）した際、出金元口座の残高は復元されるものの、受入先口座に加算された残高が減額されず、受入振替明細も論理削除されずに孤立して残っていた。
+- **After (`src/app/api/transactions/route.ts`, `src/db/schema/tenant.ts`, `src/db/migrate.ts`)**:
+  - `transactions` テーブルに `parent_transaction_id` カラムを追加し、投資・積立支出登録時に受入明細へ親支出明細のID（`parentTransactionId: txId`）を確実に設定。
+  - **PUT 処理**:
+    1. 旧出金元口座の残高ロールバックと、旧受入先口座からの残高減額ロールバック（`balance - existingTx.amount`）を実行。
+    2. 新出金元口座からの減額と、新受入先口座への新金額加算（`balance + newAmount`）を実行。
+    3. ペア受入明細（`parentTransactionId` 優先、クエリ特定フォールバック）を特定し、金額・日付・受入口座・店名・メモを同期更新。受入先が解除された場合は受入明細を論理削除。
+  - **DELETE 処理**:
+    1. 出金元口座の残高回復を実行。
+    2. 受入先口座から加算されていた残高を減額（`balance - existingTx.amount`）して完全復元。
+    3. ペア受入明細を特定し、同時に論理削除（`deletedAt = NOW()`）および監査ログを記録。
+    4. 受入明細が直接削除された場合も受入先残高を減額し親明細の `toAccountId` を解除。
+  - `EditTransactionModal.tsx` において、`toAccountId` も保持して送信するよう修正。
+  - `scripts/comprehensive-test.ts` に投資支出明細の金額変更（PUT）時の双方向残高同期・受入明細連動テスト、および削除（DELETE）時の残高完全回復・受入明細連動削除テストを追加。
+  - `for_agent/` 配下の仕様書（`03_database_design.md`, `04_api_specifications.md`, `guardrails.md`）を最新化。
+
+### 3. 変更理由
+- 投資・積立支出の修正や削除によって生じる移動先口座の残高不正残存や、受入明細の孤立放置という会計データ破綻を防止し、完全な残高整合性を保証するため。
+
+### 4. 影響範囲
+- `src/app/api/transactions/route.ts` (GET, POST, PUT, DELETE)
+- `src/db/schema/tenant.ts`, `src/db/migrate.ts`, `src/types/index.ts`
+- `src/components/EditTransactionModal.tsx`
+- `scripts/comprehensive-test.ts`
+- `for_agent/` 仕様書群
+
+---
+
 ## [2026-10-17] 24時間リバート時の現金・QR・振替受入口座の残高逆算漏れ修正
 
 ### 1. 概要

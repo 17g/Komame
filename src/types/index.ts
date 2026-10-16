@@ -75,6 +75,7 @@ export interface TransactionItem {
   note?: string;
   isSettled: boolean;
   scheduledWithdrawalDate?: string;
+  parentTransactionId?: string;
   createdAt: string;
 }
 

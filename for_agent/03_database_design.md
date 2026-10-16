@@ -153,6 +153,7 @@ erDiagram
 | `is_settled` | BOOLEAN | DEFAULT FALSE, NOT NULL | 口座減額済フラグ | - |
 | `scheduled_withdrawal_date` | DATE | | カード引き落とし予定日 | - |
 | `checkpoint_id` | VARCHAR(64) | FK(checkpoints.id) SET NULL | チェックポイントID | - |
+| `parent_transaction_id` | VARCHAR(64) | | 親明細ID (投資・積立受入明細のペア紐付け) | - |
 | `deleted_at` | TIMESTAMPTZ | | 削除日時 | **論理削除 (NULL以外で非表示)** |
 | `created_at` | TIMESTAMPTZ | DEFAULT NOW(), NOT NULL | 登録日時 | - |
 | `updated_at` | TIMESTAMPTZ | DEFAULT NOW(), NOT NULL | 更新日時 | - |

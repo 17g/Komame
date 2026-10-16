@@ -40,6 +40,7 @@ export async function GET(req: NextRequest) {
         note: schema.transactions.note,
         isSettled: schema.transactions.isSettled,
         scheduledWithdrawalDate: schema.transactions.scheduledWithdrawalDate,
+        parentTransactionId: schema.transactions.parentTransactionId,
         createdAt: schema.transactions.createdAt,
       })
       .from(schema.transactions)
@@ -270,6 +271,7 @@ export async function POST(req: NextRequest) {
           note: `資金移動受入: ${destAcc?.name || "貯蓄口座"} [${item.note || ""}]`,
           isSettled: true,
           checkpointId,
+          parentTransactionId: txId,
         });
 
         await db.insert(schema.auditLogs).values({
@@ -309,7 +311,7 @@ export async function PUT(req: NextRequest) {
 
   try {
     const { db, schema, raw } = getTenantDb(session.schemaName);
-    const { id, date, amount, categoryId, paymentMethodId, shopName, note } = await req.json();
+    const { id, date, amount, categoryId, paymentMethodId, toAccountId, shopName, note } = await req.json();
 
     if (!id || amount === undefined) {
       return NextResponse.json({ error: "更新パラメータが不足しています。" }, { status: 400 });
@@ -328,8 +330,12 @@ export async function PUT(req: NextRequest) {
 
     const newAmount = parseInt(amount, 10);
     const targetPmId = paymentMethodId || existingTx.paymentMethodId;
+    const targetDate = date || existingTx.date;
+    const targetShopName = shopName !== undefined ? shopName : existingTx.shopName;
+    const targetNote = note !== undefined ? note : existingTx.note;
+    const targetToAccountId = toAccountId !== undefined ? toAccountId : existingTx.toAccountId;
 
-    // 1. 旧明細が即時決済（isSettled）だった場合、旧口座の残高を元に戻す (ロールバック)
+    // 1. 旧明細が即時決済（isSettled）だった場合、旧出金元口座の残高を元に戻す (ロールバック)
     if (existingTx.isSettled && existingTx.paymentMethodId) {
       const [oldPm] = await db
         .select()
@@ -355,7 +361,16 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    // 2. 新しい支払手段に応じた残高減額と決済状態の計算
+    // 2. 旧明細が投資・積立支出（type === "expense" かつ toAccountId）だった場合、旧受入先口座の残高を戻す (減額ロールバック)
+    if (existingTx.type === "expense" && existingTx.toAccountId) {
+      await raw.unsafe(`
+        UPDATE "${session.schemaName}".accounts 
+        SET balance = balance - ${existingTx.amount}
+        WHERE id = '${existingTx.toAccountId}'
+      `);
+    }
+
+    // 3. 新しい支払手段に応じた残高減額と決済状態の計算
     let isSettled = false;
     let scheduledWithdrawalDate: string | null = null;
 
@@ -370,7 +385,7 @@ export async function PUT(req: NextRequest) {
         if (newPm.type === "credit_card") {
           // クレジットカード: 即時決済せず、引き落とし予定日を計算
           scheduledWithdrawalDate = calculateWithdrawalDate(
-            date || existingTx.date,
+            targetDate,
             newPm.closingDay || 99,
             newPm.withdrawalDay || 27,
             newPm.withdrawalMonthOffset ?? 1
@@ -399,16 +414,147 @@ export async function PUT(req: NextRequest) {
       }
     }
 
-    // 更新実行
+    // 4. 投資・積立支出の移動先口座残高加算 & 連動受入明細の更新/作成/削除
+    if (existingTx.type === "expense") {
+      // ペア受入明細の特定 (1. parentTransactionId 検索、2. クエリ特定フォールバック)
+      let [linkedTx] = await db
+        .select()
+        .from(schema.transactions)
+        .where(
+          and(
+            eq(schema.transactions.parentTransactionId, existingTx.id),
+            isNull(schema.transactions.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!linkedTx && existingTx.toAccountId) {
+        const candidates = await db
+          .select()
+          .from(schema.transactions)
+          .where(
+            and(
+              eq(schema.transactions.type, "transfer"),
+              eq(schema.transactions.toAccountId, existingTx.toAccountId),
+              eq(schema.transactions.date, existingTx.date),
+              eq(schema.transactions.amount, existingTx.amount),
+              isNull(schema.transactions.deletedAt)
+            )
+          )
+          .limit(1);
+        linkedTx = candidates[0];
+      }
+
+      if (targetToAccountId) {
+        // 新移動先口座へ残高加算
+        await raw.unsafe(`
+          UPDATE "${session.schemaName}".accounts 
+          SET balance = balance + ${newAmount}
+          WHERE id = '${targetToAccountId}'
+        `);
+
+        if (linkedTx) {
+          // 既存受入明細の更新
+          await db
+            .update(schema.transactions)
+            .set({
+              amount: newAmount,
+              date: targetDate,
+              toAccountId: targetToAccountId,
+              shopName: `${targetShopName || "積立・投資"} (受入)`,
+              note: `資金移動受入: [${targetNote || ""}]`,
+              parentTransactionId: existingTx.id,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.transactions.id, linkedTx.id));
+
+          await db.insert(schema.auditLogs).values({
+            id: `log_${crypto.randomUUID().replace(/-/g, "")}`,
+            userId: session.userId,
+            operatorUserId: session.userId,
+            action: "UPDATE",
+            entityType: "transaction",
+            entityId: linkedTx.id,
+            summary: `受入振替明細の連動更新 (${existingTx.amount}円 → ${newAmount}円)`,
+            beforeDataJson: linkedTx,
+            afterDataJson: {
+              amount: newAmount,
+              date: targetDate,
+              toAccountId: targetToAccountId,
+              parentTransactionId: existingTx.id,
+            },
+          });
+        } else {
+          // 受入明細がまだ存在しない場合、新規作成
+          const newIncomeTxId = `tx_${crypto.randomUUID().replace(/-/g, "")}`;
+          const [destAcc] = await db
+            .select()
+            .from(schema.accounts)
+            .where(eq(schema.accounts.id, targetToAccountId))
+            .limit(1);
+
+          await db.insert(schema.transactions).values({
+            id: newIncomeTxId,
+            userId: session.userId,
+            type: "transfer",
+            date: targetDate,
+            amount: newAmount,
+            toAccountId: targetToAccountId,
+            shopName: `${targetShopName || "積立・投資"} (受入)`,
+            note: `資金移動受入: ${destAcc?.name || "貯蓄口座"} [${targetNote || ""}]`,
+            isSettled: true,
+            parentTransactionId: existingTx.id,
+            checkpointId: existingTx.checkpointId,
+          });
+
+          await db.insert(schema.auditLogs).values({
+            id: `log_${crypto.randomUUID().replace(/-/g, "")}`,
+            userId: session.userId,
+            operatorUserId: session.userId,
+            action: "CREATE",
+            entityType: "transaction",
+            entityId: newIncomeTxId,
+            summary: `${destAcc?.name || "移動先口座"} への資金移動・積立受入連動作成 (${newAmount}円)`,
+            afterDataJson: {
+              type: "transfer",
+              amount: newAmount,
+              toAccountId: targetToAccountId,
+              parentTransactionId: existingTx.id,
+            },
+            checkpointId: existingTx.checkpointId,
+          });
+        }
+      } else if (linkedTx) {
+        // targetToAccountId が解除された場合、受入明細を論理削除
+        await db
+          .update(schema.transactions)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(eq(schema.transactions.id, linkedTx.id));
+
+        await db.insert(schema.auditLogs).values({
+          id: `log_${crypto.randomUUID().replace(/-/g, "")}`,
+          userId: session.userId,
+          operatorUserId: session.userId,
+          action: "DELETE",
+          entityType: "transaction",
+          entityId: linkedTx.id,
+          summary: `投資・積立先解除に伴う受入明細の連動削除 (${linkedTx.amount}円)`,
+          beforeDataJson: linkedTx,
+        });
+      }
+    }
+
+    // 5. 親明細の更新実行
     await db
       .update(schema.transactions)
       .set({
-        date: date || existingTx.date,
+        date: targetDate,
         amount: newAmount,
         categoryId: categoryId || existingTx.categoryId,
         paymentMethodId: targetPmId,
-        shopName: shopName !== undefined ? shopName : existingTx.shopName,
-        note: note !== undefined ? note : existingTx.note,
+        toAccountId: targetToAccountId || null,
+        shopName: targetShopName,
+        note: targetNote,
         isSettled,
         scheduledWithdrawalDate,
         updatedAt: new Date(),
@@ -423,9 +569,18 @@ export async function PUT(req: NextRequest) {
       action: "UPDATE",
       entityType: "transaction",
       entityId: id,
-      summary: `${shopName || existingTx.shopName || "明細"} の修正 (${existingTx.amount}円 → ${newAmount}円)`,
+      summary: `${targetShopName || "明細"} の修正 (${existingTx.amount}円 → ${newAmount}円)`,
       beforeDataJson: existingTx,
-      afterDataJson: { date, amount: newAmount, categoryId, paymentMethodId: targetPmId, shopName, note, isSettled },
+      afterDataJson: {
+        date: targetDate,
+        amount: newAmount,
+        categoryId,
+        paymentMethodId: targetPmId,
+        toAccountId: targetToAccountId,
+        shopName: targetShopName,
+        note: targetNote,
+        isSettled,
+      },
     });
 
     logger.info({ userId: session.userId, txId: id }, "Transaction updated successfully with balance sync");
@@ -462,7 +617,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "対象の明細が見つかりません。" }, { status: 404 });
     }
 
-    // 即時決済されていた場合は残高を巻き戻し
+    // 1. 出金元口座の残高ロールバック (即時決済されていた場合)
     if (existingTx.isSettled && existingTx.paymentMethodId) {
       const [pm] = await db
         .select()
@@ -488,13 +643,84 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
-    // 論理削除
+    // 2. 投資・積立支出だった場合、受入先口座の残高ロールバック & 連動受入明細の論理削除
+    if (existingTx.type === "expense" && existingTx.toAccountId) {
+      // 受入先口座から加算されていた分を減額してロールバック
+      await raw.unsafe(`
+        UPDATE "${session.schemaName}".accounts 
+        SET balance = balance - ${existingTx.amount}
+        WHERE id = '${existingTx.toAccountId}'
+      `);
+
+      // ペア受入明細の特定 (1. parentTransactionId 検索、2. クエリ特定フォールバック)
+      let [linkedTx] = await db
+        .select()
+        .from(schema.transactions)
+        .where(
+          and(
+            eq(schema.transactions.parentTransactionId, existingTx.id),
+            isNull(schema.transactions.deletedAt)
+          )
+        )
+        .limit(1);
+
+      if (!linkedTx) {
+        const candidates = await db
+          .select()
+          .from(schema.transactions)
+          .where(
+            and(
+              eq(schema.transactions.type, "transfer"),
+              eq(schema.transactions.toAccountId, existingTx.toAccountId),
+              eq(schema.transactions.date, existingTx.date),
+              eq(schema.transactions.amount, existingTx.amount),
+              isNull(schema.transactions.deletedAt)
+            )
+          )
+          .limit(1);
+        linkedTx = candidates[0];
+      }
+
+      if (linkedTx) {
+        await db
+          .update(schema.transactions)
+          .set({ deletedAt: new Date(), updatedAt: new Date() })
+          .where(eq(schema.transactions.id, linkedTx.id));
+
+        await db.insert(schema.auditLogs).values({
+          id: `log_${crypto.randomUUID().replace(/-/g, "")}`,
+          userId: session.userId,
+          operatorUserId: session.userId,
+          action: "DELETE",
+          entityType: "transaction",
+          entityId: linkedTx.id,
+          summary: `親支出明細の削除に伴う受入振替明細の連動削除 (${linkedTx.amount}円)`,
+          beforeDataJson: linkedTx,
+        });
+      }
+    }
+
+    // 3. 受入振替明細が直接削除された場合の安全処理 (親明細の toAccountId 解除 & 受入先残高減額)
+    if (existingTx.type === "transfer" && existingTx.parentTransactionId && existingTx.toAccountId) {
+      await raw.unsafe(`
+        UPDATE "${session.schemaName}".accounts 
+        SET balance = balance - ${existingTx.amount}
+        WHERE id = '${existingTx.toAccountId}'
+      `);
+
+      await db
+        .update(schema.transactions)
+        .set({ toAccountId: null, updatedAt: new Date() })
+        .where(eq(schema.transactions.id, existingTx.parentTransactionId));
+    }
+
+    // 4. 対象明細の論理削除
     await db
       .update(schema.transactions)
-      .set({ deletedAt: new Date() })
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(eq(schema.transactions.id, txId));
 
-    // 監査ログ記録
+    // 5. 監査ログ記録
     await db.insert(schema.auditLogs).values({
       id: `log_${crypto.randomUUID().replace(/-/g, "")}`,
       userId: session.userId,

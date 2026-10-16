@@ -60,6 +60,7 @@ export function EditTransactionModal({
           amount: parseInt(amount, 10),
           categoryId,
           paymentMethodId,
+          toAccountId: transaction.toAccountId,
           note,
         }),
       });

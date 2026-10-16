@@ -149,6 +149,7 @@ export async function createTenantTables(schemaName: string) {
       is_settled BOOLEAN DEFAULT FALSE NOT NULL,
       scheduled_withdrawal_date DATE,
       checkpoint_id VARCHAR(64) REFERENCES "${schemaName}".checkpoints(id) ON DELETE SET NULL,
+      parent_transaction_id VARCHAR(64),
       deleted_at TIMESTAMP WITH TIME ZONE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
@@ -225,11 +226,13 @@ export async function createTenantTables(schemaName: string) {
     ALTER TABLE "${schemaName}".drafts ALTER COLUMN user_id TYPE VARCHAR(64);
     ALTER TABLE "${schemaName}".checkpoints ALTER COLUMN id TYPE VARCHAR(64);
     ALTER TABLE "${schemaName}".transactions ALTER COLUMN id TYPE VARCHAR(64);
+    ALTER TABLE "${schemaName}".transactions ADD COLUMN IF NOT EXISTS parent_transaction_id VARCHAR(64);
 
     -- インデックス作成
     CREATE INDEX IF NOT EXISTS "idx_${schemaName}_tx_date" ON "${schemaName}".transactions(date);
     CREATE INDEX IF NOT EXISTS "idx_${schemaName}_tx_cat" ON "${schemaName}".transactions(category_id);
     CREATE INDEX IF NOT EXISTS "idx_${schemaName}_tx_user" ON "${schemaName}".transactions(user_id);
+    CREATE INDEX IF NOT EXISTS "idx_${schemaName}_tx_parent" ON "${schemaName}".transactions(parent_transaction_id);
     CREATE INDEX IF NOT EXISTS "idx_${schemaName}_audit_time" ON "${schemaName}".audit_logs(created_at);
   `);
 

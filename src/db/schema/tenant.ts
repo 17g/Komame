@@ -102,6 +102,7 @@ export function createTenantSchema(schemaName: string) {
     checkpointId: varchar("checkpoint_id", { length: 64 }).references(() => checkpoints.id, {
       onDelete: "set null",
     }),
+    parentTransactionId: varchar("parent_transaction_id", { length: 64 }), // 親明細ID (投資・振替受入等のペア紐付け用)
     deletedAt: timestamp("deleted_at", { withTimezone: true }), // 論理削除
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
