@@ -61,6 +61,10 @@
   }
   ```
 
+### 1.5 招待参加 API (`/api/auth/invite`)
+- **`GET /api/auth/invite?token=...`**: 招待リンク（JWTトークン）の有効性を検証し、世帯名と付与ロールを返却。
+- **`POST /api/auth/invite`**: 招待トークンに基づき、ユーザー登録（または既存アカウント認証）を行い、世帯メンバーシップを自動作成してログインセッションを確立。
+
 ---
 
 ## 2. 口座・決済手段・資金色分け API (`/api/accounts`)
@@ -209,6 +213,23 @@
 ### 6.5 `GET /api/admin/logs`
 - 直近の世帯内監査ログ（最大100件）を取得。
 
+### 6.6 家族メンバー管理 API (`/api/admin/members`) ※家庭管理者限定
+- **`GET /api/admin/members`**:
+  - 現在の世帯に所属する全家族メンバーの一覧取得（メールアドレス、権限、状態、参加日時、自分自身フラグ）。
+- **`POST /api/admin/members`**:
+  - メンバー招待または追加: `{ email, password?, role: "admin" | "member" }`
+    - 新規ユーザー作成、または既存ユーザーの世帯メンバーシップ追加/再有効化。初期パスワードと招待リンクを返却。
+  - 招待リンク単体発行: `{ action: "create_invite_link", role: "admin" | "member" }`
+    - 7日間有効な署名付きJWT招待リンクを発行。
+  - パスワード再設定: `{ action: "reset_password", membershipId, newPassword }`
+    - 家族メンバーのパスワードを管理者が再設定。
+  - 監査ログ（`household_member`）を自動記録。
+- **`PUT /api/admin/members`**:
+  - ロール変更 (`admin` / `member`) または状態更新 (`active` / `inactive`)。
+  - 世帯の最後の有効な管理者の降格・無効化を防止するガードレールを適用。
+- **`DELETE /api/admin/members?membershipId=...`**:
+  - メンバーの論理削除（ステータスを `inactive` に更新してログイン遮断）。自分自身および最後の管理者の無効化は禁止。
+
 ---
 
 ## 7. タグ管理 API (`/api/tags`)
@@ -251,6 +272,7 @@
 ---
 
 ## 改訂履歴
+- **2026-10-17**: `GET/POST/PUT/DELETE /api/admin/members` および `GET/POST /api/auth/invite` の仕様を追加（家族メンバー一覧取得、直接追加・招待リンク発行、ロール変更、論理削除無効化、管理者ガードレール、パスワード再設定）。
 - **2026-10-17**: `POST /api/admin/csv` の仕様を追加（CSVパース、自動カラムマッピング、重複候補検知、チェックポイント付き一括インポート登録）。
 - **2026-10-17**: `GET /api/transactions/suggest` の仕様を追加（過去明細履歴からの店舗名補完・最多利用費目/支払元動的サジェスト）。
 - **2026-10-17**: `GET /api/tags` および `POST /api/tags` の仕様を追加。`GET /api/transactions` の `tagId` 絞り込みとタグ結合返却、`POST` / `PUT` でのタグ紐付け仕様を追記。

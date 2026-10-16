@@ -2,6 +2,67 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-17] 【要件 3-2】家族メンバー管理機能の実装 (`src/app/api/admin/members/route.ts` & `AdminTab.tsx`)
+
+### 1. 概要
+世帯管理者が家族メンバーを招待・直接登録・管理するための包括的な家族メンバー管理機能（APIおよびUI）を実装した。家族メンバー一覧の取得、直接登録、7日間有効な招待リンクの発行、招待受け入れ・登録認証、ロール変更（管理者/メンバー）、パスワード再設定、および論理削除（無効化によるログイン遮断）を統合し、世帯内の最後の有効な管理者アカウントを保護するセーフティガードレールを実装した。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `household_memberships` テーブルおよび多対多の所属モデルは定義されていたが、家族メンバーを一覧取得・招待・管理するためのAPIが存在しなかった。
+  - `AdminTab.tsx` には24時間リバート、監査ログ、CSVエクスポート・インポートのみが表示され、家族メンバー管理のセクションが存在しなかった。
+  - 招待リンクの発行や、招待リンク経由で世帯へ参加するための認証エンドポイント（`/api/auth/invite`）が存在しなかった。
+- **After**:
+  - `src/types/index.ts`:
+    - `MemberItem` インターフェース（`id`, `userId`, `email`, `role`, `status`, `joinedAt`, `isCurrentUser`）を追加。
+  - `src/lib/auth.ts`:
+    - 招待用JWTトークン発行関数 `createInviteToken`（7日間有効、世帯ID・ロール保持）および検証関数 `verifyInviteToken` を追加。
+  - `src/app/api/admin/members/route.ts` (新規):
+    - `GET`: 現在の世帯に所属する全家族メンバーの一覧取得（メールアドレス、ロール、ステータス、参加日、自分自身判定）。
+    - `POST`:
+      - 家族メンバー直接追加（メール指定、管理者/メンバーロール指定、自動生成または指定パスワード設定）。既存アカウントの場合は世帯メンバーシップへの紐付けまたは再有効化。
+      - 招待リンク単体発行（`action: "create_invite_link"`）。
+      - パスワード再設定（`action: "reset_password"`）。
+      - 各操作の監査ログ（`audit_logs`）の自動記録。
+    - `PUT`: メンバーのロール変更（`admin` / `member`）およびステータス変更（`active` / `inactive`）。世帯に最低1人の有効な管理者が存在し続けることを保証するガードレールを適用。
+    - `DELETE`: メンバーの論理削除（ステータスを `inactive` に更新してログイン遮断）。自分自身および最後の管理者の無効化を防止。
+  - `src/app/api/auth/invite/route.ts` (新規):
+    - `GET`: 招待リンク（トークン）の有効性検証と世帯名・付与ロールの返却。
+    - `POST`: 招待トークンに基づくアカウント登録（または既存アカウントでのログイン紐付け）と世帯参加処理、自動ログインセッションCookie確立。
+  - `src/components/InviteMemberModal.tsx` (新規):
+    - 「メール指定で直接追加」と「招待リンクのみ発行」の2つのモードを備えた招待モーダル。
+    - 登録完了時にログインID、初期パスワード、招待リンクをワンクリックでコピーできる共有用UIを完備。
+  - `src/components/ResetPasswordModal.tsx` (新規):
+    - 管理者が家族メンバーのパスワードを安全に再発行・リセットするためのモーダル（ランダムパスワード生成機能付き）。
+  - `src/components/AdminTab.tsx`:
+    - 最上部に「家族メンバーの管理」カードセクションを追加。
+    - メンバー一覧カード（アバター、メールアドレス、管理者/メンバーバッジ、有効/無効バッジ、参加日、自身タグ）を表示。
+    - メンバーごとの操作ボタン（ロール変更トグル、パスワード再設定、無効化/再有効化トグル）を完備。
+    - 「＋ メンバーを招待・追加」ボタンによる招待モーダルの呼び出し。
+  - `src/lib/i18n.ts`:
+    - 家族メンバー管理に関する日本語・英語の翻訳リソースを追加。
+  - `for_agent/04_api_specifications.md`:
+    - `6.6 家族メンバー管理 API (/api/admin/members)` および `1.5 招待参加 API (/api/auth/invite)` の仕様、改訂履歴を追記。
+  - `scripts/test-members-unit.ts` (新規):
+    - 招待トークン発行・検証、パスワードポリシー検証、Argon2idハッシュ突合に関する単体テストを作成し、全件パス（Exit Code 0）を確認。
+
+### 3. 変更理由
+- 要件 3-2「家族メンバー管理（家族メンバーの招待、権限変更、パスワードリセット、無効化）」および要件 1-2「家族招待」に完全準拠し、家族・パートナーとの共同家計簿運用をセキュアかつ直感的に行えるようにするため。
+
+### 4. 影響範囲
+- `src/types/index.ts`
+- `src/lib/auth.ts`
+- `src/app/api/admin/members/route.ts` (新規)
+- `src/app/api/auth/invite/route.ts` (新規)
+- `src/components/InviteMemberModal.tsx` (新規)
+- `src/components/ResetPasswordModal.tsx` (新規)
+- `src/components/AdminTab.tsx`
+- `src/lib/i18n.ts`
+- `for_agent/04_api_specifications.md`
+- `scripts/test-members-unit.ts` (新規)
+
+---
+
 ## [2026-10-17] 【要件 2-4】タグ付け & カラーラベリングのUI統合 (`tags`, `transaction_tags`)
 
 ### 1. 概要

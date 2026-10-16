@@ -60,7 +60,7 @@
 ---
 
 ## Phase 3: 管理者機能 & 家族ユーザー管理の実装
-- [ ] **3.1 【要件 3-2】家族メンバー管理機能の実装 (`src/app/api/admin/members/route.ts` & `AdminTab.tsx`)**:
+- [x] **3.1 【要件 3-2】家族メンバー管理機能の実装 (`src/app/api/admin/members/route.ts` & `AdminTab.tsx`)**:
   - API: 家族メンバー一覧取得、招待リンク発行/メール招待、ロール変更（admin/member）、無効化（論理削除）。
   - UI: `AdminTab.tsx` に家族メンバー一覧カード、招待モーダル、権限変更ボタンを配置。
 - [ ] **3.2 【要件 1-3 & 3-4】システム設定 & パスワードポリシー動的設定の実装 (`system_settings`)**:

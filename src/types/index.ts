@@ -182,3 +182,13 @@ export interface SuggestionResult {
   candidates: string[];
   suggestion: SuggestionItem | null;
 }
+
+export interface MemberItem {
+  id: string; // membership id
+  userId: string;
+  email: string;
+  role: "admin" | "member";
+  status: "active" | "inactive";
+  joinedAt: string;
+  isCurrentUser?: boolean;
+}

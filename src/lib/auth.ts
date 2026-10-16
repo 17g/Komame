@@ -53,6 +53,32 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
   }
 }
 
+export interface InviteTokenPayload {
+  householdId: string;
+  role: "admin" | "member";
+  type: "household_invite";
+}
+
+// 4.1 招待トークン発行 (7日間有効)
+export async function createInviteToken(payload: { householdId: string; role: "admin" | "member" }): Promise<string> {
+  return await new SignJWT({ ...payload, type: "household_invite" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("7d")
+    .sign(JWT_SECRET);
+}
+
+// 4.2 招待トークン検証
+export async function verifyInviteToken(token: string): Promise<InviteTokenPayload | null> {
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    if (payload.type !== "household_invite") return null;
+    return payload as unknown as InviteTokenPayload;
+  } catch {
+    return null;
+  }
+}
+
 // 5. 現在のリクエストのセッション取得
 export async function getCurrentSession(): Promise<SessionPayload | null> {
   const cookieStore = await cookies();
