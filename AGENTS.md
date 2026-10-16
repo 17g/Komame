@@ -1,32 +1,24 @@
-\# AGENTS.md
+# AGENTS.md
 
+## 1. プロジェクト概要 & 技術スタック
 
+- Framework: Next.js 15.1.6 (App Router) / React 19
+- Language: TypeScript 5.7.3
+- Database / ORM: PostgreSQL 16 / Drizzle ORM 0.38.4 (postgres.js)
+- Styling: Tailwind CSS 3.4.17
+- Package Manager: npm
 
-\## 1. プロジェクト概要 \& 技術スタック
-
-\- Framework: Streamlit
-
-\- Language: Python (venv: env)
-
-\- Package Manager: pip
-
-
-
-\## 2. 検証コマンド (Verification Ground Truth)
+## 2. 検証コマンド (Verification Ground Truth)
 
 エージェントはコード修正後、以下のコマンドを実行して正常終了（Exit Code 0）を確認すること。
 
-\- 構文チェック: `python -m py\_compile <メインファイル名>.py`
+- 型チェック: `npx tsc --noEmit`
+- ビルド検証: `npm run build`
+- 総合テスト（※開発サーバー起動時）: `npx tsx scripts/comprehensive-test.ts`
 
-\- 単体テスト: `pytest` （※テストコードがある場合。なければ「テストコードが存在する場合のみ pytest を実行」と記述）
+## 3. 参照ディレクトリ
 
-
-
-\## 3. 参照ディレクトリ
-
-\- 仕様書正本: `for\_agent/` 配下のすべての .md ファイル
-
-\- 進捗管理: `Plan.md`
-
-\- 変更ログ: `AICHANGELOG.md`
-
+- 仕様書正本: `for_agent/` 配下のすべての .md ファイル
+- ガードレール: `for_agent/guardrails.md`
+- 進捗管理: `Plan.md`
+- 変更ログ: `AICHANGELOG.md`

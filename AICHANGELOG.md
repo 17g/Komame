@@ -2,6 +2,26 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-17] `AGENTS.md` の技術スタックおよび検証コマンドの最新化
+
+### 1. 概要
+`AGENTS.md` に初期テンプレートとして記載されていた誤った技術スタック（Streamlit / Python）および構文チェックコマンド（`python -m py_compile` / `pytest`）を、プロジェクトの実態である Next.js 15.1.6 (App Router) / React 19 / TypeScript 5.7.3 / Drizzle ORM 0.38.4 / PostgreSQL 16、および検証コマンド（`npx tsc --noEmit`、`npm run build`、`npx tsx scripts/comprehensive-test.ts`）に最新化・整合させた。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `Framework: Streamlit`、`Language: Python (venv: env)`、`Package Manager: pip` と記載されていた。
+  - 検証コマンドとして `python -m py_compile <メインファイル名>.py`、`pytest` が指定されていた。
+- **After**:
+  - `Framework: Next.js 15.1.6 (App Router) / React 19`、`Language: TypeScript 5.7.3`、`Database / ORM: PostgreSQL 16 / Drizzle ORM 0.38.4 (postgres.js)`、`Styling: Tailwind CSS 3.4.17`、`Package Manager: npm` に修正。
+  - 検証コマンドを `npx tsc --noEmit`（型チェック）、`npm run build`（ビルド検証）、`npx tsx scripts/comprehensive-test.ts`（総合テスト）に改訂。
+  - 参照ディレクトリに `for_agent/guardrails.md` を明記。
+
+### 3. 変更理由
+- `Plan.md` Phase 5 タスク 5.1「`AGENTS.md` の技術スタックおよび検証コマンドの最新化」に基づき、エージェントが参照するルールの Ground Truth をプロジェクト実態に完全同期させるため。
+
+### 4. 影響範囲
+- `AGENTS.md`
+
 ## [2026-10-17] 【要件 16-2 & 16-3】まめの樹育成システム & やさしいアドバイスの実データ連動 (`GoalsTab.tsx` & `page.tsx`)
 
 ### 1. 概要
