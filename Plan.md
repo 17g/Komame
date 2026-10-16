@@ -88,7 +88,7 @@
 ## Phase 5: 検証・テスト実行およびプロジェクト設定の最新化
 - [x] **5.1 `AGENTS.md` の技術スタックおよび検証コマンドの最新化**:
   - Streamlit/Pythonの誤記述を Next.js 15 / TypeScript / Drizzle ORM / PostgreSQL 16 に修正。
-- [ ] **5.2 TypeScript型チェック & ビルド検証**:
+- [x] **5.2 TypeScript型チェック & ビルド検証**:
   - `npx tsc --noEmit` および `npm run build` の正常終了（Exit Code 0）を確認。
 - [ ] **5.3 総合ビジネスロジックテストの実行 & 更新**:
   - `scripts/comprehensive-test.ts` に修正した資金移動・リバートのテストケースを追加し、全パスを確認。
