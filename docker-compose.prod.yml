@@ -1,0 +1,35 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: komame-prod-app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://komame_prod_user:${POSTGRES_PASSWORD}@postgres:5432/komame_prod_db
+      JWT_SECRET: ${JWT_SECRET}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: komame-prod-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: komame_prod_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: komame_prod_db
+    volumes:
+      - komame_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U komame_prod_user -d komame_prod_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  komame_prod_data:

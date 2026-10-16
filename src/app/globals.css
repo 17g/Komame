@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Theme 1: Natural Komame (Default) */
+  --primary: #2E7D32;
+  --primary-hover: #256629;
+  --primary-light: #E8F5E9;
+  --primary-border: #C8E6C9;
+  --secondary: #81C784;
+  --accent: #E6A15C;
+  --accent-light: #FFF8E1;
+  --bg-app: #F9FBF8;
+  --bg-surface: #FFFFFF;
+  --bg-surface-subtle: #F1F6F0;
+  --text-main: #1E2B20;
+  --text-muted: #5C6B5E;
+  --text-subtle: #8D9E8F;
+  --border-color: #E2ECE1;
+  --danger: #E53935;
+  --danger-light: #FFEBEE;
+  --warning: #F59E0B;
+  --warning-light: #FEF3C7;
+  --shadow-sm: 0 2px 6px rgba(46, 125, 50, 0.05);
+  --shadow-md: 0 8px 20px rgba(46, 125, 50, 0.08);
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+}
+
+[data-theme="warm-latte"] {
+  --primary: #8D6E63;
+  --primary-hover: #795548;
+  --primary-light: #EFEBE9;
+  --primary-border: #D7CCC8;
+  --secondary: #BCAAA4;
+  --accent: #C97A5E;
+  --accent-light: #FBE9E7;
+  --bg-app: #FAF7F2;
+  --bg-surface: #FFFFFF;
+  --bg-surface-subtle: #F4EFEB;
+  --text-main: #3E2723;
+  --text-muted: #6D4C41;
+  --text-subtle: #A1887F;
+  --border-color: #E8DFD8;
+  --shadow-sm: 0 2px 6px rgba(141, 110, 99, 0.06);
+  --shadow-md: 0 8px 20px rgba(141, 110, 99, 0.1);
+}
+
+[data-theme="fintech-indigo"] {
+  --primary: #1A365D;
+  --primary-hover: #102A4C;
+  --primary-light: #EBF8FF;
+  --primary-border: #BEE3F8;
+  --secondary: #3182CE;
+  --accent: #38A169;
+  --accent-light: #F0FFF4;
+  --bg-app: #F7FAFC;
+  --bg-surface: #FFFFFF;
+  --bg-surface-subtle: #EDF2F7;
+  --text-main: #1A202C;
+  --text-muted: #4A5568;
+  --text-subtle: #718096;
+  --border-color: #E2E8F0;
+  --shadow-sm: 0 2px 6px rgba(26, 54, 93, 0.06);
+  --shadow-md: 0 8px 20px rgba(26, 54, 93, 0.1);
+}
+
+[data-theme="forest-mint"] {
+  --primary: #134E4A;
+  --primary-hover: #0F3E3B;
+  --primary-light: #CCFBF1;
+  --primary-border: #99F6E4;
+  --secondary: #14B8A6;
+  --accent: #F59E0B;
+  --accent-light: #FEF3C7;
+  --bg-app: #F0FDFA;
+  --bg-surface: #FFFFFF;
+  --bg-surface-subtle: #E6F7F4;
+  --text-main: #042F2E;
+  --text-muted: #115E59;
+  --text-subtle: #2DD4BF;
+  --border-color: #CCFBF1;
+  --shadow-sm: 0 2px 6px rgba(19, 78, 74, 0.06);
+  --shadow-md: 0 8px 20px rgba(19, 78, 74, 0.1);
+}
+
+[data-theme="slate-dark"] {
+  --primary: #4ADE80;
+  --primary-hover: #22C55E;
+  --primary-light: rgba(74, 222, 128, 0.15);
+  --primary-border: #334155;
+  --secondary: #38BDF8;
+  --accent: #FBBF24;
+  --accent-light: rgba(251, 191, 36, 0.15);
+  --bg-app: #0F172A;
+  --bg-surface: #1E293B;
+  --bg-surface-subtle: #162032;
+  --text-main: #F8FAFC;
+  --text-muted: #94A3B8;
+  --text-subtle: #64748B;
+  --border-color: #334155;
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.5);
+}
+
+body {
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  min-height: 100vh;
+  font-feature-settings: "palt" 1;
+}
+
+/* スクロールバーのカスタマイズ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-subtle);
+}
+
+/* スマホ表示でのタップハイライト除去 */
+* {
+  -webkit-tap-highlight-color: transparent;
+}

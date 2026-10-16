@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Komame（こまめ）- インタラクティブUIモックアップ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    /* CSS Variables for 5 Themes */
+    :root {
+      /* Theme 1: Natural Komame (Default) */
+      --primary: #2E7D32;
+      --primary-hover: #256629;
+      --primary-light: #E8F5E9;
+      --primary-border: #C8E6C9;
+      --secondary: #81C784;
+      --accent: #E6A15C;
+      --accent-light: #FFF8E1;
+      --bg-app: #F9FBF8;
+      --bg-surface: #FFFFFF;
+      --bg-surface-subtle: #F1F6F0;
+      --text-main: #1E2B20;
+      --text-muted: #5C6B5E;
+      --text-subtle: #8D9E8F;
+      --border-color: #E2ECE1;
+      --danger: #E53935;
+      --danger-light: #FFEBEE;
+      --warning: #F59E0B;
+      --warning-light: #FEF3C7;
+      --shadow-sm: 0 2px 6px rgba(46, 125, 50, 0.05);
+      --shadow-md: 0 8px 20px rgba(46, 125, 50, 0.08);
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+    }
+
+    [data-theme="warm-latte"] {
+      --primary: #8D6E63;
+      --primary-hover: #795548;
+      --primary-light: #EFEBE9;
+      --primary-border: #D7CCC8;
+      --secondary: #BCAAA4;
+      --accent: #C97A5E;
+      --accent-light: #FBE9E7;
+      --bg-app: #FAF7F2;
+      --bg-surface: #FFFFFF;
+      --bg-surface-subtle: #F4EFEB;
+      --text-main: #3E2723;
+      --text-muted: #6D4C41;
+      --text-subtle: #A1887F;
+      --border-color: #E8DFD8;
+      --shadow-sm: 0 2px 6px rgba(141, 110, 99, 0.06);
+      --shadow-md: 0 8px 20px rgba(141, 110, 99, 0.1);
+    }
+
+    [data-theme="fintech-indigo"] {
+      --primary: #1A365D;
+      --primary-hover: #102A4C;
+      --primary-light: #EBF8FF;
+      --primary-border: #BEE3F8;
+      --secondary: #3182CE;
+      --accent: #38A169;
+      --accent-light: #F0FFF4;
+      --bg-app: #F7FAFC;
+      --bg-surface: #FFFFFF;
+      --bg-surface-subtle: #EDF2F7;
+      --text-main: #1A202C;
+      --text-muted: #4A5568;
+      --text-subtle: #718096;
+      --border-color: #E2E8F0;
+      --shadow-sm: 0 2px 6px rgba(26, 54, 93, 0.06);
+      --shadow-md: 0 8px 20px rgba(26, 54, 93, 0.1);
+    }
+
+    [data-theme="forest-mint"] {
+      --primary: #134E4A;
+      --primary-hover: #0F3E3B;
+      --primary-light: #CCFBF1;
+      --primary-border: #99F6E4;
+      --secondary: #14B8A6;
+      --accent: #F59E0B;
+      --accent-light: #FEF3C7;
+      --bg-app: #F0FDFA;
+      --bg-surface: #FFFFFF;
+      --bg-surface-subtle: #E6F7F4;
+      --text-main: #042F2E;
+      --text-muted: #115E59;
+      --text-subtle: #2DD4BF;
+      --border-color: #CCFBF1;
+      --shadow-sm: 0 2px 6px rgba(19, 78, 74, 0.06);
+      --shadow-md: 0 8px 20px rgba(19, 78, 74, 0.1);
+    }
+
+    [data-theme="slate-dark"] {
+      --primary: #4ADE80;
+      --primary-hover: #22C55E;
+      --primary-light: rgba(74, 222, 128, 0.15);
+      --primary-border: #334155;
+      --secondary: #38BDF8;
+      --accent: #FBBF24;
+      --accent-light: rgba(251, 191, 36, 0.15);
+      --bg-app: #0F172A;
+      --bg-surface: #1E293B;
+      --bg-surface-subtle: #162032;
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+      --text-subtle: #64748B;
+      --border-color: #334155;
+      --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Noto Sans JP', 'Plus Jakarta Sans', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background: #18191c;
+      color: #e4e4e7;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+    }
+
+    /* Top Control Bar */
+    .control-panel {
+      width: 100%;
+      max-width: 900px;
+      background: #27272a;
+      border: 1px solid #3f3f46;
+      border-radius: 12px;
+      padding: 12px 16px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .control-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #a1a1aa;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    select, button.ctrl-btn {
+      background: #18181b;
+      color: #fafafa;
+      border: 1px solid #52525b;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    select:hover, button.ctrl-btn:hover {
+      border-color: #a1a1aa;
+    }
+
+    .device-switch button.active {
+      background: #22c55e;
+      color: #000;
+      border-color: #22c55e;
+      font-weight: 700;
+    }
+
+    /* Mockup Container */
+    .mockup-wrapper {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .mockup-wrapper.phone-view {
+      width: 390px;
+      height: 844px;
+      background: var(--bg-app);
+      border-radius: 44px;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.6), 0 0 0 12px #27272a, 0 0 0 14px #3f3f46;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .mockup-wrapper.desktop-view {
+      width: 100%;
+      max-width: 900px;
+      min-height: 800px;
+      background: var(--bg-app);
+      border-radius: 16px;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.4);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* App Container */
+    .app-screen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+      background: var(--bg-app);
+      color: var(--text-main);
+    }
+
+    /* App Header */
+    .app-header {
+      padding: 14px 18px;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+      transition: background 0.3s;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-img {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+
+    .app-title {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tenant-badge {
+      font-size: 11px;
+      font-weight: 600;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: 2px 8px;
+      border-radius: 20px;
+      border: 1px solid var(--primary-border);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .icon-btn {
+      background: none;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .notif-badge {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 8px;
+      height: 8px;
+      background: var(--danger);
+      border-radius: 50%;
+    }
+
+    /* Scrollable Content Area */
+    .app-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding-bottom: 90px;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      box-shadow: var(--shadow-sm);
+      transition: all 0.2s ease;
+    }
+
+    /* Assets Grid */
+    .assets-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .asset-card {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .asset-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .asset-amount {
+      font-size: 20px;
+      font-weight: 800;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      color: var(--text-main);
+      letter-spacing: -0.5px;
+    }
+
+    .asset-subtag {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      background: var(--accent-light);
+      padding: 2px 6px;
+      border-radius: 4px;
+      align-self: flex-start;
+      margin-top: 4px;
+    }
+
+    /* Alert Card */
+    .alert-card {
+      background: linear-gradient(135deg, var(--bg-surface), var(--bg-surface-subtle));
+      border: 1px solid var(--primary-border);
+      border-left: 4px solid var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .alert-info h4 {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 2px;
+    }
+
+    .alert-info p {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .alert-status {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #16A34A;
+      background: #DCFCE7;
+      padding: 4px 8px;
+      border-radius: 20px;
+    }
+
+    /* Heatmap / Gamification Section */
+    .section-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .heatmap-grid {
+      display: grid;
+      grid-template-columns: repeat(14, 1fr);
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+
+    .heatmap-cell {
+      aspect-ratio: 1;
+      border-radius: 3px;
+      background: var(--bg-surface-subtle);
+    }
+
+    .heatmap-cell.l1 { background: var(--secondary); opacity: 0.3; }
+    .heatmap-cell.l2 { background: var(--secondary); opacity: 0.6; }
+    .heatmap-cell.l3 { background: var(--primary); }
+    .heatmap-cell.l4 { background: var(--primary-hover); }
+
+    .streak-badge {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Transaction List */
+    .tx-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .tx-item:last-child {
+      border-bottom: none;
+    }
+
+    .tx-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .tx-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--primary-light);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+
+    .tx-details h5 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .tx-details p {
+      font-size: 11px;
+      color: var(--text-subtle);
+    }
+
+    .tx-right {
+      text-align: right;
+    }
+
+    .tx-amount {
+      font-size: 14px;
+      font-weight: 700;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      color: var(--text-main);
+    }
+
+    .tx-tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--bg-surface-subtle);
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Bottom Navigation Bar */
+    .bottom-nav {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 68px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 10px;
+      z-index: 20;
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.05);
+    }
+
+    .nav-tab {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-subtle);
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 600;
+      transition: all 0.2s;
+      flex: 1;
+    }
+
+    .nav-tab.active {
+      color: var(--primary);
+    }
+
+    .nav-tab.active .nav-icon {
+      transform: scale(1.15);
+    }
+
+    .nav-tab-center {
+      position: relative;
+      top: -12px;
+    }
+
+    .nav-center-btn {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 16px rgba(46, 125, 50, 0.35);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .nav-center-btn:hover {
+      transform: scale(1.08);
+    }
+
+    /* Tab Page Switcher */
+    .tab-page {
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .tab-page.active {
+      display: flex;
+    }
+
+    /* Form Styles */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .form-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .form-input, .form-select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      background: var(--bg-surface-subtle);
+      color: var(--text-main);
+      font-size: 14px;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .form-input:focus, .form-select:focus {
+      border-color: var(--primary);
+      background: var(--bg-surface);
+    }
+
+    .suggest-box {
+      background: var(--primary-light);
+      border: 1px solid var(--primary-border);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 4px;
+      cursor: pointer;
+    }
+
+    .form-tabs {
+      display: flex;
+      background: var(--bg-surface-subtle);
+      border-radius: var(--radius-sm);
+      padding: 3px;
+      margin-bottom: 12px;
+    }
+
+    .form-tab-btn {
+      flex: 1;
+      padding: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .form-tab-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-main);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: var(--bg-surface-subtle);
+      color: var(--text-muted);
+      border: 1px solid var(--border-color);
+    }
+
+    /* Toast Notification */
+    .toast-box {
+      position: absolute;
+      bottom: 80px;
+      right: 16px;
+      background: #18181B;
+      color: #FAFAFA;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+      z-index: 100;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s ease;
+      pointer-events: none;
+    }
+
+    .toast-box.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Modal Dialog */
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(2px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 200;
+    }
+
+    .modal-backdrop.show {
+      display: flex;
+    }
+
+    .modal-card {
+      background: var(--bg-surface);
+      color: var(--text-main);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      width: 100%;
+      max-width: 320px;
+      box-shadow: var(--shadow-md);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .modal-card h3 {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .modal-card p {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Demo Control Panel -->
+  <div class="control-panel">
+    <div class="control-group">
+      <span class="control-label">🎨 UIテーマ切替:</span>
+      <select id="themeSelect" onchange="changeTheme(this.value)">
+        <option value="natural-komame" selected>1. Natural Komame (まめグリーン)</option>
+        <option value="warm-latte">2. Warm Latte & Washi (和モダン・ラテ)</option>
+        <option value="fintech-indigo">3. Modern FinTech Indigo (洗練インディゴ)</option>
+        <option value="forest-mint">4. Forest & Mint Clean (北欧ミント)</option>
+        <option value="slate-dark">5. Slate Minimal Dark (スレートダーク)</option>
+      </select>
+    </div>
+
+    <div class="control-group device-switch">
+      <span class="control-label">📱 画面サイズ:</span>
+      <button class="ctrl-btn active" id="btnPhone" onclick="setDeviceView('phone')">iPhone (390px)</button>
+      <button class="ctrl-btn" id="btnDesktop" onclick="setDeviceView('desktop')">PC (フルスクリーン)</button>
+    </div>
+
+    <div class="control-group">
+      <span class="control-label">🏠 世帯:</span>
+      <select>
+        <option>山田家 (Household Admin)</option>
+        <option disabled>+ 新規世帯追加</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Mockup App Frame -->
+  <div class="mockup-wrapper phone-view" id="mockupWrapper">
+    <div class="app-screen">
+      
+      <!-- Top Header -->
+      <header class="app-header">
+        <div class="logo-container">
+          <img src="assets/komame_logo.jpg" alt="Komame" class="logo-img">
+          <div class="app-title">
+            Komame
+            <span class="tenant-badge">山田家</span>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button class="icon-btn" onclick="triggerToast('🔔 2/10 楽天カード引き落とし予定あり (原資OK)')">
+            🔔
+            <span class="notif-badge"></span>
+          </button>
+          <button class="icon-btn" onclick="switchTab('admin')">⚙️</button>
+        </div>
+      </header>
+
+      <!-- Main Scrollable Content -->
+      <main class="app-content" id="appContent">
+
+        <!-- ================= 画面 1: ダッシュボード ================= -->
+        <section class="tab-page active" id="tab-dashboard">
+          
+          <!-- Assets Overview -->
+          <div class="assets-grid">
+            <div class="card asset-card">
+              <div class="asset-label">💰 総資産</div>
+              <div class="asset-amount">¥2,450,000</div>
+              <div class="asset-subtag" style="background: var(--primary-light); color: var(--primary);">+¥42,000 今月</div>
+            </div>
+            <div class="card asset-card">
+              <div class="asset-label">💳 実質利用可能残高</div>
+              <div class="asset-amount">¥1,850,000</div>
+              <div class="asset-subtag">🔒 貯蓄ロック ¥60万</div>
+            </div>
+          </div>
+
+          <!-- Credit Card Settlement Alert -->
+          <div class="card alert-card">
+            <div class="alert-info">
+              <h4>次回カード引き落とし予定</h4>
+              <p>2/10 楽天カード（三井住友銀行）</p>
+              <p style="font-size: 15px; font-weight: 800; margin-top: 2px;">¥85,420</p>
+            </div>
+            <div class="alert-status">
+              ✓ 原資準備OK
+            </div>
+          </div>
+
+          <!-- Gamification: Activity Heatmap & Sprout -->
+          <div class="card">
+            <div class="section-title">
+              <span>🌱 こまめ活動 (記録ストリーク)</span>
+              <span class="streak-badge">🔥 12日連続達成</span>
+            </div>
+            <div class="heatmap-grid">
+              <div class="heatmap-cell l1"></div><div class="heatmap-cell l2"></div><div class="heatmap-cell l3"></div><div class="heatmap-cell l2"></div>
+              <div class="heatmap-cell l4"></div><div class="heatmap-cell l3"></div><div class="heatmap-cell l1"></div><div class="heatmap-cell l4"></div>
+              <div class="heatmap-cell l3"></div><div class="heatmap-cell l4"></div><div class="heatmap-cell l2"></div><div class="heatmap-cell l3"></div>
+              <div class="heatmap-cell l4"></div><div class="heatmap-cell l4"></div>
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between;">
+              <span>こまめちゃん: すくすく成長中🌱</span>
+              <span>今月 28件記録</span>
+            </div>
+          </div>
+
+          <!-- Recent Transactions -->
+          <div class="card">
+            <div class="section-title">
+              <span>📝 最近の明細</span>
+              <button style="background: none; border: none; font-size: 12px; color: var(--primary); font-weight: 600; cursor: pointer;" onclick="switchTab('transactions')">すべて見る ›</button>
+            </div>
+            
+            <div class="tx-item">
+              <div class="tx-left">
+                <div class="tx-icon">🥦</div>
+                <div class="tx-details">
+                  <h5>スーパーマルエツ</h5>
+                  <p>今日 18:30 • 楽天カード</p>
+                </div>
+              </div>
+              <div class="tx-right">
+                <div class="tx-amount">-¥3,480</div>
+                <span class="tx-tag" style="color: #2E7D32;">食費</span>
+              </div>
+            </div>
+
+            <div class="tx-item">
+              <div class="tx-left">
+                <div class="tx-icon">⚡</div>
+                <div class="tx-details">
+                  <h5>東京電力 (電気代)</h5>
+                  <p>昨日 • 口座引き落とし</p>
+                </div>
+              </div>
+              <div class="tx-right">
+                <div class="tx-amount">-¥12,500</div>
+                <span class="tx-tag" style="color: #0284C7;">水道光熱費</span>
+              </div>
+            </div>
+
+            <div class="tx-item">
+              <div class="tx-left">
+                <div class="tx-icon">☕</div>
+                <div class="tx-details">
+                  <h5>スターバックス</h5>
+                  <p>2日前 • PayPay</p>
+                </div>
+              </div>
+              <div class="tx-right">
+                <div class="tx-amount">-¥650</div>
+                <span class="tx-tag" style="color: #D97706;">カフェ・外食</span>
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+        <!-- ================= 画面 2: 明細登録フォーム ================= -->
+        <section class="tab-page" id="tab-register">
+          <div class="card">
+            <div class="section-title">
+              <span>➕ 支出・資金移動の登録</span>
+              <span style="font-size: 11px; color: var(--primary); cursor: pointer;" onclick="triggerToast('手動一時保存データを読み込みました')">📥 一時保存から再開</span>
+            </div>
+
+            <div class="form-tabs">
+              <button class="form-tab-btn active">1件ずつ登録</button>
+              <button class="form-tab-btn" onclick="triggerToast('店舗一括登録モードに切り替えました')">同店舗一括</button>
+              <button class="form-tab-btn" onclick="triggerToast('費目一括登録モードに切り替えました')">同費目一括</button>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">日付</label>
+              <input type="date" class="form-input" value="2026-08-16">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">店舗・取引先名</label>
+              <input type="text" class="form-input" id="shopInput" placeholder="例: セブンイレブン" value="セブンイレブン" oninput="handleShopInput(this.value)">
+              <div class="suggest-box" id="suggestBox" onclick="applySuggest()">
+                <span>💡 過去の利用から提案: 「食費」 / 「PayPay」</span>
+                <span style="font-weight: 700;">適用 ↵</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">金額 (円)</label>
+              <input type="number" class="form-input" placeholder="0" value="840" style="font-size: 18px; font-weight: 700;">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">費目</label>
+              <select class="form-select" id="catSelect">
+                <option value="food">食費 (外食/自炊)</option>
+                <option value="daily">日用品費</option>
+                <option value="util">水道光熱費</option>
+                <option value="traffic">交通費</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">支払い手段</label>
+              <select class="form-select" id="paySelect">
+                <option value="paypay">PayPay (ウォレット残高)</option>
+                <option value="rakuten">楽天カード (翌月27日引き落とし)</option>
+                <option value="cash">現金 (手元)</option>
+                <option value="smbc">三井住友銀行 (口座引き落とし)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">簡易メモ (レシート相違・個数記録)</label>
+              <input type="text" class="form-input" placeholder="例: お茶、おにぎり2個">
+            </div>
+
+            <div class="btn-row">
+              <button class="btn btn-secondary" onclick="manualSaveDraft()">💾 一時保存</button>
+              <button class="btn btn-primary" onclick="submitTx()">✓ 登録する</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= 画面 3: 口座・資金フロー ================= -->
+        <section class="tab-page" id="tab-accounts">
+          <div class="card">
+            <div class="section-title">
+              <span>🏦 口座・決済手段一覧</span>
+              <button style="background: none; border: none; font-size: 12px; color: var(--primary); font-weight: 600; cursor: pointer;">+ 口座追加</button>
+            </div>
+
+            <div class="tx-item">
+              <div class="tx-left">
+                <div class="tx-icon">🏛️</div>
+                <div class="tx-details">
+                  <h5>三井住友銀行 (メイン口座)</h5>
+                  <p>給与受取・カード引き落とし元</p>
+                </div>
+              </div>
+              <div class="tx-right">
+                <div class="tx-amount">¥1,450,000</div>
+                <span class="tx-tag">🔒 色分け貯蓄 ¥50万</span>
+              </div>
+            </div>
+
+            <div class="tx-item">
+              <div class="tx-left">
+                <div class="tx-icon">📱</div>
+                <div class="tx-details">
+                  <h5>PayPay残高</h5>
+                  <p>プリペイドウォレット</p>
+                </div>
+              </div>
+              <div class="tx-right">
+                <div class="tx-amount">¥18,400</div>
+              </div>
+            </div>
+
+            <div class="tx-item">
+              <div class="tx-left">
+                <div class="tx-icon">📈</div>
+                <div class="tx-details">
+                  <h5>SBI証券 (つみたてNISA)</h5>
+                  <p>投資信託 (資産形成)</p>
+                </div>
+              </div>
+              <div class="tx-right">
+                <div class="tx-amount">¥980,000</div>
+                <span class="tx-tag" style="color: #16A34A;">目標連動</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Color Lock Simulator -->
+          <div class="card">
+            <div class="section-title">
+              <span>🎨 口座内の資金色分け（バーチャル貯蓄）</span>
+            </div>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">
+              口座から資金を移動させずに、「車検用」「非常時積立」としてロック設定します。
+            </p>
+            <div style="background: var(--bg-surface-subtle); padding: 12px; border-radius: 8px; font-size: 12px; display: flex; flex-direction: column; gap: 6px;">
+              <div style="display: flex; justify-content: space-between;">
+                <span>三井住友銀行 総残高:</span>
+                <span style="font-weight: 700;">¥1,450,000</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; color: var(--accent);">
+                <span>- 車検用積立 (ロック中):</span>
+                <span style="font-weight: 700;">-¥200,000</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; color: var(--accent);">
+                <span>- 生活防衛資金 (ロック中):</span>
+                <span style="font-weight: 700;">-¥300,000</span>
+              </div>
+              <hr style="border: none; border-top: 1px dashed var(--border-color);">
+              <div style="display: flex; justify-content: space-between; font-weight: 800; color: var(--primary); font-size: 13px;">
+                <span>＝ 実質利用可能額:</span>
+                <span>¥950,000</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= 画面 4: 貯蓄目標 & 成長 ================= -->
+        <section class="tab-page" id="tab-goals">
+          <div class="card">
+            <div class="section-title">
+              <span>🎯 貯蓄目標の進捗</span>
+              <span class="streak-badge">達成率 74%</span>
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+              <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 700; margin-bottom: 6px;">
+                <span>年間100万円 貯蓄チャレンジ</span>
+                <span>¥740,000 / ¥1,000,000</span>
+              </div>
+              <div style="height: 10px; background: var(--bg-surface-subtle); border-radius: 5px; overflow: hidden;">
+                <div style="width: 74%; height: 100%; background: var(--primary); border-radius: 5px;"></div>
+              </div>
+            </div>
+
+            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.6;">
+              💡 <b>こまめアドバイス:</b> このペースを維持すると、予定より1ヶ月早い11月中に目標金額を達成できる見込みです！素晴らしいこまめ力です🌱
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= 画面 5: 管理者・24hリバート ================= -->
+        <section class="tab-page" id="tab-admin">
+          <div class="card">
+            <div class="section-title">
+              <span>⚙️ 世帯管理・操作ログ (24hリバート)</span>
+            </div>
+
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+              過去24時間以内の操作（登録・更新・削除）をチェックポイントから安全に取り消します。
+            </div>
+
+            <div class="tx-item">
+              <div class="tx-left">
+                <div class="tx-icon">📍</div>
+                <div class="tx-details">
+                  <h5>チェックポイント: 14:15 (山田太郎)</h5>
+                  <p>セブンイレブン ¥840 登録直前</p>
+                </div>
+              </div>
+              <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px;" onclick="showRevertModal()">リバート ›</button>
+            </div>
+
+            <div class="tx-item">
+              <div class="tx-left">
+                <div class="tx-icon">📍</div>
+                <div class="tx-details">
+                  <h5>チェックポイント: 10:30 (山田花子)</h5>
+                  <p>マルエツ ¥3,480 登録直前</p>
+                </div>
+              </div>
+              <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 11px;" onclick="showRevertModal()">リバート ›</button>
+            </div>
+
+            <div style="margin-top: 16px;">
+              <h5 style="font-size: 13px; font-weight: 700; margin-bottom: 8px;">📂 データエクスポート (UTF-8 BOM付きCSV)</h5>
+              <div class="btn-row">
+                <button class="btn btn-secondary" onclick="triggerToast('山田家の家計簿フルCSVを出力しました')">📥 フルCSV出力</button>
+                <button class="btn btn-secondary" onclick="triggerToast('支出履歴のみCSVを出力しました')">支出のみ出力</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+
+      <!-- Floating Bottom Navigation -->
+      <nav class="bottom-nav">
+        <button class="nav-tab active" id="nav-dashboard" onclick="switchTab('dashboard')">
+          <span style="font-size: 18px;" class="nav-icon">📊</span>
+          <span>ホーム</span>
+        </button>
+        <button class="nav-tab" id="nav-accounts" onclick="switchTab('accounts')">
+          <span style="font-size: 18px;" class="nav-icon">💳</span>
+          <span>口座・移動</span>
+        </button>
+        <div class="nav-tab-center">
+          <button class="nav-center-btn" onclick="switchTab('register')">＋</button>
+        </div>
+        <button class="nav-tab" id="nav-goals" onclick="switchTab('goals')">
+          <span style="font-size: 18px;" class="nav-icon">🌱</span>
+          <span>目標・成長</span>
+        </button>
+        <button class="nav-tab" id="nav-admin" onclick="switchTab('admin')">
+          <span style="font-size: 18px;" class="nav-icon">⚙️</span>
+          <span>管理・ログ</span>
+        </button>
+      </nav>
+
+      <!-- Toast Element -->
+      <div class="toast-box" id="toastBox">
+        <span id="toastMsg">自動保存しました</span>
+      </div>
+
+      <!-- Revert Modal Dialog -->
+      <div class="modal-backdrop" id="revertModal">
+        <div class="modal-card">
+          <h3 style="color: var(--danger);">⚠️ 24時間チェックポイントリバート</h3>
+          <p>
+            この操作により、指定時点以降の明細データと口座残高が巻き戻されます。<br>
+            <b>一時保存データ（手動・自動）はすべて空に初期化されます。</b>
+          </p>
+          <div style="background: var(--danger-light); padding: 8px; border-radius: 6px; font-size: 11px; color: var(--danger);">
+            👥 <b>家族への影響:</b> 山田花子さんが登録した 1件の明細も同時に取り消されます。
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-secondary" onclick="hideRevertModal()">キャンセル</button>
+            <button class="btn btn-primary" style="background: var(--danger);" onclick="executeRevert()">実行する</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // Theme Switcher
+    function changeTheme(themeName) {
+      const themes = {
+        'natural-komame': '',
+        'warm-latte': 'warm-latte',
+        'fintech-indigo': 'fintech-indigo',
+        'forest-mint': 'forest-mint',
+        'slate-dark': 'slate-dark'
+      };
+      
+      const themeAttr = themes[themeName];
+      if (themeAttr) {
+        document.documentElement.setAttribute('data-theme', themeAttr);
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+      triggerToast(`テーマを「${document.getElementById('themeSelect').selectedOptions[0].text}」に変更しました`);
+    }
+
+    // Device View Switcher
+    function setDeviceView(viewType) {
+      const wrapper = document.getElementById('mockupWrapper');
+      const btnPhone = document.getElementById('btnPhone');
+      const btnDesktop = document.getElementById('btnDesktop');
+
+      if (viewType === 'phone') {
+        wrapper.className = 'mockup-wrapper phone-view';
+        btnPhone.classList.add('active');
+        btnDesktop.classList.remove('active');
+      } else {
+        wrapper.className = 'mockup-wrapper desktop-view';
+        btnDesktop.classList.add('active');
+        btnPhone.classList.remove('active');
+      }
+    }
+
+    // Tab Switcher
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-page').forEach(page => page.classList.remove('active'));
+      document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+
+      const targetPage = document.getElementById(`tab-${tabId}`);
+      if (targetPage) targetPage.classList.add('active');
+
+      const targetNav = document.getElementById(`nav-${tabId}`);
+      if (targetNav) targetNav.classList.add('active');
+    }
+
+    // Mechanical Suggestion Simulation
+    function handleShopInput(val) {
+      const suggest = document.getElementById('suggestBox');
+      if (val.trim().length > 0) {
+        suggest.style.display = 'flex';
+      } else {
+        suggest.style.display = 'none';
+      }
+    }
+
+    function applySuggest() {
+      document.getElementById('catSelect').value = 'food';
+      document.getElementById('paySelect').value = 'paypay';
+      triggerToast('💡 費目「食費」と支払元「PayPay」を自動適用しました');
+    }
+
+    // Toast Notification Trigger
+    let toastTimeout;
+    function triggerToast(msg) {
+      const toast = document.getElementById('toastBox');
+      const toastMsg = document.getElementById('toastMsg');
+      toastMsg.innerText = msg;
+      toast.classList.add('show');
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
+
+    // Manual Draft & Submit Simulation
+    function manualSaveDraft() {
+      triggerToast('💾 入力データを明示的一時保存スロットに保存しました (14:30)');
+    }
+
+    function submitTx() {
+      triggerToast('✓ セブンイレブン ¥840 の明細を登録しました！');
+      setTimeout(() => switchTab('dashboard'), 800);
+    }
+
+    // Revert Modal
+    function showRevertModal() {
+      document.getElementById('revertModal').classList.add('show');
+    }
+
+    function hideRevertModal() {
+      document.getElementById('revertModal').classList.remove('show');
+    }
+
+    function executeRevert() {
+      hideRevertModal();
+      triggerToast('✓ チェックポイント時点へリバートしました。一時保存データを空に初期化しました。');
+      setTimeout(() => switchTab('dashboard'), 1000);
+    }
+
+    // Auto draft simulation (after typing stops)
+    let autoDraftTimer;
+    document.addEventListener('input', () => {
+      clearTimeout(autoDraftTimer);
+      autoDraftTimer = setTimeout(() => {
+        const activeTab = document.querySelector('.tab-page.active');
+        if (activeTab && activeTab.id === 'tab-register') {
+          triggerToast('☁️ 入力途中のデータを自動保存しました (2秒経過)');
+        }
+      }, 2000);
+    });
+  </script>
+</body>
+</html>

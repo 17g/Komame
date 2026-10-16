@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: komame-dev-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: komame_user
+      POSTGRES_PASSWORD: komame_secure_pass_2026
+      POSTGRES_DB: komame_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - komame_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U komame_user -d komame_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  komame_dev_data:
