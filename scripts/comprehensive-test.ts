@@ -537,8 +537,192 @@ ${dupCheckDate},${dupCheckShop},${dupCheckAmount},食費,,重複検証用
     `リバート後に現金残高が元通り回復したことを確認 (${postRevertCashAcc.balance}円 == ${initialCashBalForBatch}円)`
   );
 
+  // 13. 口座間資金移動 (transfer) の残高連動・更新・リバート巻き戻しテスト
+  console.log("\n--- 13. 口座間資金移動 (transfer) & リバート巻き戻しテスト ---");
+  const preTransferAccRes = await apiFetch("/api/accounts");
+  const preTransferBank = preTransferAccRes.json.accounts.find((a: any) => a.id === mainBank.id);
+  const preTransferCash = preTransferAccRes.json.accounts.find((a: any) => a.id === cashAcc?.id);
+  const bankBalBeforeTransfer = preTransferBank.balance;
+  const cashBalBeforeTransfer = preTransferCash.balance;
+  const transferAmount = 7000;
+
+  const transferTxRes = await apiFetch("/api/transactions", {
+    method: "POST",
+    body: JSON.stringify({
+      type: "transfer",
+      date: "2026-10-16",
+      amount: transferAmount,
+      fromAccountId: mainBank.id,
+      toAccountId: cashAcc?.id,
+      shopName: "ATM現金引き出し（資金移動テスト）",
+      note: "口座間資金移動テスト",
+    }),
+  });
+  assert(transferTxRes.ok, "資金移動明細登録成功 (POST /api/transactions)");
+  const transferTxId = transferTxRes.json.createdTxIds[0];
+  const transferCheckpointId = transferTxRes.json.checkpointId;
+  assert(!!transferTxId && !!transferCheckpointId, "資金移動明細IDとチェックポイントIDの発行確認");
+
+  const accAfterTransfer = await apiFetch("/api/accounts");
+  const bankAfterTransfer = accAfterTransfer.json.accounts.find((a: any) => a.id === mainBank.id);
+  const cashAfterTransfer = accAfterTransfer.json.accounts.find((a: any) => a.id === cashAcc?.id);
+
+  assert(
+    bankAfterTransfer.balance === bankBalBeforeTransfer - transferAmount,
+    `移動元銀行口座が減額されたことを確認 (${bankBalBeforeTransfer}円 -> ${bankAfterTransfer.balance}円)`
+  );
+  assert(
+    cashAfterTransfer.balance === cashBalBeforeTransfer + transferAmount,
+    `移動先現金口座が増額されたことを確認 (${cashBalBeforeTransfer}円 -> ${cashAfterTransfer.balance}円)`
+  );
+
+  // 13.1 資金移動の金額変更 (PUT)
+  const updatedTransferAmount = 10000;
+  const updateTransferRes = await apiFetch("/api/transactions", {
+    method: "PUT",
+    body: JSON.stringify({
+      id: transferTxId,
+      amount: updatedTransferAmount,
+      fromAccountId: mainBank.id,
+      toAccountId: cashAcc?.id,
+      shopName: "ATM現金引き出し（増額変更）",
+    }),
+  });
+  assert(updateTransferRes.ok, "資金移動明細の更新成功 (PUT)");
+
+  const accAfterUpdateTransfer = await apiFetch("/api/accounts");
+  const bankAfterUpdateTransfer = accAfterUpdateTransfer.json.accounts.find((a: any) => a.id === mainBank.id);
+  const cashAfterUpdateTransfer = accAfterUpdateTransfer.json.accounts.find((a: any) => a.id === cashAcc?.id);
+
+  assert(
+    bankAfterUpdateTransfer.balance === bankBalBeforeTransfer - updatedTransferAmount,
+    `更新後: 移動元銀行口座が新金額 (${updatedTransferAmount}円) で正しく減額同期 (${bankAfterUpdateTransfer.balance}円)`
+  );
+  assert(
+    cashAfterUpdateTransfer.balance === cashBalBeforeTransfer + updatedTransferAmount,
+    `更新後: 移動先現金口座が新金額 (${updatedTransferAmount}円) で正しく増額同期 (${cashAfterUpdateTransfer.balance}円)`
+  );
+
+  // 13.2 資金移動のチェックポイントリバート (巻き戻し)
+  const revertTransferRes = await apiFetch("/api/admin/revert", {
+    method: "POST",
+    body: JSON.stringify({ checkpointId: transferCheckpointId }),
+  });
+  assert(revertTransferRes.ok, "資金移動チェックポイントのリバート成功 (POST /api/admin/revert)");
+
+  const accAfterRevertTransfer = await apiFetch("/api/accounts");
+  const bankAfterRevertTransfer = accAfterRevertTransfer.json.accounts.find((a: any) => a.id === mainBank.id);
+  const cashAfterRevertTransfer = accAfterRevertTransfer.json.accounts.find((a: any) => a.id === cashAcc?.id);
+
+  assert(
+    bankAfterRevertTransfer.balance === bankBalBeforeTransfer,
+    `リバート後: 移動元銀行口座の残高が初期値に完全回復 (${bankAfterRevertTransfer.balance}円 == ${bankBalBeforeTransfer}円)`
+  );
+  assert(
+    cashAfterRevertTransfer.balance === cashBalBeforeTransfer,
+    `リバート後: 移動先現金口座の残高が初期値に完全回復 (${cashAfterRevertTransfer.balance}円 == ${cashBalBeforeTransfer}円)`
+  );
+
+  const txListAfterRevertTransfer = await apiFetch("/api/transactions");
+  const transferTxInList = txListAfterRevertTransfer.json.transactions.find((t: any) => t.id === transferTxId);
+  assert(!transferTxInList, "リバート後に資金移動明細が安全に削除されたことを確認");
+
+  // 14. QRコード決済支出登録 & リバート時の残高逆算復元テスト
+  console.log("\n--- 14. QRコード決済支出登録 & リバート時の残高逆算復元テスト ---");
+  let qrPm = ctx.paymentMethods.find((p: any) => p.type === "qr_code");
+  let createdQrPmId: string | null = null;
+  if (!qrPm) {
+    const createQrPmRes = await apiFetch("/api/accounts", {
+      method: "POST",
+      body: JSON.stringify({
+        actionType: "payment_method",
+        name: "PayPay（テスト用）",
+        type: "qr_code",
+        sourceAccountId: mainBank.id,
+      }),
+    });
+    assert(createQrPmRes.ok, "テスト用QR決済手段の作成成功 (POST)");
+    createdQrPmId = createQrPmRes.json.id;
+    qrPm = { id: createdQrPmId, type: "qr_code", sourceAccountId: mainBank.id };
+  }
+
+  const preQrAccRes = await apiFetch("/api/accounts");
+  const targetAccForQr = preQrAccRes.json.accounts.find((a: any) => a.id === (qrPm.sourceAccountId || mainBank.id));
+  const balBeforeQr = targetAccForQr.balance;
+  const qrExpenseAmount = 1800;
+
+  const qrTxRes = await apiFetch("/api/transactions", {
+    method: "POST",
+    body: JSON.stringify({
+      type: "expense",
+      date: "2026-10-16",
+      amount: qrExpenseAmount,
+      paymentMethodId: qrPm.id,
+      shopName: "コンビニ（QR決済テスト）",
+      note: "QRコード決済残高連動テスト",
+    }),
+  });
+  assert(qrTxRes.ok, "QR決済支出明細登録成功 (POST)");
+  const qrTxId = qrTxRes.json.createdTxIds[0];
+  const qrCheckpointId = qrTxRes.json.checkpointId;
+
+  const accAfterQr = await apiFetch("/api/accounts");
+  const accAfterQrTarget = accAfterQr.json.accounts.find((a: any) => a.id === targetAccForQr.id);
+  assert(
+    accAfterQrTarget.balance === balBeforeQr - qrExpenseAmount,
+    `QR決済支出により紐づく口座残高が減額されたことを確認 (${balBeforeQr}円 -> ${accAfterQrTarget.balance}円)`
+  );
+
+  // QR支出のリバート (残高逆算復元の確認)
+  const revertQrRes = await apiFetch("/api/admin/revert", {
+    method: "POST",
+    body: JSON.stringify({ checkpointId: qrCheckpointId }),
+  });
+  assert(revertQrRes.ok, "QR決済チェックポイントのリバート成功 (POST /api/admin/revert)");
+
+  const accAfterRevertQr = await apiFetch("/api/accounts");
+  const accAfterRevertQrTarget = accAfterRevertQr.json.accounts.find((a: any) => a.id === targetAccForQr.id);
+  assert(
+    accAfterRevertQrTarget.balance === balBeforeQr,
+    `リバート後: QR決済元の残高が元通り回復したことを確認 (${accAfterRevertQrTarget.balance}円 == ${balBeforeQr}円)`
+  );
+
+  if (createdQrPmId) {
+    await apiFetch(`/api/accounts?id=${createdQrPmId}&actionType=payment_method`, {
+      method: "DELETE",
+    });
+  }
+
+  // 15. 家族メンバー管理 & パスワードポリシー設定 & 監査ログエクスポート API テスト
+  console.log("\n--- 15. 家族メンバー管理 & パスワードポリシー & 監査ログエクスポート テスト ---");
+  const membersRes = await apiFetch("/api/admin/members");
+  assert(membersRes.ok, "家族メンバー一覧取得成功 (GET /api/admin/members)");
+  assert(Array.isArray(membersRes.json.members), "メンバー一覧が配列形式であることを確認");
+
+  const settingsRes = await apiFetch("/api/admin/settings");
+  assert(settingsRes.ok, "システム設定取得成功 (GET /api/admin/settings)");
+  assert(!!settingsRes.json.settings, "システム設定オブジェクトの存在確認");
+
+  const updateSettingsRes = await apiFetch("/api/admin/settings", {
+    method: "PUT",
+    body: JSON.stringify({
+      passwordMinLength: 8,
+      passwordRequireUpper: true,
+      passwordRequireLower: true,
+      passwordRequireNumber: true,
+      passwordRequireSymbol: false,
+      currencySymbol: "¥",
+      dateFormat: "YYYY-MM-DD",
+    }),
+  });
+  assert(updateSettingsRes.ok, "システム設定更新成功 (PUT /api/admin/settings)");
+
+  const logExportRes = await apiFetch("/api/admin/logs?export=csv");
+  assert(logExportRes.ok, "監査ログCSVエクスポート成功 (GET /api/admin/logs?export=csv)");
+  assert(logExportRes.text.includes("ログID,日時,操作種別,対象種別"), "監査ログCSVヘッダーの整合性確認");
+
   console.log("\n==========================================================");
-  console.log("🎉 すべてのテスト（全12カテゴリ・CSV・CRUD・一括登録・残高整合性）に完全合格しました！");
+  console.log("🎉 すべてのテスト（全15カテゴリ・資金移動・QR逆算・CSV・CRUD・一括登録・残高整合性・管理機能）に完全合格しました！");
   console.log("==========================================================");
 }
 

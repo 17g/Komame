@@ -10,7 +10,7 @@
 - [x] Phase 2: 未実装・不完全なコア家計簿機能の実装（仕様完全準拠）
 - [x] Phase 3: 管理者機能 & 家族ユーザー管理の実装
 - [x] Phase 4: UI/UX・ゲーミフィケーションの動的データ完全連動
-- [ ] Phase 5: 検証・テスト実行およびプロジェクト設定の最新化
+- [x] Phase 5: 検証・テスト実行およびプロジェクト設定の最新化
 
 
 ---
@@ -90,7 +90,7 @@
   - Streamlit/Pythonの誤記述を Next.js 15 / TypeScript / Drizzle ORM / PostgreSQL 16 に修正。
 - [x] **5.2 TypeScript型チェック & ビルド検証**:
   - `npx tsc --noEmit` および `npm run build` の正常終了（Exit Code 0）を確認。
-- [ ] **5.3 総合ビジネスロジックテストの実行 & 更新**:
+- [x] **5.3 総合ビジネスロジックテストの実行 & 更新**:
   - `scripts/comprehensive-test.ts` に修正した資金移動・リバートのテストケースを追加し、全パスを確認。
-- [ ] **5.4 変更履歴の記録 (`AICHANGELOG.md`)**:
+- [x] **5.4 変更履歴の記録 (`AICHANGELOG.md`)**:
   - 作業内容（Before/After、変更理由、影響範囲）を記録。

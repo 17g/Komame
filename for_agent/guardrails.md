@@ -21,6 +21,10 @@
 - 本プロジェクトは **Next.js 15 (React 19, TypeScript) + Drizzle ORM + PostgreSQL 16** です。
 - `AGENTS.md` の初期テンプレートに誤記（Python/Streamlit）がある場合でも、実プロジェクトの Next.js 構成に基づいて検証コマンド（`npm run build`, `npx tsc --noEmit` 等）を実行すること。
 
+### 1.3 テスト実行・DB前提条件の確認ガードレール
+- `scripts/comprehensive-test.ts` や E2E テスト等の API・DB 結合検証を実行する際は、事前にローカルの PostgreSQL サービスまたは Docker コンテナ（`docker compose -f docker-compose.dev.yml up -d`）が起動中（ポート 5432 がリッスン中）であることを確認すること。
+- DB 未起動環境や CI 等で Docker デーモンが停止している場合は、無理に API サーバーへの接続テストを無限ループで試行せず、型チェック（`npx tsc --noEmit`）およびプロダクションビルド検証（`npm run build`）による静的整合性検証を Ground Truth として担保すること。
+
 ---
 
 ## 2. データベース・マルチテナントのガードレール
