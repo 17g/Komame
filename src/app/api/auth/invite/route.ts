@@ -7,6 +7,7 @@ import {
   hashPassword,
   verifyPassword,
   validatePasswordPolicy,
+  getHouseholdPasswordPolicy,
   createSessionToken,
   setSessionCookie,
 } from "@/lib/auth";
@@ -140,8 +141,9 @@ export async function POST(req: NextRequest) {
         });
       }
     } else {
-      // 新規ユーザー登録
-      const pwdValidation = validatePasswordPolicy(password);
+      // 新規ユーザー登録 (招待元世帯のカスタムパスワードポリシーを強制適用: VULN-10)
+      const policy = await getHouseholdPasswordPolicy(household.id);
+      const pwdValidation = validatePasswordPolicy(password, policy);
       if (!pwdValidation.isValid) {
         return NextResponse.json({ error: pwdValidation.errors.join(" ") }, { status: 400 });
       }

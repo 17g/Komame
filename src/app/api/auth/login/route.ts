@@ -9,18 +9,20 @@ export async function POST(req: NextRequest) {
   try {
     const { email, password } = await req.json();
 
-    if (!email || !password) {
+    if (!email || !password || typeof email !== "string") {
       return NextResponse.json(
         { error: "メールアドレスとパスワードを入力してください。" },
         { status: 400 }
       );
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     // 1. ユーザー検索
     const [user] = await masterDb
       .select()
       .from(users)
-      .where(and(eq(users.email, email), eq(users.isActive, true)))
+      .where(and(eq(users.email, normalizedEmail), eq(users.isActive, true)))
       .limit(1);
 
     if (!user) {

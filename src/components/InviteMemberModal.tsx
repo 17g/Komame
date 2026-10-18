@@ -151,9 +151,15 @@ export function InviteMemberModal({
                   ✓
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-primary">登録・招待準備が完了しました！</h4>
+                  <h4 className="text-xs font-bold text-primary">
+                    {result.initialPassword
+                      ? "登録・招待準備が完了しました！"
+                      : "世帯招待リンクを発行しました！"}
+                  </h4>
                   <p className="text-[11px] text-content-main mt-0.5 leading-relaxed">
-                    以下のログイン情報または招待リンクをご家族へ共有してください。
+                    {result.initialPassword
+                      ? "以下のログイン情報または招待リンクをご家族へ共有してください。"
+                      : "相手の方はすでにKomameアカウントをお持ちのため、本人の認証が必要です。以下の招待リンクをご家族へ共有してください。"}
                   </p>
                 </div>
               </div>

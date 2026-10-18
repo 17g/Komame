@@ -107,9 +107,9 @@ export default function Home() {
 
   // 認証フォーム入力
   const [authMode, setAuthMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("admin@komame.local");
-  const [password, setPassword] = useState("Password123!");
-  const [householdName, setHouseholdName] = useState("山田家");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [householdName, setHouseholdName] = useState("");
   const [authError, setAuthError] = useState("");
 
   const triggerToast = (msg: string) => {
@@ -357,10 +357,24 @@ export default function Home() {
           </form>
 
           {authMode === "login" && (
-            <div className="p-3 bg-app-subtle rounded-xl text-[11px] text-content-muted border border-border leading-relaxed">
-              💡 <b>初期デモ管理者アカウント:</b><br />
-              ・メール: <code>admin@komame.local</code><br />
-              ・パスワード: <code>Password123!</code>
+            <div className="p-3 bg-app-subtle rounded-xl text-[11px] text-content-muted border border-border leading-relaxed flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span>💡 <b>初期デモ管理者アカウント:</b></span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmail("admin@komame.local");
+                    setPassword("Password123!");
+                  }}
+                  className="text-primary hover:underline font-bold text-[10px] cursor-pointer"
+                >
+                  クイック入力
+                </button>
+              </div>
+              <div className="text-[10px] text-content-subtle font-mono">
+                ・メール: <code>admin@komame.local</code><br />
+                ・パスワード: <code>Password123!</code>
+              </div>
             </div>
           )}
         </div>

@@ -50,7 +50,29 @@ async function runTests() {
   const noNumberPwd = validatePasswordPolicy("NoNumbersHere!");
   assert(!noNumberPwd.isValid, "Password without numbers fails policy");
 
-  // Test 5: Hash & Verify
+  // Test 5: Custom Household Password Policy Validation
+  const strictPolicy = {
+    minLength: 12,
+    requireUppercase: true,
+    requireLowercase: true,
+    requireNumbers: true,
+    requireSpecialChars: true,
+  };
+  const failsLength = validatePasswordPolicy("Short1!Aa", strictPolicy);
+  assert(!failsLength.isValid, "Password below custom minLength (12) fails");
+
+  const failsSpecial = validatePasswordPolicy("NoSpecialChars123A", strictPolicy);
+  assert(!failsSpecial.isValid, "Password missing special chars fails when required");
+
+  const passesStrict = validatePasswordPolicy("ValidStrictPass2026!", strictPolicy);
+  assert(passesStrict.isValid, "Valid password meeting all strict requirements passes");
+
+  // Test 6: Email Normalization
+  const rawEmail = "  User.Name+Test@Example.COM  ";
+  const normalized = rawEmail.trim().toLowerCase();
+  assert(normalized === "user.name+test@example.com", "Email is trimmed and lowercased");
+
+  // Test 7: Hash & Verify
   const hash = await hashPassword("KomameFamily2026!");
   const match = await verifyPassword(hash, "KomameFamily2026!");
   assert(match === true, "Argon2id password verification succeeds");

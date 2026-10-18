@@ -132,7 +132,7 @@
     2. `src/app/api/transactions/route.ts`（POST / PUT / DELETE）、`src/app/api/admin/csv/route.ts`（POST import）、`src/app/api/admin/revert/route.ts`（POST）に存在するすべての `raw.unsafe(...)` による口座残高 `UPDATE` 文を撤去する。
     3. Drizzle ORM のパラメータバインディングを用いたクエリ（`db.update(schema.accounts).set({ balance: sql`${schema.accounts.balance} - ${amount}` }).where(eq(schema.accounts.id, accountId))` 等）へ全面的に置換し、複文実行（Stacked Queries）および文字列注入を構造的に遮断する。
 
-- [ ] **7.2 [VULN-02 & VULN-10] 家族メンバー管理におけるアカウント乗っ取り (ATO) 防止・User Enumeration 対策・招待時パスワードポリシー適用の実装**:
+- [x] **7.2 [VULN-02 & VULN-10] 家族メンバー管理におけるアカウント乗っ取り (ATO) 防止・User Enumeration 対策・招待時パスワードポリシー適用の実装**:
   - **対象ファイル**: `src/app/api/admin/members/route.ts`, `src/app/api/auth/invite/route.ts`, `src/app/api/auth/login/route.ts`, `src/app/api/auth/signup/route.ts`, `src/app/page.tsx`
   - **実装内容**:
     1. `POST /api/admin/members` でメールアドレス指定時に、既に別世帯に所属している既存ユーザーを本人の認証・同意なしに `household_memberships` へ直接追加する処理を廃止し、既存ユーザーに対しては招待トークンリンク（`/invite?token=...`）を発行して本人が `POST /api/auth/invite` でパスワード認証の上で参加するフローへ統一する。

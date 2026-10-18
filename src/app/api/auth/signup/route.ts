@@ -15,9 +15,17 @@ export async function POST(req: NextRequest) {
   try {
     const { email, password, householdName } = await req.json();
 
-    if (!email || !password || !householdName) {
+    if (!email || !password || !householdName || typeof email !== "string") {
       return NextResponse.json(
         { error: "すべての項目（メールアドレス、パスワード、世帯名）を入力してください。" },
+        { status: 400 }
+      );
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail.includes("@")) {
+      return NextResponse.json(
+        { error: "有効なメールアドレスを入力してください。" },
         { status: 400 }
       );
     }
@@ -29,7 +37,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. メール重複チェック
-    const [existing] = await masterDb.select().from(users).where(eq(users.email, email)).limit(1);
+    const [existing] = await masterDb.select().from(users).where(eq(users.email, normalizedEmail)).limit(1);
     if (existing) {
       return NextResponse.json(
         { error: "このメールアドレスは既に登録されています。" },
@@ -51,7 +59,7 @@ export async function POST(req: NextRequest) {
     // 6. マスタDBレコード作成
     await masterDb.insert(users).values({
       id: userId,
-      email,
+      email: normalizedEmail,
       passwordHash,
       themePreference: "natural_komame",
       isSuperAdmin: false,
@@ -135,7 +143,7 @@ export async function POST(req: NextRequest) {
     // 10. セッショントークン発行 & Cookie設定
     const token = await createSessionToken({
       userId,
-      email,
+      email: normalizedEmail,
       activeHouseholdId: householdId,
       schemaName,
       role: "admin",
@@ -143,13 +151,13 @@ export async function POST(req: NextRequest) {
 
     await setSessionCookie(token);
 
-    logger.info({ userId, email, householdId, schemaName }, "New household signup completed");
+    logger.info({ userId, email: normalizedEmail, householdId, schemaName }, "New household signup completed");
 
     return NextResponse.json({
       success: true,
       user: {
         id: userId,
-        email,
+        email: normalizedEmail,
         themePreference: "natural_komame",
         role: "admin",
         householdId,

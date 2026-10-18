@@ -2,6 +2,59 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-18] 【VULN-02 & VULN-10】家族メンバー管理におけるアカウント乗っ取り (ATO) 防止・User Enumeration 対策・招待時パスワードポリシー適用の実装
+
+### 1. 概要
+ペネトレーションテスト結果（VULN-02 & VULN-10）に基づき、以下のセキュリティ強化を実施した：
+1. `POST /api/admin/members` において、他世帯に所属する既存ユーザーを本人の同意・認証なく `household_memberships` へ直接追加していた処理を廃止し、ワンタイム招待トークンリンク（`/invite?token=...`）を発行して本人が `POST /api/auth/invite` でパスワード認証の上で参加する安全なフローへ統一。
+2. `POST /api/admin/members` の `action: "reset_password"` において、対象ユーザーが他世帯にも所属している場合は世帯管理者によるグローバルパスワード（`public.users.passwordHash`）の直接上書きを `403 Forbidden` で拒否する認可ガードを実装し、クロス世帯のアカウント乗っ取りを防止。
+3. `POST /api/auth/invite` による新規ユーザー参加時に `getHouseholdPasswordPolicy(household.id)` を呼び出し、招待元世帯のカスタムパスワードポリシーを強制適用。
+4. `POST /api/auth/signup` および `POST /api/auth/login` において `email.trim().toLowerCase()` によるメールアドレス正規化処理を統一適用。
+5. `src/app/page.tsx` において、ログインフォームの初期値からハードコードされていた平文パスワード（`Password123!`）を空文字へ初期化し、開発・検証用のクイック入力補助ボタンへ分離。
+6. 単体テスト（`scripts/test-members-unit.ts`）、TypeScript型チェック（`npx tsc --noEmit`）、Next.js プロダクションビルド（`npm run build`）の全通過（Exit Code 0）を確認。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `src/app/api/admin/members/route.ts`:
+    - 管理者が任意の既存ユーザーのメールアドレスを指定した際、ユーザー本人の認証なく直接アクティブメンバーとして世帯に追加されていた（アカウント乗っ取り・情報漏洩リスク）。
+    - 管理者が `reset_password` を実行した際、対象ユーザーが複数世帯に所属していてもグローバルパスワードを無条件で上書きしていた。
+  - `src/app/api/auth/invite/route.ts`:
+    - 招待からの新規登録時にデフォルトのパスワードポリシー（8文字以上）のみを検証し、招待元世帯のカスタムポリシーが無視されていた。
+  - `src/app/api/auth/login/route.ts` & `src/app/api/auth/signup/route.ts`:
+    - メールアドレスのトリム・小文字正規化が未実施であり、大文字小文字の差異や余計な空白による認証不一致や重複のリスクがあった。
+  - `src/app/page.tsx`:
+    - フォーム初期値に平文パスワード（`Password123!`）が埋め込まれていた。
+  - `src/components/InviteMemberModal.tsx`:
+    - 既存ユーザー招待時に「登録・招待準備が完了しました」と画一的に表示されていた。
+- **After**:
+  - `src/app/api/admin/members/route.ts`:
+    - 既存ユーザー追加時は招待リンク発行フローへ変更（`isExistingAccount: true`）。
+    - `reset_password` に他世帯所属判定ガード（`sql\`\${householdMemberships.householdId} != \${session.activeHouseholdId}\`` の件数チェック）を追加し、複数世帯所属ユーザーのパスワード強制上書きを拒否。
+  - `src/app/api/auth/invite/route.ts`:
+    - 新規登録時に `getHouseholdPasswordPolicy(household.id)` を適用。
+  - `src/app/api/auth/login/route.ts` & `src/app/api/auth/signup/route.ts`:
+    - `email.trim().toLowerCase()` による統一正規化を適用。
+  - `src/app/page.tsx`:
+    - `email`, `password`, `householdName` を空文字初期化し、デモ用クイック入力ボタンを配置。
+  - `src/components/InviteMemberModal.tsx`:
+    - 既存アカウント招待時は「世帯招待リンクを発行しました」と状況に即した説明文を表示。
+  - `scripts/test-members-unit.ts`:
+    - カスタムパスワードポリシー検証およびメール正規化の単体テストを追加。
+
+### 3. 変更理由
+- 家族メンバー招待およびパスワードリセットにおけるアカウント乗っ取り（ATO）、ユーザー列挙、クロス世帯セキュリティ境界の侵害リスクを完全に遮断し、招待時にも世帯管理者が設定したセキュリティポリシーを確実に遵守させるため。
+
+### 4. 影響範囲
+- `src/app/api/admin/members/route.ts`
+- `src/app/api/auth/invite/route.ts`
+- `src/app/api/auth/login/route.ts`
+- `src/app/api/auth/signup/route.ts`
+- `src/app/page.tsx`
+- `src/components/InviteMemberModal.tsx`
+- `scripts/test-members-unit.ts`
+- `Plan.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-18] 【VULN-01 & VULN-05】SQL インジェクションの完全根絶と動的テナントスキーマ名バリデーションの実装
 
 ### 1. 概要

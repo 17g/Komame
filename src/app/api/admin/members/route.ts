@@ -113,6 +113,28 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "対象のメンバーが見つかりません。" }, { status: 404 });
       }
 
+      // 他世帯にも所属しているかの検証（クロス世帯乗っ取り防止: VULN-02）
+      const otherMemberships = await masterDb
+        .select({ count: sql<number>`count(*)` })
+        .from(householdMemberships)
+        .where(
+          and(
+            eq(householdMemberships.userId, targetMem.userId),
+            sql`${householdMemberships.householdId} != ${session.activeHouseholdId}`
+          )
+        );
+
+      const otherCount = Number(otherMemberships[0]?.count || 0);
+      if (otherCount > 0) {
+        return NextResponse.json(
+          {
+            error:
+              "対象のユーザーは複数の世帯に所属しているため、管理者によるパスワードの直接上書きはできません。ユーザー本人にパスワード変更を依頼してください。",
+          },
+          { status: 403 }
+        );
+      }
+
       const newHash = await hashPassword(newPassword);
       await masterDb
         .update(users)
@@ -204,15 +226,10 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 別世帯等の既存ユーザーを当世帯に追加
-      const membershipId = `mem_${crypto.randomUUID().replace(/-/g, "")}`;
-      await masterDb.insert(householdMemberships).values({
-        id: membershipId,
-        userId: existingUser.id,
+      // 別世帯等の既存ユーザーの場合：直接追加せず、本人の認証・同意を求めるため招待リンクを発行 (VULN-02 & VULN-10)
+      const inviteToken = await createInviteToken({
         householdId: session.activeHouseholdId,
         role: targetRole,
-        status: "active",
-        isDefault: false,
       });
 
       await db.insert(schema.auditLogs).values({
@@ -221,13 +238,15 @@ export async function POST(req: NextRequest) {
         operatorUserId: session.userId,
         action: "CREATE",
         entityType: "household_member",
-        entityId: membershipId,
-        summary: `既存ユーザーを世帯メンバーに追加しました (${normalizedEmail}, 権限: ${targetRole})`,
+        entityId: existingUser.id,
+        summary: `既存アカウントに対する世帯招待リンクを発行しました (${normalizedEmail}, 権限: ${targetRole})`,
       });
 
       return NextResponse.json({
         success: true,
-        message: `${normalizedEmail} を世帯メンバーに追加しました。`,
+        message: `${normalizedEmail} は既にKomameアカウントをお持ちです。世帯参加には本人の承認が必要です。招待リンクを共有してください。`,
+        inviteLink: `/invite?token=${inviteToken}`,
+        isExistingAccount: true,
       });
     }
 
