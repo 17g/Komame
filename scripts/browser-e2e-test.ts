@@ -25,12 +25,12 @@ async function runBrowserE2ETest() {
   try {
     // 1. トップページアクセス & ローディング完了待機
     console.log("\n--- 1. トップページアクセス & 認証 ---");
-    let baseUrl = "http://localhost:3000";
+    let baseUrl = "http://localhost:3080";
     try {
-      const testRes = await fetch("http://localhost:3000/api/auth/me");
-      if (!testRes.ok && testRes.status !== 401) throw new Error("Port 3000 not komame");
+      const testRes = await fetch("http://localhost:3080/api/auth/me");
+      if (!testRes.ok && testRes.status !== 401) throw new Error("Port 3080 not komame");
     } catch {
-      baseUrl = "http://localhost:3001";
+      baseUrl = "http://localhost:3081";
     }
     console.log(`接続先URL: ${baseUrl}`);
 

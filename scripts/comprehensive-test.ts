@@ -1,6 +1,6 @@
 import { logger } from "../src/lib/logger";
 
-const BASE_URL = "http://localhost:3000";
+const BASE_URL = "http://localhost:3080";
 
 interface TestContext {
   cookieHeader: string;

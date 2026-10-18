@@ -11,6 +11,7 @@
 - [x] Phase 3: 管理者機能 & 家族ユーザー管理の実装
 - [x] Phase 4: UI/UX・ゲーミフィケーションの動的データ完全連動
 - [x] Phase 5: 検証・テスト実行およびプロジェクト設定の最新化
+- [x] Phase 6: アプリケーション・DBのポート変更 (3080 / 5532) および README.md 作成・仕様書同期
 
 
 ---
@@ -94,3 +95,27 @@
   - `scripts/comprehensive-test.ts` に修正した資金移動・リバートのテストケースを追加し、全パスを確認。
 - [x] **5.4 変更履歴の記録 (`AICHANGELOG.md`)**:
   - 作業内容（Before/After、変更理由、影響範囲）を記録。
+
+---
+
+## Phase 6: アプリケーション・DBのポート変更 (3080 / 5532) および README.md 作成・仕様書同期
+- [x] **6.1 設定ファイルおよびコード内のポート番号変更**:
+  - `docker-compose.dev.yml`: PostgreSQL ポートを 5532 に変更 (`command: -p 5532`, `ports: ["5532:5532"]`, healthcheck)
+  - `docker-compose.prod.yml`: アプリケーションポートを 3080 に変更 (`ports: ["3080:3080"]`, `PORT: 3080`), PostgreSQL ポートを 5532 に変更 (`command: -p 5532`, `DATABASE_URL: ...@postgres:5532/...`, healthcheck)
+  - `Dockerfile`: `ENV PORT=3080`, `EXPOSE 3080`
+  - `package.json`: scripts の `dev` と `start` に `-p 3080` を追加
+  - `.env.example`, `.env.local`: `DATABASE_URL` のポートを 5532 に変更
+  - `src/db/index.ts`, `src/db/migrate.ts`, `src/db/seed.ts`: デフォルトのフォールバック URL ポートを 5532 に変更
+  - `scripts/*.ts`: E2E テスト・検証スクリプトの接続先を `http://localhost:3080` に更新
+- [x] **6.2 プロジェクトルートに `README.md` を作成**:
+  - プロジェクト概要、技術スタック、ポート構成（App: 3080, DB: 5532）、開発環境起動手順、本番環境起動手順、テスト検証手順等を網羅
+- [x] **6.3 仕様書類 (`for_agent/`, `docs/`) およびガードレールのポート番号記述更新・改訂履歴追記**:
+  - `for_agent/00_system_overview.md`
+  - `for_agent/02_architecture_and_tech_stack.md`
+  - `for_agent/06_operation_and_testing_guide.md`
+  - `for_agent/guardrails.md`
+  - `docs/environment_setup_guide.md`
+- [x] **6.4 ビルド検証 & 型チェック (Ground Truth)**:
+  - `npx tsc --noEmit` および `npm run build` を実行し、Exit Code 0 を確認
+- [x] **6.5 変更履歴記録 (`AICHANGELOG.md`) & コミット**:
+  - `AICHANGELOG.md` に作業内容を記録し、Git コミットを実施

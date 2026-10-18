@@ -6,9 +6,10 @@ services:
     container_name: komame-prod-app
     restart: always
     ports:
-      - "3000:3000"
+      - "3080:3080"
     environment:
-      DATABASE_URL: postgresql://komame_prod_user:${POSTGRES_PASSWORD}@postgres:5432/komame_prod_db
+      DATABASE_URL: postgresql://komame_prod_user:${POSTGRES_PASSWORD}@postgres:5532/komame_prod_db
+      PORT: 3080
       JWT_SECRET: ${JWT_SECRET}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
@@ -19,6 +20,7 @@ services:
     image: postgres:16-alpine
     container_name: komame-prod-postgres
     restart: always
+    command: -p 5532
     environment:
       POSTGRES_USER: komame_prod_user
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -26,7 +28,7 @@ services:
     volumes:
       - komame_prod_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U komame_prod_user -d komame_prod_db"]
+      test: ["CMD-SHELL", "pg_isready -p 5532 -U komame_prod_user -d komame_prod_db"]
       interval: 10s
       timeout: 5s
       retries: 5

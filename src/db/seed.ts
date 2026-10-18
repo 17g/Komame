@@ -6,7 +6,7 @@ import { logger } from "../lib/logger";
 
 const connectionString =
   process.env.DATABASE_URL ||
-  "postgresql://komame_user:komame_secure_pass_2026@localhost:5432/komame_db";
+  "postgresql://komame_user:komame_secure_pass_2026@localhost:5532/komame_db";
 
 const sql = postgres(connectionString, { max: 1 });
 

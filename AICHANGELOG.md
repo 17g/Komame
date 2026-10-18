@@ -2,6 +2,62 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-18] アプリケーション・PostgreSQLポート番号変更 (3080 / 5532) および README.md 作成・仕様書同期
+
+### 1. 概要
+ユーザーからの指示に基づき、開発環境（dev）および本番環境（prod）の稼働ポート番号を変更した。
+- アプリケーション: `3000` → `3080`
+- PostgreSQL 16: `5432` → `5532`
+
+あわせて、プロジェクト総合ガイドとなる `README.md` をルートディレクトリに新規作成し、仕様書類（`for_agent/`, `docs/`）およびガードレールに新しいポート番号の記述・改訂履歴を反映した。型チェック、Next.js プロダクションビルド、単体テスト（CSV / メンバー管理）をすべて実行し、正常終了（Exit Code 0）を確認した。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - アプリケーションはポート 3000 で起動（`docker-compose.prod.yml`, `Dockerfile`, `package.json: "dev": "next dev"`）。
+  - PostgreSQL はポート 5432 で起動（`docker-compose.dev.yml: 5432:5432`, `docker-compose.prod.yml: @postgres:5432`, `.env.example`, `.env.local`）。
+  - プロジェクトルートに `README.md` が存在しなかった。
+  - テスト・検証スクリプトおよび仕様書内で `http://localhost:3000` やポート `5432` が記載されていた。
+- **After**:
+  - **設定 & コンテナ定義**:
+    - `docker-compose.dev.yml`: `command: -p 5532`, `ports: ["5532:5532"]`, `healthcheck` をポート 5532 対応に改修。
+    - `docker-compose.prod.yml`: `app` サービスに `ports: ["3080:3080"]`, `PORT: 3080` を設定。`DATABASE_URL` を `@postgres:5532`、PostgreSQL サービスに `command: -p 5532`、`healthcheck` をポート 5532 対応に改修。
+    - `Dockerfile`: `ENV PORT=3080`, `EXPOSE 3080` に更新。
+    - `package.json`: `dev` スクリプトを `next dev -p 3080`、`start` スクリプトを `next start -p 3080` に更新。
+    - `.env.example`, `.env.local`: `DATABASE_URL` を `localhost:5532` に更新。
+    - `src/db/index.ts`, `src/db/migrate.ts`, `src/db/seed.ts`: 環境変数未設定時のデフォルトフォールバック URL を `localhost:5532` に更新。
+  - **テストスクリプト**:
+    - `scripts/browser-e2e-test.ts`, `scripts/comprehensive-test.ts`, `scripts/ui-render-test.ts`: 接続先 BASE_URL を `http://localhost:3080` に更新。
+  - **README.md 作成**:
+    - プロジェクト概要、マルチテナント・コア機能、ポート番号構成一覧表、技術スタック、クイックスタート手順（dev: 3080 / 5532）、本番デプロイ手順（prod）、テスト検証コマンド一覧、仕様書リンクを網羅した包括的な `README.md` を作成。
+  - **仕様書 & ガードレールの同期**:
+    - `for_agent/00_system_overview.md`: ネットワーク & ポート構成章（第5章）を追加、改訂履歴を追記。
+    - `for_agent/02_architecture_and_tech_stack.md`: ネットワーク・ポート構成章（第4章）を追加、改訂履歴を追記。
+    - `for_agent/06_operation_and_testing_guide.md`: アクセスURL（`http://localhost:3080`）、事前前提条件、本番ポート構成を更新し改訂履歴を追記。
+    - `for_agent/guardrails.md`: 事前確認ガードレール（ポート 5532）を更新し改訂履歴を追記。
+    - `docs/environment_setup_guide.md`: アクセスURL、起動手順、改訂履歴を更新。
+  - **進捗管理**:
+    - `Plan.md`: Phase 6 タスクを定義・完了チェックを反映。
+
+### 3. 変更理由
+- 開発・本番環境におけるポート重複回避、セキュリティ要件、およびプロジェクトの可視性・オンボーディング体験向上のため。
+
+### 4. 影響範囲
+- `docker-compose.dev.yml`
+- `docker-compose.prod.yml`
+- `Dockerfile`
+- `package.json`
+- `.env.example`, `.env.local`
+- `src/db/index.ts`, `src/db/migrate.ts`, `src/db/seed.ts`
+- `scripts/browser-e2e-test.ts`, `scripts/comprehensive-test.ts`, `scripts/ui-render-test.ts`
+- `README.md`
+- `for_agent/00_system_overview.md`
+- `for_agent/02_architecture_and_tech_stack.md`
+- `for_agent/06_operation_and_testing_guide.md`
+- `for_agent/guardrails.md`
+- `docs/environment_setup_guide.md`
+- `Plan.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-18] Mermaid構文エラーの修正およびガードレール追記
 
 ### 1. 概要

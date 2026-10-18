@@ -22,7 +22,7 @@
 - `AGENTS.md` の初期テンプレートに誤記（Python/Streamlit）がある場合でも、実プロジェクトの Next.js 構成に基づいて検証コマンド（`npm run build`, `npx tsc --noEmit` 等）を実行すること。
 
 ### 1.3 テスト実行・DB前提条件の確認ガードレール
-- `scripts/comprehensive-test.ts` や E2E テスト等の API・DB 結合検証を実行する際は、事前にローカルの PostgreSQL サービスまたは Docker コンテナ（`docker compose -f docker-compose.dev.yml up -d`）が起動中（ポート 5432 がリッスン中）であることを確認すること。
+- `scripts/comprehensive-test.ts` や E2E テスト等の API・DB 結合検証を実行する際は、事前にローカルの PostgreSQL サービスまたは Docker コンテナ（`docker compose -f docker-compose.dev.yml up -d`）が起動中（ポート 5532 がリッスン中）であることを確認すること。
 - DB 未起動環境や CI 等で Docker デーモンが停止している場合は、無理に API サーバーへの接続テストを無限ループで試行せず、型チェック（`npx tsc --noEmit`）およびプロダクションビルド検証（`npm run build`）による静的整合性検証を Ground Truth として担保すること。
 
 ---
@@ -101,4 +101,10 @@
   `graph TB` や `graph TD` は旧記法であり、subgraph をターゲットとするエッジ（`Gateway --> CoreModules` など）を記述すると構文エラー（Parse error）となる。必ず `flowchart TB` または `flowchart TD` を使用すること。
 - **特殊記号を含むラベルのエスケープ**:
   ノードや subgraph のラベルに丸括弧 `( )`、角括弧 `[ ]`、`&`、`+`、`/`、コロン `:` などの記号が含まれる場合、`subgraph ID [タイトル]` と直接書くとトークナイザが誤認して構文エラーとなる。必ずダブルクォーテーションで囲み、`subgraph ID ["タイトル (詳細)"]` または `nodeId["ラベル (詳細)"]` の形式で記述すること。
+
+---
+
+## 6. 改訂履歴
+
+- **2026-10-18**: 開発用 PostgreSQL 起動ポートの変更（5432 → 5532）に伴い、事前確認ガードレールのポート番号を更新。
 

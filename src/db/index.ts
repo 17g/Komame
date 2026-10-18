@@ -6,7 +6,7 @@ import { logQueryPerformance, logger } from "@/lib/logger";
 
 const connectionString =
   process.env.DATABASE_URL ||
-  "postgresql://komame_user:komame_secure_pass_2026@localhost:5432/komame_db";
+  "postgresql://komame_user:komame_secure_pass_2026@localhost:5532/komame_db";
 
 // 単一の共通 PostgreSQL 接続プール (全テナント共有)
 const client = postgres(connectionString, {

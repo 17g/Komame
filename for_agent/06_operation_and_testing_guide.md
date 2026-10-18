@@ -28,7 +28,7 @@ npm run db:seed
 npm run dev
 ```
 
-- アクセス: `http://localhost:3000`
+- アクセス: `http://localhost:3080`
 - デモ管理者アカウント: `admin@komame.local` / `Password123!`
 
 ---
@@ -56,7 +56,7 @@ npx tsx scripts/test-members-unit.ts
 ```
 
 ### 2.3 E2E & ビジネスロジック総合自動テスト
-PostgreSQL サービスおよび Next.js 開発サーバーが起動している状態で以下を実行：
+PostgreSQL サービス (ポート 5532) および Next.js 開発サーバー (ポート 3080) が起動している状態で以下を実行：
 ```powershell
 npx tsx scripts/comprehensive-test.ts
 ```
@@ -67,9 +67,8 @@ npx tsx scripts/comprehensive-test.ts
 
 ### 3.1 構成
 - `docker-compose.prod.yml`:
-  - `komame-app`: Next.js アプリケーション
-  - `komame-db`: PostgreSQL 16
-  - `komame-proxy`: Nginx リバースプロキシ
+  - `komame-prod-app`: Next.js アプリケーション (公開ポート: `3080:3080`)
+  - `komame-prod-postgres`: PostgreSQL 16 (内部ポート: `5532`)
 
 ### 3.2 起動手順
 ```bash
@@ -81,5 +80,6 @@ docker compose -f docker-compose.prod.yml exec app npm run db:migrate
 
 ## 4. 改訂履歴
 
+- **2026-10-18**: 開発・本番環境のポート番号をアプリケーション: `3080`、PostgreSQL: `5532` に統一改訂し、アクセスURLおよび検証前提条件を更新。
 - **2026-10-17**: 検証手順に DB 不要・高速実行可能な単体テスト（`test-csv-unit.ts`, `test-members-unit.ts`）を追加。
 - **2026-10-17**: `AGENTS.md` の技術スタック（Next.js 15 / TypeScript / Drizzle ORM）との整合性を同期。

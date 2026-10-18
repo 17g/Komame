@@ -22,7 +22,7 @@ npm install
 # 2. 環境変数設定 (.env.local の作成)
 Copy-Item .env.example .env.local
 
-# 3. 開発用 PostgreSQL 16 コンテナの起動
+# 3. 開発用 PostgreSQL 16 コンテナの起動 (ポート 5532)
 npm run db:up
 
 # 4. マスタスキーマおよびテナントスキーマのマイグレーション
@@ -31,10 +31,10 @@ npm run db:migrate
 # 5. 開発用デモデータ（山田家、管理者アカウント、初期費目等）のシード投入
 npm run db:seed
 
-# 6. 開発サーバーの起動
+# 6. 開発サーバーの起動 (ポート 3080)
 npm run dev
 ```
-ブラウザで `http://localhost:3000` にアクセスすると Komame アプリケーションが起動します。
+ブラウザで `http://localhost:3080` にアクセスすると Komame アプリケーションが起動します。
 - **デモ用初期ログイン**: `admin@komame.local` / `Password123!` （山田家 Household Admin）
 
 ---
@@ -102,3 +102,9 @@ docker compose -f docker-compose.prod.yml logs app | grep '"level":"error"'
 }
 ```
 このログから対象スキーマとSQLを特定し、インデックス追加やクエリ最適化を実施します。
+
+---
+
+## 4. 改訂履歴
+
+- **2026-10-18**: 開発・本番環境のポート番号をアプリケーション: `3080`、PostgreSQL: `5532` に統一改訂し、アクセス先URLおよび起動ポート記載を更新。
