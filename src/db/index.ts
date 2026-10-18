@@ -4,9 +4,25 @@ import * as masterSchema from "./schema/master";
 import { createTenantSchema, TenantSchemaTables } from "./schema/tenant";
 import { logQueryPerformance, logger } from "@/lib/logger";
 
+// 本番環境における DATABASE_URL の Fail-Fast 検証 (VULN-04)
+export function assertValidDatabaseUrl(url?: string, nodeEnv = process.env.NODE_ENV): void {
+  const isProduction = nodeEnv === "production";
+  const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+
+  if (isProduction && !isBuildPhase) {
+    if (!url || url.trim().length === 0) {
+      throw new Error("【セキュリティ違反】本番環境（NODE_ENV=production）では DATABASE_URL の設定が必須です。");
+    }
+  }
+}
+
+// 起動時 Fail-Fast 検証
+assertValidDatabaseUrl(process.env.DATABASE_URL);
+
 const connectionString =
   process.env.DATABASE_URL ||
   "postgresql://komame_user:komame_secure_pass_2026@localhost:5532/komame_db";
+
 
 // 単一の共通 PostgreSQL 接続プール (全テナント共有)
 const client = postgres(connectionString, {

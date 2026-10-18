@@ -141,7 +141,7 @@
     4. `POST /api/auth/signup` および `POST /api/auth/login` においても `email.trim().toLowerCase()` によるメールアドレス正規化を統一適用する。
     5. `src/app/page.tsx` におけるログインフォームの初期値からハードコードされた平文パスワード（`Password123!`）を除去（空文字初期化、または開発用クイック入力補助へ分離）する。
 
-- [ ] **7.3 [VULN-04 & VULN-06] シークレット管理の厳格化とセッション即時失効・DB突合によるリアルタイム権限検証の実装**:
+- [x] **7.3 [VULN-04 & VULN-06] シークレット管理の厳格化とセッション即時失効・DB突合によるリアルタイム権限検証の実装**:
   - **対象ファイル**: `src/lib/auth.ts`, `src/db/index.ts`, `src/app/api/auth/logout/route.ts`
   - **実装内容**:
     1. `src/lib/auth.ts` および `src/db/index.ts` にて、`NODE_ENV === "production"` 時に `JWT_SECRET`（最低32文字以上かつサンプル既知文字列でないこと）または `DATABASE_URL` が未設定の場合に即座に例外をスローする Fail-Fast 検証を追加する。

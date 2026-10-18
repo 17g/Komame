@@ -2,7 +2,50 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
-## [2026-10-18] 【VULN-02 & VULN-10】家族メンバー管理におけるアカウント乗っ取り (ATO) 防止・User Enumeration 対策・招待時パスワードポリシー適用の実装
+## [2026-10-18] 【VULN-04 & VULN-06】シークレット管理の厳格化とセッション即時失効・DB突合によるリアルタイム権限検証の実装
+
+### 1. 概要
+ペネトレーションテスト結果（VULN-04 & VULN-06）に基づき、以下のセキュリティ強化を実施した：
+1. `src/lib/auth.ts` および `src/db/index.ts` にて、本番環境（`NODE_ENV === "production"` かつ `NEXT_PHASE !== "phase-production-build"`）において `JWT_SECRET`（最低32文字以上かつ既知サンプルキーでないこと）または `DATABASE_URL` が未設定または不適切な場合に即座に例外をスローする Fail-Fast 検証関数（`assertValidJwtSecret`、`assertValidDatabaseUrl`）を実装。
+2. `getCurrentSession()` において、JWT 署名検証後に `masterDb` で `users`（`isActive === true`）および `household_memberships`（`status === "active"`）を照会し、メンバーの無効化・削除、ロール変更（`admin` ↔ `member`）、および正規の `schemaName`（ホワイトリスト検証済み）を DB の最新状態から毎回解決して返却するリアルタイム突合検証を実装。
+3. ログアウト時（`POST /api/auth/logout`）およびパスワード変更・リセット時に既存の JWT を即時無効化できるよう、メモリ上ブラックリスト（`revokeToken` / `isTokenRevoked`）および `users.updatedAt` とトークン発行時刻（`issuedAtMs` / `iat`）の突合によるトークン即時無効化機構を実装。
+4. 単体テスト（`scripts/test-auth-session-unit.ts`）、TypeScript型チェック（`npx tsc --noEmit`）、Next.js プロダクションビルド（`npm run build`）の全通過（Exit Code 0）を確認。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `src/lib/auth.ts`:
+    - `JWT_SECRET` が環境変数未設定時にハードコードされたサンプル既知文字列（`komame_super_secret_jwt_key_...`）へ暗黙フォールバックし、本番環境でも起動できてしまう脆弱性があった。
+    - `getCurrentSession()` が JWT 署名と有効期限のみを検証しており、DB 側でメンバーが無効化・削除されたり権限（admin ↔ member）が降格されても、JWT の有効期限（最大7日間）が切れるまで旧権限で API へのアクセスが可能だった（Stale Session 脆弱性）。
+    - ログアウト時はクライアント側の Cookie 削除のみを行っており、Cookie 値を保持した第三者による JWT 再利用をサーバー側で無効化できなかった。
+  - `src/db/index.ts`:
+    - `DATABASE_URL` が未設定時にローカルのデフォルト URL へ暗黙フォールバックし、本番環境での設定漏れ検知が遅れるリスクがあった。
+  - `src/app/api/auth/logout/route.ts`:
+    - `clearSessionCookie()` のみを呼び出し、トークン失効や DB 更新は行われていなかった。
+- **After**:
+  - `src/lib/auth.ts`:
+    - `assertValidJwtSecret` を追加し、本番環境で空・32文字未満・既知サンプルキーの場合に即座に例外をスロー。
+    - `SessionPayload` に `issuedAtMs`、`iat`、`exp` を追加。
+    - `revokeToken` / `isTokenRevoked` によるトークンブラックリストを実装。
+    - `getCurrentSession()` で `users`、`household_memberships`、`households` を INNER JOIN してリアルタイム検証し、`users.isActive`、`membership.status`、`membership.role`、`household.schemaName` を毎回 DB から解決。また `issuedAtMs < updatedAt.getTime()` のトークンを即時拒絶。
+  - `src/db/index.ts`:
+    - `assertValidDatabaseUrl` を追加し、本番環境で `DATABASE_URL` 未設定時に即座に例外をスロー。
+  - `src/app/api/auth/logout/route.ts`:
+    - `revokeToken(token)` による即時ブラックリスト登録と、`masterDb.update(users).set({ updatedAt: new Date() })` による全セッショントークンのグローバル即時失効化を実装。
+  - `scripts/test-auth-session-unit.ts`:
+    - Fail-Fast バリデーション、セッショントークン生成・検証、失効リスト、タイムスタンプ突合の単体テストを新規作成し、全パスを確認。
+
+### 3. 変更理由
+- 本番運用環境における安全なシークレット設定を強制し、既知キーの漏洩リスクを未然に防止するため。
+- メンバー無効化や権限変更が即座に全 API で反映されるリアルタイム権限検証を保証し、ログアウトやパスワードリセット時にトークンが確実に失効する安全なセッションライフサイクルを確立するため。
+
+### 4. 影響範囲
+- `src/lib/auth.ts`
+- `src/db/index.ts`
+- `src/app/api/auth/logout/route.ts`
+- `scripts/test-auth-session-unit.ts`
+- `Plan.md`
+- `AICHANGELOG.md`
+
 
 ### 1. 概要
 ペネトレーションテスト結果（VULN-02 & VULN-10）に基づき、以下のセキュリティ強化を実施した：
