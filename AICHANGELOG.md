@@ -2,6 +2,47 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-18] 【VULN-01 & VULN-05】SQL インジェクションの完全根絶と動的テナントスキーマ名バリデーションの実装
+
+### 1. 概要
+ペネトレーションテスト結果（VULN-01 & VULN-05）に基づき、以下のセキュリティ強化を実施した：
+1. `src/db/index.ts` に動的テナントスキーマ名のホワイトリスト検証関数 `assertValidSchemaName(schemaName: string)`（正規表現 `/^tenant_[a-zA-Z0-9_-]{1,55}$/`）を新設。`getTenantSchema()`、`getTenantDb()`、および `src/db/migrate.ts` の `createTenantTables()` の先頭で強制検証し、不正なスキーマ名（複文・メタ文字・空文字等）を即座に例外遮断する。
+2. `src/app/api/transactions/route.ts`（POST / PUT / DELETE）、`src/app/api/admin/csv/route.ts`（POST import）、`src/app/api/admin/revert/route.ts`（POST）に残存していたすべての `raw.unsafe(...)` による口座残高 `UPDATE` 文を撤去。
+3. Drizzle ORM のパラメータバインディングを用いたクエリ（`db.update(schema.accounts).set({ balance: sql\`${schema.accounts.balance} ...\` }).where(eq(schema.accounts.id, ...))`）へ全面的に置換し、複文実行（Stacked Queries）および文字列注入を構造的に完全遮断した。
+4. 単体テスト、TypeScript型チェック（`npx tsc --noEmit`）、Next.js プロダクションビルド（`npm run build`）の全通過（Exit Code 0）を確認した。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `src/db/index.ts`: `getTenantSchema` および `getTenantDb` で渡された `schemaName` 文字列を検証せずそのまま使用していた。
+  - `src/db/migrate.ts`: `createTenantTables(schemaName)` でスキーマ名の形式チェックを行っていなかった。
+  - `src/app/api/transactions/route.ts`: POST, PUT, DELETE 内で口座残高を更新する際、テンプレートリテラルと `raw.unsafe(...)` を直接使用していた（計14箇所）。
+  - `src/app/api/admin/csv/route.ts`: POST（インポート処理）内で口座残高を更新する際、`raw.unsafe(...)` を直接使用していた（計7箇所）。
+  - `src/app/api/admin/revert/route.ts`: POST（リバート処理）内で口座残高を逆算復元する際、`raw.unsafe(...)` を直接使用していた（計5箇所）。
+- **After**:
+  - `src/db/index.ts`:
+    - `assertValidSchemaName(schemaName: string)` を実装・エクスポート（`/^tenant_[a-zA-Z0-9_-]{1,55}$/` 判定）。
+    - `getTenantSchema` および `getTenantDb` の先頭で呼び出し、不正値を例外スローして遮断。
+  - `src/db/migrate.ts`:
+    - `createTenantTables` の先頭で `assertValidSchemaName(schemaName)` を呼び出し、マイグレーション時のスキーマ名検証を強制。
+  - `src/app/api/transactions/route.ts`:
+    - POST, PUT, DELETE 内の残高更新をすべて `db.update(schema.accounts).set({ balance: sql\`...\` }).where(...)` へ置換し、`raw.unsafe` を完全排除。
+  - `src/app/api/admin/csv/route.ts`:
+    - インポート時の残高更新をすべて `db.update(schema.accounts).set({ balance: sql\`...\` }).where(...)` へ置換し、`raw.unsafe` を完全排除。
+  - `src/app/api/admin/revert/route.ts`:
+    - リバート時の残高逆算復元をすべて `db.update(schema.accounts).set({ balance: sql\`...\` }).where(...)` へ置換し、`raw.unsafe` を完全排除。
+
+### 3. 変更理由
+- SQLインジェクション脆弱性およびマルチテナント分離境界の突破リスクを根本的に排除し、安全なパラメータバインドクエリと厳格なスキーマ名ホワイトリスト検証を徹底するため。
+
+### 4. 影響範囲
+- `src/db/index.ts`
+- `src/db/migrate.ts`
+- `src/app/api/transactions/route.ts`
+- `src/app/api/admin/csv/route.ts`
+- `src/app/api/admin/revert/route.ts`
+- `Plan.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-18] アプリケーション・PostgreSQLポート番号変更 (3080 / 5532) および README.md 作成・仕様書同期
 
 ### 1. 概要

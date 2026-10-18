@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getTenantDb } from "@/db";
-import { desc, isNull, eq } from "drizzle-orm";
+import { desc, isNull, eq, sql } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import {
   parseCsv,
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { db, schema, raw } = getTenantDb(session.schemaName);
+    const { db, schema } = getTenantDb(session.schemaName);
 
     let action = "preview";
     let csvText = "";
@@ -303,27 +303,24 @@ export async function POST(req: NextRequest) {
 
         if (item.type === "transfer") {
           if (item.fromAccountId) {
-            await raw.unsafe(`
-              UPDATE "${session.schemaName}".accounts 
-              SET balance = balance - ${item.amount}
-              WHERE id = '${item.fromAccountId}'
-            `);
+            await db
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
+              .where(eq(schema.accounts.id, item.fromAccountId));
           }
           if (item.toAccountId) {
-            await raw.unsafe(`
-              UPDATE "${session.schemaName}".accounts 
-              SET balance = balance + ${item.amount}
-              WHERE id = '${item.toAccountId}'
-            `);
+            await db
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
+              .where(eq(schema.accounts.id, item.toAccountId));
           }
           isSettled = true;
         } else if (item.type === "income") {
           if (item.toAccountId) {
-            await raw.unsafe(`
-              UPDATE "${session.schemaName}".accounts 
-              SET balance = balance + ${item.amount}
-              WHERE id = '${item.toAccountId}'
-            `);
+            await db
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
+              .where(eq(schema.accounts.id, item.toAccountId));
             isSettled = true;
           }
         } else if (item.type === "expense") {
@@ -344,11 +341,10 @@ export async function POST(req: NextRequest) {
                 );
                 isSettled = false;
               } else if (pm.sourceAccountId) {
-                await raw.unsafe(`
-                  UPDATE "${session.schemaName}".accounts 
-                  SET balance = balance - ${item.amount}
-                  WHERE id = '${pm.sourceAccountId}'
-                `);
+                await db
+                  .update(schema.accounts)
+                  .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
+                  .where(eq(schema.accounts.id, pm.sourceAccountId));
                 isSettled = true;
               } else if (pm.type === "cash") {
                 const [cashAcc] = await db
@@ -357,11 +353,10 @@ export async function POST(req: NextRequest) {
                   .where(eq(schema.accounts.type, "cash"))
                   .limit(1);
                 if (cashAcc) {
-                  await raw.unsafe(`
-                    UPDATE "${session.schemaName}".accounts 
-                    SET balance = balance - ${item.amount}
-                    WHERE id = '${cashAcc.id}'
-                  `);
+                  await db
+                    .update(schema.accounts)
+                    .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
+                    .where(eq(schema.accounts.id, cashAcc.id));
                 }
                 isSettled = true;
               } else if (pm.type === "qr_code") {
@@ -371,11 +366,10 @@ export async function POST(req: NextRequest) {
                   .where(eq(schema.accounts.type, "prepaid_wallet"))
                   .limit(1);
                 if (walletAcc) {
-                  await raw.unsafe(`
-                    UPDATE "${session.schemaName}".accounts 
-                    SET balance = balance - ${item.amount}
-                    WHERE id = '${walletAcc.id}'
-                  `);
+                  await db
+                    .update(schema.accounts)
+                    .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
+                    .where(eq(schema.accounts.id, walletAcc.id));
                 }
                 isSettled = true;
               }
@@ -384,11 +378,10 @@ export async function POST(req: NextRequest) {
 
           // 貯蓄・投資等で移動先口座が指定されている場合
           if (item.toAccountId) {
-            await raw.unsafe(`
-              UPDATE "${session.schemaName}".accounts 
-              SET balance = balance + ${item.amount}
-              WHERE id = '${item.toAccountId}'
-            `);
+            await db
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
+              .where(eq(schema.accounts.id, item.toAccountId));
           }
         }
 

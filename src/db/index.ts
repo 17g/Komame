@@ -21,10 +21,19 @@ export const masterDb = drizzle(client, {
   schema: masterSchema,
 });
 
+// スキーマ名ホワイトリスト検証関数 (SQLインジェクション対策)
+export function assertValidSchemaName(schemaName: string): void {
+  const schemaRegex = /^tenant_[a-zA-Z0-9_-]{1,55}$/;
+  if (!schemaName || !schemaRegex.test(schemaName)) {
+    throw new Error(`無効または不正なスキーマ名です: "${schemaName}"`);
+  }
+}
+
 // テナントスキーマキャッシュ (スキーマ名 -> テーブル定義マップ)
 const tenantSchemaCache = new Map<string, TenantSchemaTables>();
 
 export function getTenantSchema(schemaName: string): TenantSchemaTables {
+  assertValidSchemaName(schemaName);
   if (!tenantSchemaCache.has(schemaName)) {
     tenantSchemaCache.set(schemaName, createTenantSchema(schemaName));
   }
@@ -33,6 +42,7 @@ export function getTenantSchema(schemaName: string): TenantSchemaTables {
 
 // テナント専用 DB ヘルパー関数
 export function getTenantDb(schemaName: string) {
+  assertValidSchemaName(schemaName);
   const schema = getTenantSchema(schemaName);
   const db = drizzle(client, {
     schema,

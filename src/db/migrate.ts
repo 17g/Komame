@@ -1,6 +1,7 @@
 import "dotenv/config";
 import postgres from "postgres";
 import { logger } from "../lib/logger";
+import { assertValidSchemaName } from "./index";
 
 const connectionString =
   process.env.DATABASE_URL ||
@@ -76,6 +77,7 @@ export async function runMigrations() {
 
 // テナント専用スキーマ＆テーブル作成関数
 export async function createTenantTables(schemaName: string) {
+  assertValidSchemaName(schemaName);
   logger.info(`🔨 Setting up tenant schema: ${schemaName}`);
 
   // スキーマの作成

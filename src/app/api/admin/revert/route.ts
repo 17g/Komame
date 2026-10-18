@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getTenantDb } from "@/db";
-import { eq, gte, and, desc } from "drizzle-orm";
+import { eq, gte, and, desc, sql } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "チェックポイントIDが指定されていません。" }, { status: 400 });
     }
 
-    const { db, schema, raw } = getTenantDb(session.schemaName);
+    const { db, schema } = getTenantDb(session.schemaName);
 
     // 1. 対象チェックポイントの検証 (24時間以内か)
     const [checkpoint] = await db
@@ -53,25 +53,22 @@ export async function POST(req: NextRequest) {
       if (tx.type === "transfer") {
         // 通常の口座間振替の逆戻し (出金元へ戻し、受入先から引く)
         if (tx.fromAccountId && tx.toAccountId) {
-          await raw.unsafe(`
-            UPDATE "${session.schemaName}".accounts 
-            SET balance = balance + ${tx.amount}
-            WHERE id = '${tx.fromAccountId}'
-          `);
-          await raw.unsafe(`
-            UPDATE "${session.schemaName}".accounts 
-            SET balance = balance - ${tx.amount}
-            WHERE id = '${tx.toAccountId}'
-          `);
+          await db
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} + ${tx.amount}` })
+            .where(eq(schema.accounts.id, tx.fromAccountId));
+          await db
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} - ${tx.amount}` })
+            .where(eq(schema.accounts.id, tx.toAccountId));
         }
       } else if (tx.type === "income") {
         // 収入の逆戻し (受入口座から引く)
         if (tx.toAccountId) {
-          await raw.unsafe(`
-            UPDATE "${session.schemaName}".accounts 
-            SET balance = balance - ${tx.amount}
-            WHERE id = '${tx.toAccountId}'
-          `);
+          await db
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} - ${tx.amount}` })
+            .where(eq(schema.accounts.id, tx.toAccountId));
         }
       } else if (tx.type === "expense") {
         // 1. 決済手段に応じた支払元口座への返戻 (+tx.amount)
@@ -104,22 +101,20 @@ export async function POST(req: NextRequest) {
             }
 
             if (sourceAccountId) {
-              await raw.unsafe(`
-                UPDATE "${session.schemaName}".accounts 
-                SET balance = balance + ${tx.amount}
-                WHERE id = '${sourceAccountId}'
-              `);
+              await db
+                .update(schema.accounts)
+                .set({ balance: sql`${schema.accounts.balance} + ${tx.amount}` })
+                .where(eq(schema.accounts.id, sourceAccountId));
             }
           }
         }
 
         // 2. 貯蓄・投資等で移動先口座（toAccountId）が指定されていた場合、移動先口座から逆算減額 (-tx.amount)
         if (tx.toAccountId) {
-          await raw.unsafe(`
-            UPDATE "${session.schemaName}".accounts 
-            SET balance = balance - ${tx.amount}
-            WHERE id = '${tx.toAccountId}'
-          `);
+          await db
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} - ${tx.amount}` })
+            .where(eq(schema.accounts.id, tx.toAccountId));
         }
       }
     }

@@ -12,6 +12,7 @@
 - [x] Phase 4: UI/UX・ゲーミフィケーションの動的データ完全連動
 - [x] Phase 5: 検証・テスト実行およびプロジェクト設定の最新化
 - [x] Phase 6: アプリケーション・DBのポート変更 (3080 / 5532) および README.md 作成・仕様書同期
+- [ ] Phase 7: ペネトレーションテスト結果に基づく脆弱性改修・セキュリティ強化計画 (VULN-01〜VULN-12)
 
 
 ---
@@ -119,3 +120,63 @@
   - `npx tsc --noEmit` および `npm run build` を実行し、Exit Code 0 を確認
 - [x] **6.5 変更履歴記録 (`AICHANGELOG.md`) & コミット**:
   - `AICHANGELOG.md` に作業内容を記録し、Git コミットを実施
+
+---
+
+## Phase 7: ペネトレーションテスト結果に基づく脆弱性改修・セキュリティ強化計画 (VULN-01〜VULN-12)
+
+- [x] **7.1 [VULN-01 & VULN-05] SQL インジェクションの完全根絶と動的テナントスキーマ名バリデーションの実装**:
+  - **対象ファイル**: `src/db/index.ts`, `src/db/migrate.ts`, `src/app/api/transactions/route.ts`, `src/app/api/admin/csv/route.ts`, `src/app/api/admin/revert/route.ts`
+  - **実装内容**:
+    1. `src/db/index.ts` にスキーマ名ホワイトリスト検証関数 `assertValidSchemaName(schemaName: string)`（正規表現 `/^tenant_[a-zA-Z0-9_-]{1,55}$/`）を実装し、`getTenantSchema()`、`getTenantDb()`、および `src/db/migrate.ts` の `createTenantTables()` の先頭で強制検証する。
+    2. `src/app/api/transactions/route.ts`（POST / PUT / DELETE）、`src/app/api/admin/csv/route.ts`（POST import）、`src/app/api/admin/revert/route.ts`（POST）に存在するすべての `raw.unsafe(...)` による口座残高 `UPDATE` 文を撤去する。
+    3. Drizzle ORM のパラメータバインディングを用いたクエリ（`db.update(schema.accounts).set({ balance: sql`${schema.accounts.balance} - ${amount}` }).where(eq(schema.accounts.id, accountId))` 等）へ全面的に置換し、複文実行（Stacked Queries）および文字列注入を構造的に遮断する。
+
+- [ ] **7.2 [VULN-02 & VULN-10] 家族メンバー管理におけるアカウント乗っ取り (ATO) 防止・User Enumeration 対策・招待時パスワードポリシー適用の実装**:
+  - **対象ファイル**: `src/app/api/admin/members/route.ts`, `src/app/api/auth/invite/route.ts`, `src/app/api/auth/login/route.ts`, `src/app/api/auth/signup/route.ts`, `src/app/page.tsx`
+  - **実装内容**:
+    1. `POST /api/admin/members` でメールアドレス指定時に、既に別世帯に所属している既存ユーザーを本人の認証・同意なしに `household_memberships` へ直接追加する処理を廃止し、既存ユーザーに対しては招待トークンリンク（`/invite?token=...`）を発行して本人が `POST /api/auth/invite` でパスワード認証の上で参加するフローへ統一する。
+    2. `POST /api/admin/members` の `action: "reset_password"` において、対象ユーザーが他世帯にも所属している場合は世帯管理者によるグローバルパスワード（`public.users.passwordHash`）の直接上書きを拒否する認可ガードを実装する。
+    3. `POST /api/auth/invite` の新規ユーザー登録時に `getHouseholdPasswordPolicy(household.id)` を呼び出し、招待元世帯のカスタムパスワードポリシーを強制適用する。
+    4. `POST /api/auth/signup` および `POST /api/auth/login` においても `email.trim().toLowerCase()` によるメールアドレス正規化を統一適用する。
+    5. `src/app/page.tsx` におけるログインフォームの初期値からハードコードされた平文パスワード（`Password123!`）を除去（空文字初期化、または開発用クイック入力補助へ分離）する。
+
+- [ ] **7.3 [VULN-04 & VULN-06] シークレット管理の厳格化とセッション即時失効・DB突合によるリアルタイム権限検証の実装**:
+  - **対象ファイル**: `src/lib/auth.ts`, `src/db/index.ts`, `src/app/api/auth/logout/route.ts`
+  - **実装内容**:
+    1. `src/lib/auth.ts` および `src/db/index.ts` にて、`NODE_ENV === "production"` 時に `JWT_SECRET`（最低32文字以上かつサンプル既知文字列でないこと）または `DATABASE_URL` が未設定の場合に即座に例外をスローする Fail-Fast 検証を追加する。
+    2. `getCurrentSession()` において JWT 署名検証後に `masterDb` で `users`（`isActive === true`）および `household_memberships`（`status === "active"`）を照会し、メンバーの無効化・削除、ロール変更（`admin` ↔ `member`）、および正規の `schemaName` を DB の最新状態から毎回解決して返却する。
+    3. ログアウト時（`POST /api/auth/logout`）およびパスワード変更・リセット時に既存の JWT を即時無効化できるよう、失効トークン管理またはユーザー更新時刻（`iat` と `updatedAt` の比較等）によるトークン無効化機構を実装する。
+
+- [ ] **7.4 [VULN-07] CSV エクスポートにおける CSV インジェクション (Formula Injection) 防御と RFC 4180 エスケープ統一**:
+  - **対象ファイル**: `src/lib/csv.ts`, `src/app/api/admin/csv/route.ts`
+  - **実装内容**:
+    1. `src/lib/csv.ts` の `escapeCsvCell()` を拡張し、文字列セルの先頭文字が数式トリガー文字（`=`, `+`, `-`, `@`, `\t`, `\r`）に該当する場合（純粋な負の数値型を除く）、先頭にシングルクォート（`'`）を付与して Excel / スプレッドシートでの数式・DDE 実行を無害化する。
+    2. `src/app/api/admin/csv/route.ts` の `GET`（口座一覧・全明細の CSV エクスポート）における手動文字列結合を廃止し、`generateCsv()` を使用した RFC 4180 準拠エスケープ出力に統一する。
+
+- [ ] **7.5 [VULN-09] 金額・入力パラメータの厳格な境界値バリデーションと DB トランザクション原子性の保証**:
+  - **対象ファイル**: `src/lib/utils.ts`（またはバリデーションヘルパー）, `src/app/api/transactions/route.ts`, `src/app/api/accounts/route.ts`, `src/app/api/admin/csv/route.ts`, `src/app/api/admin/revert/route.ts`, `src/app/api/goals/route.ts`
+  - **実装内容**:
+    1. 金額・数値パラメータの検証関数（整数かつ `1 <= amount <= 9_999_999_999`、口座初期残高は `0 <= balance <= 9_999_999_999`）および一括処理の上限（一括明細登録最大 500 件、CSV ファイルサイズ最大 5MB・最大 5,000 行）を実装し、各 API エンドポイントの入口で不正値を `400 Bad Request` で拒否する。
+    2. `transactions`（POST / PUT / DELETE）、`admin/csv`（POST import）、`admin/revert`（POST）における複数テーブル操作と残高更新を `db.transaction(async (tx) => { ... })` で囲み、エラー発生時の完全ロールバックとデータ整合性を保証する。
+
+- [ ] **7.6 [VULN-08 & VULN-11] 認証・重要 API のレートリミッター導入および HTTP セキュリティヘッダー・CSRF Origin 検証の実装**:
+  - **対象ファイル**: `src/lib/rate-limit.ts`（新規）, `next.config.ts`, `src/app/api/auth/login/route.ts`, `src/app/api/auth/signup/route.ts`, `src/app/api/auth/invite/route.ts`
+  - **実装内容**:
+    1. IP アドレスおよびアカウント識別子単位のスライディングウィンドウ方式レートリミッター（`src/lib/rate-limit.ts`）を実装し、`POST /api/auth/login`、`POST /api/auth/signup`（動的スキーマ生成 DoS 防御）、`POST /api/auth/invite` に適用する（超過時は `429 Too Many Requests` を返却）。
+    2. 状態変更リクエスト（`POST` / `PUT` / `DELETE`）における `Origin` / `Host` ヘッダー整合性検証を追加し、クロスサイトリクエストフォージェリ（CSRF）に対する多層防御を強化する。
+    3. `next.config.ts` の `headers()` に `X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`Permissions-Policy`、`Content-Security-Policy` を設定する。
+
+- [ ] **7.7 [VULN-03, VULN-05, VULN-12] 脆弱な NPM 依存パッケージのアップデートと互換性検証**:
+  - **対象ファイル**: `package.json`, `package-lock.json`
+  - **実装内容**:
+    1. `next`、`drizzle-orm`（`>=0.45.2`）、`drizzle-kit`、`postcss`、`sharp` および間接依存パッケージ（`shell-quote`, `source-map-js`, `braces`, `esbuild`, `fast-copy` 等）をセキュリティパッチ適用済みバージョンへアップデート（必要に応じて `overrides` を活用）する。
+    2. `npm audit` を実行して Critical / High 脆弱性が解消されていることを確認し、Drizzle ORM スキーマ定義および Next.js 15 App Router の型チェック・ビルド互換性を検証する。
+
+- [ ] **7.8 セキュリティ単体テストの作成・仕様書 (`for_agent/`) 同期・総合ビルド検証**:
+  - **対象ファイル**: `scripts/test-security-unit.ts`（新規）, `for_agent/02_architecture_and_tech_stack.md`, `for_agent/04_api_specifications.md`, `for_agent/06_operation_and_testing_guide.md`, `for_agent/guardrails.md`, `AICHANGELOG.md`
+  - **実装内容**:
+    1. スキーマ名バリデーション、CSV 数式インジェクション無害化、金額境界値検証、レートリミッター動作、`raw.unsafe` 不使用の静的コード検査を含むセキュリティ単体テスト（`scripts/test-security-unit.ts`）を作成・実行する。
+    2. `for_agent/` 配下の仕様書および `for_agent/guardrails.md` にセキュリティ強化仕様と再発防止ガードレールを反映し、改訂履歴を追記する。
+    3. `npx tsc --noEmit` および `npm run build` を実行して Exit Code 0 を確認し、`AICHANGELOG.md` に変更履歴を記録して Git コミットを行う。
+

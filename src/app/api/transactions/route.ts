@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { getTenantDb } from "@/db";
-import { eq, and, isNull, desc, gte, lte, like, or, inArray } from "drizzle-orm";
+import { eq, and, isNull, desc, gte, lte, like, or, inArray, sql } from "drizzle-orm";
 import { calculateWithdrawalDate } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { db, schema, raw } = getTenantDb(session.schemaName);
+    const { db, schema } = getTenantDb(session.schemaName);
     const body = await req.json();
     const items: Array<{
       type: "expense" | "income" | "transfer";
@@ -174,27 +174,24 @@ export async function POST(req: NextRequest) {
       // 取引種別 (item.type) を最優先で評価し、残高変動と決済判定を実施
       if (item.type === "transfer") {
         if (item.fromAccountId) {
-          await raw.unsafe(`
-            UPDATE "${session.schemaName}".accounts 
-            SET balance = balance - ${item.amount}
-            WHERE id = '${item.fromAccountId}'
-          `);
+          await db
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
+            .where(eq(schema.accounts.id, item.fromAccountId));
         }
         if (item.toAccountId) {
-          await raw.unsafe(`
-            UPDATE "${session.schemaName}".accounts 
-            SET balance = balance + ${item.amount}
-            WHERE id = '${item.toAccountId}'
-          `);
+          await db
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
+            .where(eq(schema.accounts.id, item.toAccountId));
         }
         isSettled = true;
       } else if (item.type === "income") {
         if (item.toAccountId) {
-          await raw.unsafe(`
-            UPDATE "${session.schemaName}".accounts 
-            SET balance = balance + ${item.amount}
-            WHERE id = '${item.toAccountId}'
-          `);
+          await db
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
+            .where(eq(schema.accounts.id, item.toAccountId));
           isSettled = true;
         }
       } else if (item.type === "expense") {
@@ -217,11 +214,10 @@ export async function POST(req: NextRequest) {
               isSettled = false;
             } else if (pm.sourceAccountId) {
               // 引き落とし元口座が明示的に設定されている即時決済
-              await raw.unsafe(`
-                UPDATE "${session.schemaName}".accounts 
-                SET balance = balance - ${item.amount}
-                WHERE id = '${pm.sourceAccountId}'
-              `);
+              await db
+                .update(schema.accounts)
+                .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
+                .where(eq(schema.accounts.id, pm.sourceAccountId));
               isSettled = true;
             } else if (pm.type === "cash") {
               // 現金決済で引き落とし元が未設定の場合、手元現金口座を自動特定して減額
@@ -231,11 +227,10 @@ export async function POST(req: NextRequest) {
                 .where(eq(schema.accounts.type, "cash"))
                 .limit(1);
               if (cashAcc) {
-                await raw.unsafe(`
-                  UPDATE "${session.schemaName}".accounts 
-                  SET balance = balance - ${item.amount}
-                  WHERE id = '${cashAcc.id}'
-                `);
+                await db
+                  .update(schema.accounts)
+                  .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
+                  .where(eq(schema.accounts.id, cashAcc.id));
               }
               isSettled = true;
             } else if (pm.type === "qr_code") {
@@ -246,11 +241,10 @@ export async function POST(req: NextRequest) {
                 .where(eq(schema.accounts.type, "prepaid_wallet"))
                 .limit(1);
               if (walletAcc) {
-                await raw.unsafe(`
-                  UPDATE "${session.schemaName}".accounts 
-                  SET balance = balance - ${item.amount}
-                  WHERE id = '${walletAcc.id}'
-                `);
+                await db
+                  .update(schema.accounts)
+                  .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
+                  .where(eq(schema.accounts.id, walletAcc.id));
               }
               isSettled = true;
             }
@@ -259,11 +253,10 @@ export async function POST(req: NextRequest) {
 
         // 貯蓄・投資等で移動先口座（toAccountId）が指定されている場合、移動先口座へ残高加算
         if (item.toAccountId) {
-          await raw.unsafe(`
-            UPDATE "${session.schemaName}".accounts 
-            SET balance = balance + ${item.amount}
-            WHERE id = '${item.toAccountId}'
-          `);
+          await db
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
+            .where(eq(schema.accounts.id, item.toAccountId));
         }
       }
 
@@ -397,7 +390,7 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
-    const { db, schema, raw } = getTenantDb(session.schemaName);
+    const { db, schema } = getTenantDb(session.schemaName);
     const { id, date, amount, categoryId, paymentMethodId, toAccountId, shopName, note, tagIds } = await req.json();
 
     if (!id || amount === undefined) {
@@ -440,21 +433,19 @@ export async function PUT(req: NextRequest) {
       }
 
       if (oldSourceAccId) {
-        await raw.unsafe(`
-          UPDATE "${session.schemaName}".accounts 
-          SET balance = balance + ${existingTx.amount}
-          WHERE id = '${oldSourceAccId}'
-        `);
+        await db
+          .update(schema.accounts)
+          .set({ balance: sql`${schema.accounts.balance} + ${existingTx.amount}` })
+          .where(eq(schema.accounts.id, oldSourceAccId));
       }
     }
 
     // 2. 旧明細が投資・積立支出（type === "expense" かつ toAccountId）だった場合、旧受入先口座の残高を戻す (減額ロールバック)
     if (existingTx.type === "expense" && existingTx.toAccountId) {
-      await raw.unsafe(`
-        UPDATE "${session.schemaName}".accounts 
-        SET balance = balance - ${existingTx.amount}
-        WHERE id = '${existingTx.toAccountId}'
-      `);
+      await db
+        .update(schema.accounts)
+        .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
+        .where(eq(schema.accounts.id, existingTx.toAccountId));
     }
 
     // 3. 新しい支払手段に応じた残高減額と決済状態の計算
@@ -490,11 +481,10 @@ export async function PUT(req: NextRequest) {
           }
 
           if (newSourceAccId) {
-            await raw.unsafe(`
-              UPDATE "${session.schemaName}".accounts 
-              SET balance = balance - ${newAmount}
-              WHERE id = '${newSourceAccId}'
-            `);
+            await db
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} - ${newAmount}` })
+              .where(eq(schema.accounts.id, newSourceAccId));
           }
           isSettled = true;
         }
@@ -534,11 +524,10 @@ export async function PUT(req: NextRequest) {
 
       if (targetToAccountId) {
         // 新移動先口座へ残高加算
-        await raw.unsafe(`
-          UPDATE "${session.schemaName}".accounts 
-          SET balance = balance + ${newAmount}
-          WHERE id = '${targetToAccountId}'
-        `);
+        await db
+          .update(schema.accounts)
+          .set({ balance: sql`${schema.accounts.balance} + ${newAmount}` })
+          .where(eq(schema.accounts.id, targetToAccountId));
 
         if (linkedTx) {
           // 既存受入明細の更新
@@ -703,7 +692,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    const { db, schema, raw } = getTenantDb(session.schemaName);
+    const { db, schema } = getTenantDb(session.schemaName);
     const txId = req.nextUrl.searchParams.get("id");
 
     if (!txId) {
@@ -738,22 +727,20 @@ export async function DELETE(req: NextRequest) {
       }
 
       if (sourceAccId) {
-        await raw.unsafe(`
-          UPDATE "${session.schemaName}".accounts 
-          SET balance = balance + ${existingTx.amount}
-          WHERE id = '${sourceAccId}'
-        `);
+        await db
+          .update(schema.accounts)
+          .set({ balance: sql`${schema.accounts.balance} + ${existingTx.amount}` })
+          .where(eq(schema.accounts.id, sourceAccId));
       }
     }
 
     // 2. 投資・積立支出だった場合、受入先口座の残高ロールバック & 連動受入明細の論理削除
     if (existingTx.type === "expense" && existingTx.toAccountId) {
       // 受入先口座から加算されていた分を減額してロールバック
-      await raw.unsafe(`
-        UPDATE "${session.schemaName}".accounts 
-        SET balance = balance - ${existingTx.amount}
-        WHERE id = '${existingTx.toAccountId}'
-      `);
+      await db
+        .update(schema.accounts)
+        .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
+        .where(eq(schema.accounts.id, existingTx.toAccountId));
 
       // ペア受入明細の特定 (1. parentTransactionId 検索、2. クエリ特定フォールバック)
       let [linkedTx] = await db
@@ -805,11 +792,10 @@ export async function DELETE(req: NextRequest) {
 
     // 3. 受入振替明細が直接削除された場合の安全処理 (親明細の toAccountId 解除 & 受入先残高減額)
     if (existingTx.type === "transfer" && existingTx.parentTransactionId && existingTx.toAccountId) {
-      await raw.unsafe(`
-        UPDATE "${session.schemaName}".accounts 
-        SET balance = balance - ${existingTx.amount}
-        WHERE id = '${existingTx.toAccountId}'
-      `);
+      await db
+        .update(schema.accounts)
+        .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
+        .where(eq(schema.accounts.id, existingTx.toAccountId));
 
       await db
         .update(schema.transactions)
