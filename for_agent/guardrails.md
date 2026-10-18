@@ -91,6 +91,11 @@
 - `Plan.md` を更新する際は既存の完了済みタスク（`- [x]`）を絶対に消去せず、差分をマージすること。
 - **React 19 / TypeScript における `unknown` 型プロパティの JSX 条件レンダリングガードレール**:
   `AuditLogItem` 等の `unknown` 型プロパティ（`beforeDataJson`, `afterDataJson` 等）を JSX 内で `{item.data && <Component />}` と直接評価すると、戻り値の型が `unknown | ReactNode` と推論され `TS2322: Type 'unknown' is not assignable to type 'ReactNode'` エラーが発生する。必ず `{item.data != null && <Component />}` または `{Boolean(item.data) && <Component />}` を使用して明示的に真偽値に変換すること。
+- **SQLインジェクション完全防止とパラメータバインディングの徹底 (VULN-01/05)**:
+  - `raw.unsafe(...)` による SQL 文字列直接実行は原則禁止とし、Drizzle ORM の型安全クエリおよびパラメータバインディング（`db.update(schema.accounts).set({ balance: sql\`${schema.accounts.balance} + ${amount}\` }).where(eq(schema.accounts.id, accountId))` 等）を徹底すること。
+  - 動的テナントスキーマ名の取得・利用時は、必ず `assertValidSchemaName(schemaName)` によるホワイトリスト検証（`/^tenant_[a-zA-Z0-9_-]{1,55}$/`）を通過させること。
+- **Scratch テストスクリプト実行時のインポートパス解決**:
+  `<appDataDir>\brain\<conversationId>\scratch\` 配下に作成した一時スクリプトからプロジェクト内モジュールを読み込む場合、相対パス（`./src/...`）は scratch フォルダ起点となり `MODULE_NOT_FOUND` となるため、絶対パス（例: `c:/Users/.../Komame/src/db/index`）またはエイリアス解決を利用すること。
 
 ---
 
@@ -106,5 +111,6 @@
 
 ## 6. 改訂履歴
 
+- **2026-10-18**: SQLインジェクション防止ガイドライン（`raw.unsafe` 排除・スキーマ名ホワイトリスト検証）および Scratch スクリプトのパス解決注意事項を追記。
 - **2026-10-18**: 開発用 PostgreSQL 起動ポートの変更（5432 → 5532）に伴い、事前確認ガードレールのポート番号を更新。
 
