@@ -322,11 +322,43 @@
 
 ---
 
+## 8. API セキュリティ & バリデーション仕様 (Security & Input Validation)
+
+### 8.1 金額・数値境界値バリデーション (VULN-09)
+- **明細金額 (`amount`)**:
+  - `1 <= amount <= 9,999,999,999` の整数（`Number.isSafeInteger`）。
+  - 負の金額、0、小数は `400 Bad Request` で拒否。
+- **口座残高 (`balance`)**:
+  - `0 <= balance <= 9,999,999,999` の整数。
+- **一括登録・CSVインポート制限**:
+  - `POST /api/transactions` の一括登録配列: 最大 500 件。
+  - `POST /api/admin/csv` のアップロード制限: 最大 5MB、最大 5,000 行。
+
+### 8.2 レートリミッター仕様 (VULN-08)
+- 認証エンドポイント（`/api/auth/login`, `/api/auth/signup`, `/api/auth/invite`）にスライディングウィンドウ方式を適用。
+- 制限超過時は `429 Too Many Requests` と以下のヘッダーを返却：
+  - `Retry-After: <秒数>`
+  - `X-RateLimit-Limit: <上限回数>`
+  - `X-RateLimit-Remaining: 0`
+  - `X-RateLimit-Reset: <UNIXタイムスタンプ>`
+
+### 8.3 DB トランザクション原子性の保証
+- 口座残高更新を伴う複数テーブル操作（`transactions` の POST/PUT/DELETE、`admin/csv` の一括インポート、`admin/revert` のリバート）は `db.transaction(async (tx) => { ... })` 内で実行。
+- 途中でエラーが発生した場合は自動的に全ロールバックされ、残高や明細の不整合を完全に防止。
+
+### 8.4 CSV 数式インジェクション (Formula Injection) 防御 (VULN-07)
+- 全 CSV エクスポート（`GET /api/admin/csv`, `GET /api/admin/logs`）において、文字列セルの先頭が数式トリガー文字（`=`, `+`, `-`, `@`, `\t`, `\r`）の場合、先頭にシングルクォート（`'`）を付与して Excel / Google スプレッドシートでの不正スクリプト実行を無害化。
+- 純粋な数値型セル（負の数値を含む）はシングルクォートを付与せず、数値計算互換性を維持。
+
+### 8.5 CSRF Origin / Host 検証 (VULN-11)
+- 状態変更リクエスト（POST / PUT / DELETE）において、リクエストヘッダーの `Origin` と `Host` を突合検証し、クロスオリジンからの不正リクエストを遮断。
+
+---
+
 ## 改訂履歴
+- **2026-10-18**: 第8章「API セキュリティ & バリデーション仕様」を追加（金額・残高境界値、レートリミット429応答、トランザクション原子性、CSV数式インジェクション防御、CSRF Origin検証）。
 - **2026-10-17**: `GET /api/admin/logs` の仕様を拡張（ユーザー、操作種別、期間の条件付き絞り込み、操作者メールアドレスマッピング、RFC 4180準拠UTF-8 BOM付きCSVおよびJSON形式でのエクスポートダウンロード）。
 - **2026-10-17**: `GET/PUT /api/admin/settings` の仕様を追加（通貨記号、日付表示形式、最小文字数・英数記号必須等のパスワード強度ポリシー動的設定・保存・監査ログ・認証検証連動）。
-
-
 - **2026-10-17**: `GET/POST/PUT/DELETE /api/admin/members` および `GET/POST /api/auth/invite` の仕様を追加（家族メンバー一覧取得、直接追加・招待リンク発行、ロール変更、論理削除無効化、管理者ガードレール、パスワード再設定）。
 - **2026-10-17**: `POST /api/admin/csv` の仕様を追加（CSVパース、自動カラムマッピング、重複候補検知、チェックポイント付き一括インポート登録）。
 - **2026-10-17**: `GET /api/transactions/suggest` の仕様を追加（過去明細履歴からの店舗名補完・最多利用費目/支払元動的サジェスト）。

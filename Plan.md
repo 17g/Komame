@@ -12,7 +12,7 @@
 - [x] Phase 4: UI/UX・ゲーミフィケーションの動的データ完全連動
 - [x] Phase 5: 検証・テスト実行およびプロジェクト設定の最新化
 - [x] Phase 6: アプリケーション・DBのポート変更 (3080 / 5532) および README.md 作成・仕様書同期
-- [ ] Phase 7: ペネトレーションテスト結果に基づく脆弱性改修・セキュリティ強化計画 (VULN-01〜VULN-12)
+- [x] Phase 7: ペネトレーションテスト結果に基づく脆弱性改修・セキュリティ強化計画 (VULN-01〜VULN-12)
 
 
 ---
@@ -173,7 +173,7 @@
     1. `next`、`drizzle-orm`（`>=0.45.2`）、`drizzle-kit`、`postcss`、`sharp` および間接依存パッケージ（`shell-quote`, `source-map-js`, `braces`, `esbuild`, `fast-copy` 等）をセキュリティパッチ適用済みバージョンへアップデート（必要に応じて `overrides` を活用）する。
     2. `npm audit` を実行して Critical / High 脆弱性が解消されていることを確認し、Drizzle ORM スキーマ定義および Next.js 15 App Router の型チェック・ビルド互換性を検証する。
 
-- [ ] **7.8 セキュリティ単体テストの作成・仕様書 (`for_agent/`) 同期・総合ビルド検証**:
+- [x] **7.8 セキュリティ単体テストの作成・仕様書 (`for_agent/`) 同期・総合ビルド検証**:
   - **対象ファイル**: `scripts/test-security-unit.ts`（新規）, `for_agent/02_architecture_and_tech_stack.md`, `for_agent/04_api_specifications.md`, `for_agent/06_operation_and_testing_guide.md`, `for_agent/guardrails.md`, `AICHANGELOG.md`
   - **実装内容**:
     1. スキーマ名バリデーション、CSV 数式インジェクション無害化、金額境界値検証、レートリミッター動作、`raw.unsafe` 不使用の静的コード検査を含むセキュリティ単体テスト（`scripts/test-security-unit.ts`）を作成・実行する。

@@ -2,6 +2,47 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-18] 【Task 7.8】セキュリティ単体テストの作成・仕様書 (for_agent/) 同期・総合ビルド検証
+
+### 1. 概要
+ペネトレーションテスト改修（Phase 7: VULN-01〜VULN-12）の完了に伴い、セキュリティ強化項目の恒久的な品質担保と仕様書・ガードレールの同期を実施した：
+1. **セキュリティ単体テスト & 静的コード検査の作成・実行 (`scripts/test-security-unit.ts`)**:
+   - 動的テナントスキーマ名バリデーション（`assertValidSchemaName`）: ホワイトリスト正規表現による SQL インジェクションおよび不正文字・超過文字列の拒否検証。
+   - CSV 数式インジェクション（Formula Injection）防御: 数式トリガー文字（`=`, `+`, `-`, `@`, `\t`, `\r`）へのシングルクォート付与および純粋な負の数値型の計算互換性保持の検証。
+   - 金額・残高の境界値バリデーション: `isValidAmount`, `isValidBalance`, `parseValidAmount`, `parseValidBalance` による整数判定・範囲チェック検証。
+   - スライディングウィンドウ方式レートリミッター: リクエスト回数制限、`429 Too Many Requests` 時の `retryAfterSeconds` 返却、リセット動作の検証。
+   - `raw.unsafe` ゼロ件静的コード検査: `src/` 配下の全 58 ソースファイルを LF 正規化の上で走査し、直接 SQL 実行が 0 件であることを客観的に検証。
+2. **仕様書 (`for_agent/`) の最新化・セキュリティ設計の統合**:
+   - `for_agent/02_architecture_and_tech_stack.md`: 第2章にスキーマ名バリデーション、リアルタイム権限検証・セッション失効、レートリミッター、セキュリティヘッダー & CSRF 防御、Fail-Fast 環境変数検証の仕様を追記し改訂履歴を更新。
+   - `for_agent/04_api_specifications.md`: 第8章「API セキュリティ & バリデーション仕様」を追加（金額境界値、レートリミット、DB トランザクション原子性、CSV 数式インジェクション無害化、CSRF Origin 検証）し改訂履歴を更新。
+   - `for_agent/06_operation_and_testing_guide.md`: 2.2 単体テストに `test-security-unit.ts` の実行手順を追加し改訂履歴を更新。
+   - `for_agent/guardrails.md`: 金額境界値検証、CSV 数式インジェクション防御、DB トランザクション原子性、`raw.unsafe` ゼロ件検査の維持に関するガードレールを追記し改訂履歴を更新。
+3. **客観的検証 (Ground Truth)**:
+   - セキュリティ単体テスト: `npx tsx scripts/test-security-unit.ts` (Exit Code 0)
+   - 既存単体テスト: `npx tsx scripts/test-csv-unit.ts`, `npx tsx scripts/test-members-unit.ts` (Exit Code 0)
+   - 型チェック: `npx tsc --noEmit` (Exit Code 0)
+   - プロダクションビルド: `npm run build` (Exit Code 0)
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - セキュリティ機能（スキーマ検証、CSV数式無害化、金額境界値、レートリミッター、`raw.unsafe`排除）を網羅的に検証する単体テストスクリプトが存在しなかった。
+  - `for_agent/` 配下の仕様書およびガードレールに Phase 7 で実施した脆弱性改修仕様（VULN-01〜VULN-12）の体系的な記録が不足していた。
+- **After**:
+  - `scripts/test-security-unit.ts` を新規作成し、DB 接続不要で高速に全セキュリティ仕様と静的コード走査（58ファイル）を自動テスト可能にした。
+  - `for_agent/02_architecture_and_tech_stack.md`, `04_api_specifications.md`, `06_operation_and_testing_guide.md`, `guardrails.md` を最新セキュリティ仕様に完全同期した。
+
+### 3. 変更理由
+- 今後の開発・改修においてセキュリティ脆弱性が再混入することを防ぐため、単体テストによる自動検査網を構築し、仕様書とガードレールに明文化して開発規約として定着させるため。
+
+### 4. 影響範囲
+- `scripts/test-security-unit.ts` (新規)
+- `for_agent/02_architecture_and_tech_stack.md`
+- `for_agent/04_api_specifications.md`
+- `for_agent/06_operation_and_testing_guide.md`
+- `for_agent/guardrails.md`
+- `Plan.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-18] 【VULN-03, VULN-05, VULN-12】脆弱な NPM 依存パッケージのアップデートと互換性検証
 
 ### 1. 概要

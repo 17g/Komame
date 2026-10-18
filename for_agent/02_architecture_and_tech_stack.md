@@ -78,6 +78,35 @@ flowchart TB
   }
   ```
 
+### 2.3 動的テナントスキーマ名のホワイトリスト検証 (assertValidSchemaName)
+- **SQL インジェクション完全根絶 (VULN-01 / VULN-05)**:
+  - テナントスキーマ名に不正な文字列や複文（Stacked Queries）が混入することを防ぐため、正規表現 `/^tenant_[a-zA-Z0-9_-]{1,55}$/` によるホワイトリスト検証を全テナントDB接続関数（`getTenantSchema`, `getTenantDb`, `createTenantTables`）の入口で強制実行。
+  - Drizzle ORM の型安全クエリおよびパラメータバインディングを徹底し、`raw.unsafe(...)` による口座残高直接更新を完全廃止。
+
+### 2.4 DB 突合によるリアルタイム権限検証とセッション即時失効 (VULN-06)
+- **リアルタイム認可**:
+  - `getCurrentSession()` において JWT 署名検証後、マスタDBの `users`（`isActive === true`）および `household_memberships`（`status === "active"`）を照会。
+  - メンバーの無効化（論理削除）やロール変更（`admin` ↔ `member`）が即座に API リクエストに反映される。
+- **セッション即時失効**:
+  - ログアウト時（`POST /api/auth/logout`）およびパスワード変更・リセット時にセッションを即時無効化。
+
+### 2.5 スライディングウィンドウ方式レートリミッター (VULN-08)
+- **ブルートフォース & DoS 防御**:
+  - `src/lib/rate-limit.ts` によるインメモリ・スライディングウィンドウ方式のレートリミットを実装。
+  - ログイン（IPごと 10回/分、アカウントごと 5回/分）、サインアップ（動的スキーマ生成 DoS 防御: 5回/分）、招待（10回/分）を制限し、超過時は `429 Too Many Requests` と `Retry-After` ヘッダーを返却。
+
+### 2.6 HTTP セキュリティヘッダー & CSRF 防御 (VULN-11)
+- `next.config.ts` により以下のセキュリティヘッダーを全レスポンスに強制適用：
+  - `X-Frame-Options: DENY` (クリックジャッキング防御)
+  - `X-Content-Type-Options: nosniff` (MIMEスニッフィング防御)
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+  - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+  - `Content-Security-Policy: default-src 'self'; ...`
+- 状態変更リクエスト（POST/PUT/DELETE）における `Origin` / `Host` ヘッダー検証による CSRF 多層防御。
+
+### 2.7 Fail-Fast シークレット環境変数検証 (VULN-04)
+- 本番環境（`NODE_ENV=production` かつ非ビルド時）において、`DATABASE_URL` または `JWT_SECRET`（32文字以上かつ安全な文字列）が未設定の場合、起動時に即座に例外をスローして安全性を保証。
+
 ---
 
 ## 3. ロギング & パフォーマンス監視
@@ -115,6 +144,7 @@ flowchart TB
 
 ## 5. 改訂履歴
 
+- **2026-10-18**: ペネトレーションテスト結果（VULN-01〜VULN-12）に基づく包括的セキュリティ強化仕様（スキーマ名ホワイトリスト検証、DB突合リアルタイム権限検証・セッション失効、スライディングウィンドウレートリミッター、セキュリティヘッダー・CSRF多層防御、Fail-Fast環境変数検証）を第2章に追記。
 - **2026-10-18**: アプリケーション（3080）およびデータベース（5532）の稼働ポート変更に伴うインフラ・ネットワークポート仕様を反映。
 - **2026-10-18**: 第1章のシステムアーキテクチャMermaid記法において、構文エラーを引き起こしていた `graph TB` を `flowchart TB` に変更し、括弧等の記号を含むsubgraphラベルを適切にダブルクォートでエスケープ修正。
 
