@@ -160,7 +160,7 @@
     1. 金額・数値パラメータの検証関数（整数かつ `1 <= amount <= 9_999_999_999`、口座初期残高は `0 <= balance <= 9_999_999_999`）および一括処理の上限（一括明細登録最大 500 件、CSV ファイルサイズ最大 5MB・最大 5,000 行）を実装し、各 API エンドポイントの入口で不正値を `400 Bad Request` で拒否する。
     2. `transactions`（POST / PUT / DELETE）、`admin/csv`（POST import）、`admin/revert`（POST）における複数テーブル操作と残高更新を `db.transaction(async (tx) => { ... })` で囲み、エラー発生時の完全ロールバックとデータ整合性を保証する。
 
-- [ ] **7.6 [VULN-08 & VULN-11] 認証・重要 API のレートリミッター導入および HTTP セキュリティヘッダー・CSRF Origin 検証の実装**:
+- [x] **7.6 [VULN-08 & VULN-11] 認証・重要 API のレートリミッター導入および HTTP セキュリティヘッダー・CSRF Origin 検証の実装**:
   - **対象ファイル**: `src/lib/rate-limit.ts`（新規）, `next.config.ts`, `src/app/api/auth/login/route.ts`, `src/app/api/auth/signup/route.ts`, `src/app/api/auth/invite/route.ts`
   - **実装内容**:
     1. IP アドレスおよびアカウント識別子単位のスライディングウィンドウ方式レートリミッター（`src/lib/rate-limit.ts`）を実装し、`POST /api/auth/login`、`POST /api/auth/signup`（動的スキーマ生成 DoS 防御）、`POST /api/auth/invite` に適用する（超過時は `429 Too Many Requests` を返却）。

@@ -12,10 +12,24 @@ import {
   setSessionCookie,
 } from "@/lib/auth";
 import { logger } from "@/lib/logger";
+import {
+  getClientIp,
+  checkRateLimit,
+  createRateLimitResponse,
+  AUTH_RATE_LIMITS,
+} from "@/lib/rate-limit";
 
 // 招待トークンの検証 (GET /api/auth/invite?token=...)
 export async function GET(req: NextRequest) {
   try {
+    // 0. IP 単位のレートリミット検証
+    const clientIp = getClientIp(req);
+    const ipRateLimit = checkRateLimit(`invite_check:ip:${clientIp}`, AUTH_RATE_LIMITS.inviteByIp);
+    if (!ipRateLimit.success) {
+      logger.warn({ ip: clientIp }, "Invite check rate limit exceeded for IP");
+      return createRateLimitResponse(ipRateLimit);
+    }
+
     const { searchParams } = new URL(req.url);
     const token = searchParams.get("token");
 
@@ -56,6 +70,17 @@ export async function GET(req: NextRequest) {
 // 招待による参加・登録 (POST /api/auth/invite)
 export async function POST(req: NextRequest) {
   try {
+    // 0. IP 単位のレートリミット検証
+    const clientIp = getClientIp(req);
+    const ipRateLimit = checkRateLimit(`invite:ip:${clientIp}`, AUTH_RATE_LIMITS.inviteByIp);
+    if (!ipRateLimit.success) {
+      logger.warn({ ip: clientIp }, "Invite rate limit exceeded for IP");
+      return createRateLimitResponse(
+        ipRateLimit,
+        "短時間に多数の招待参加リクエストが行われました。しばらく待ってから再試行してください。"
+      );
+    }
+
     const { token, email, password } = await req.json();
 
     if (!token || !email || !password) {

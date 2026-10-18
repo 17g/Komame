@@ -4,9 +4,26 @@ import { users, households, householdMemberships } from "@/db/schema/master";
 import { eq, and } from "drizzle-orm";
 import { verifyPassword, createSessionToken, setSessionCookie } from "@/lib/auth";
 import { logger } from "@/lib/logger";
+import {
+  getClientIp,
+  checkRateLimit,
+  createRateLimitResponse,
+  AUTH_RATE_LIMITS,
+} from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
+    // 0. IP 単位のレートリミット検証
+    const clientIp = getClientIp(req);
+    const ipRateLimit = checkRateLimit(`login:ip:${clientIp}`, AUTH_RATE_LIMITS.loginByIp);
+    if (!ipRateLimit.success) {
+      logger.warn({ ip: clientIp }, "Login rate limit exceeded for IP");
+      return createRateLimitResponse(
+        ipRateLimit,
+        "短時間に多数のログイン試行が行われました。しばらく待ってから再試行してください。"
+      );
+    }
+
     const { email, password } = await req.json();
 
     if (!email || !password || typeof email !== "string") {
@@ -17,6 +34,19 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+
+    // 0.1 アカウント（メールアドレス）単位のレートリミット検証 (ブルートフォース防御)
+    const accountRateLimit = checkRateLimit(
+      `login:acc:${normalizedEmail}`,
+      AUTH_RATE_LIMITS.loginByAccount
+    );
+    if (!accountRateLimit.success) {
+      logger.warn({ ip: clientIp, email: normalizedEmail }, "Login rate limit exceeded for account");
+      return createRateLimitResponse(
+        accountRateLimit,
+        "このアカウントに対するログイン試行回数が上限に達しました。しばらく待ってから再試行してください。"
+      );
+    }
 
     // 1. ユーザー検索
     const [user] = await masterDb

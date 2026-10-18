@@ -2,6 +2,57 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-18] 【VULN-08 & VULN-11】認証・重要 API のレートリミッター導入および HTTP セキュリティヘッダー・CSRF Origin 検証の実装
+
+### 1. 概要
+ペネトレーションテスト結果（VULN-08 & VULN-11）に基づき、以下のセキュリティ強化を実施した：
+1. `src/lib/rate-limit.ts` にスライディングウィンドウ方式のレートリミッターを実装。クライアントIPおよびアカウント単位のタイムスタンプ記録・期限切れ自動GC・429 Too Many Requests レスポンス（`Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`）を提供。
+2. 認証・重要API（`POST /api/auth/login`, `POST /api/auth/signup`, `POST /api/auth/invite`）にレートリミッターを適用し、ブルートフォース攻撃や動的テナントスキーマ生成を悪用したリソース枯渇DoS攻撃を遮断。
+3. `src/lib/csrf.ts` および `src/middleware.ts` を新設し、API に対する状態変更リクエスト（POST / PUT / DELETE / PATCH）において `Origin` / `Host` ヘッダー整合性検証および `Sec-Fetch-Site: cross-site` 検出を実施。クロスサイトリクエストフォージェリ（CSRF）攻撃を多層防御で `403 Forbidden` 遮断。
+4. `next.config.ts` の `headers()` に `X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`Permissions-Policy`、および Next.js に最適化した `Content-Security-Policy` を設定。
+5. 単体テスト（`scripts/test-rate-limit-csrf.ts`）、TypeScript型チェック（`npx tsc --noEmit`）、プロダクションビルド（`npm run build`）のすべてで正常終了（Exit Code 0）を確認。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `src/lib/rate-limit.ts`: レートリミッターが存在せず、認証・重要APIに対する無制限のブルートフォース試行や新規登録によるスキーマ生成DoS攻撃が可能だった。
+  - `src/lib/csrf.ts` & `src/middleware.ts`: API への状態変更リクエストに対する Origin / Host 整合性検証が存在しなかった。
+  - `next.config.ts`: HTTP セキュリティヘッダー（CSP, X-Frame-Options 等）が未設定だった。
+  - `src/app/api/auth/login/route.ts`: 同一IPや同一アカウントからの短時間での大量ログイン試行が制限されていなかった。
+  - `src/app/api/auth/signup/route.ts`: 短時間での大量世帯・テナントスキーマ生成に対する制限がなかった。
+  - `src/app/api/auth/invite/route.ts`: 招待参加およびトークン検証に対するリクエスト頻度制限がなかった。
+- **After**:
+  - `src/lib/rate-limit.ts`:
+    - スライディングウィンドウ方式のレートリミッター（`checkRateLimit`, `createRateLimitResponse`, `getClientIp`）を実装。
+    - ログイン用（IP: 10回/分、アカウント: 5回/分）、サインアップ用（IP: 5回/分）、招待用（IP: 10回/分）のプリセットを定義。
+  - `src/lib/csrf.ts` & `src/middleware.ts`:
+    - `validateCsrfOrigin(req)` による Origin/Host および Referer 整合性検証、`Sec-Fetch-Site: cross-site` 検出を実装。
+    - Next.js のミドルウェア（`src/middleware.ts`）で `/api/*` の POST/PUT/DELETE/PATCH リクエストを自動保護。
+  - `next.config.ts`:
+    - `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, `Content-Security-Policy` を設定。
+  - `src/app/api/auth/login/route.ts`:
+    - IP 単位およびメールアドレス単位のレートリミットを適用。
+  - `src/app/api/auth/signup/route.ts`:
+    - IP 単位のレートリミット（5回/分）を適用し、テナントスキーマ動的生成 DoS を防御。
+  - `src/app/api/auth/invite/route.ts`:
+    - GET（10回/分）および POST（10回/分）に IP 単位のレートリミットを適用。
+  - `scripts/test-rate-limit-csrf.ts`:
+    - レートリミッター動作および CSRF 検証の網羅的な単体テストを作成・実行。
+
+### 3. 変更理由
+- 認証エンドポイントへの総当たり（ブルートフォース）攻撃、動的スキーマ生成によるサービス妨害（DoS）攻撃、クロスサイトリクエストフォージェリ（CSRF）攻撃、およびクリックジャッキング等の Web アプリケーション脆弱性を多層的に防御するため。
+
+### 4. 影響範囲
+- `src/lib/rate-limit.ts` (新規)
+- `src/lib/csrf.ts` (新規)
+- `src/middleware.ts` (新規)
+- `next.config.ts`
+- `src/app/api/auth/login/route.ts`
+- `src/app/api/auth/signup/route.ts`
+- `src/app/api/auth/invite/route.ts`
+- `scripts/test-rate-limit-csrf.ts` (新規)
+- `Plan.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-18] 【VULN-09】金額・入力パラメータの厳格な境界値バリデーションと DB トランザクション原子性の保証
 
 ### 1. 概要

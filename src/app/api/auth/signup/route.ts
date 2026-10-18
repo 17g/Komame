@@ -10,9 +10,26 @@ import {
 } from "@/lib/auth";
 import { createTenantTables } from "@/db/migrate";
 import { logger } from "@/lib/logger";
+import {
+  getClientIp,
+  checkRateLimit,
+  createRateLimitResponse,
+  AUTH_RATE_LIMITS,
+} from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
+    // 0. IP 単位のレートリミット検証 (動的テナントスキーマ生成 DoS 防御)
+    const clientIp = getClientIp(req);
+    const ipRateLimit = checkRateLimit(`signup:ip:${clientIp}`, AUTH_RATE_LIMITS.signupByIp);
+    if (!ipRateLimit.success) {
+      logger.warn({ ip: clientIp }, "Signup rate limit exceeded for IP");
+      return createRateLimitResponse(
+        ipRateLimit,
+        "短時間に多数のアカウント作成リクエストが行われました。しばらく待ってから再試行してください。"
+      );
+    }
+
     const { email, password, householdName } = await req.json();
 
     if (!email || !password || !householdName || typeof email !== "string") {
