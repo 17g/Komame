@@ -2,6 +2,40 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-18] 【VULN-07】CSV エクスポートにおける CSV インジェクション (Formula Injection) 防御と RFC 4180 エスケープ統一
+
+### 1. 概要
+ペネトレーションテスト結果（VULN-07）に基づき、以下のセキュリティ強化を実施した：
+1. `src/lib/csv.ts` の `escapeCsvCell()` を拡張し、セル文字列の先頭文字が数式トリガー文字（`=`, `+`, `-`, `@`, `\t`, `\r`）に該当する場合、先頭にシングルクォート（`'`）を付与して Excel / スプレッドシートでの数式・DDE 実行を無害化する処理を実装。
+2. 口座残高などの計算用数値を壊さないよう、純粋な数値型（`typeof value === "number"`。負の数値 `-1500` 等を含む）および真偽値・BigInt 型を数式エスケープの対象外として保護。
+3. `src/app/api/admin/csv/route.ts` の `GET`（口座一覧・全明細の CSV エクスポート）における手動文字列結合を全廃し、`generateCsv()` を使用した RFC 4180 準拠エスケープ出力に統一。
+4. 単体テスト（`scripts/test-csv-unit.ts`）、TypeScript型チェック（`npx tsc --noEmit`）、Next.js プロダクションビルド（`npm run build`）の全通過（Exit Code 0）を確認。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `src/lib/csv.ts`:
+    - `escapeCsvCell()` がダブルクォーテーションの二重化（`""`）と外側クォート囲みのみを行っており、`=`、`+`、`-`、`@`、`\t`、`\r` で始まる文字列セルがスプレッドシート閲覧時に数式や DDE コマンドとして自動実行される CSV インジェクション（Formula Injection）の脆弱性があった。
+  - `src/app/api/admin/csv/route.ts`:
+    - `GET` エンドポイントで `csvContent += `"${a.id}","${a.name}"...`` や `csvContent += `"${t.id}","${t.date}"...`` のように手動でテンプレート文字列結合を行っていたため、店舗名やメモに改行・引用符・数式トリガーが含まれていた場合に CSV 構造が破壊されたりインジェクション攻撃を受ける恐れがあった。
+- **After**:
+  - `src/lib/csv.ts`:
+    - `escapeCsvCell()` を刷新。`typeof value === "number"`（負の数値を含む純粋な数値型）や `boolean`、`Date` を適切に処理した上で、文字列セルの先頭が数式トリガー文字（`=`, `+`, `-`, `@`, `\t`, `\r`）の場合に先頭へ `'` を付与して無害化。
+  - `src/app/api/admin/csv/route.ts`:
+    - `generateCsv()` を導入し、口座一覧（`type === "accounts"`）および全明細（`type === "full"` / その他）のエクスポートを RFC 4180 準拠の完全安全な CSV 出力へ置換。
+  - `scripts/test-csv-unit.ts`:
+    - 数式トリガー記号（`=`, `+`, `-`, `@`, `\t`, `\r`）のシングルクォート無害化、および純粋な負の数値型（`-1500`）の保護を検証するテストケースを追加。
+
+### 3. 変更理由
+- 悪意あるユーザーや店舗名・メモ等に埋め込まれた数式トリガーによって、管理者が CSV を Excel 等で開いた際に意図しないコマンド実行（DDE 攻撃）や情報漏洩が発生するリスクを構造的に防止するため。
+- CSV エクスポート処理を `generateCsv()` に統一し、RFC 4180 仕様（改行・引用符のエスケープ、BOM 付与）に完全準拠させるため。
+
+### 4. 影響範囲
+- `src/lib/csv.ts`
+- `src/app/api/admin/csv/route.ts`
+- `scripts/test-csv-unit.ts`
+- `Plan.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-18] 【VULN-04 & VULN-06】シークレット管理の厳格化とセッション即時失効・DB突合によるリアルタイム権限検証の実装
 
 ### 1. 概要

@@ -70,11 +70,25 @@ assert(normalizeType("収入") === "income", "Type 収入");
 assert(normalizeType("振替") === "transfer", "Type 振替");
 assert(normalizeType(undefined) === "expense", "Default type expense");
 
-// Test 7: escapeCsvCell
+// Test 7: escapeCsvCell (RFC 4180 & CSV Formula Injection Protection)
 assert(escapeCsvCell("simple") === '"simple"', "Simple string cell escaped");
 assert(escapeCsvCell('with "quote"') === '"with ""quote"""', "Quote cell escaped");
 assert(escapeCsvCell(null) === '""', "Null cell escaped to empty quotes");
-assert(escapeCsvCell(1234) === '"1234"', "Number cell escaped");
+assert(escapeCsvCell(undefined) === '""', "Undefined cell escaped to empty quotes");
+assert(escapeCsvCell(1234) === '"1234"', "Positive number cell escaped without prefix");
+assert(escapeCsvCell(0) === '"0"', "Zero number cell escaped without prefix");
+assert(escapeCsvCell(-1500) === '"-1500"', "Pure negative number preserved without single quote prefix");
+assert(escapeCsvCell(true) === '"true"', "Boolean cell escaped");
+
+// Formula injection protection tests: =, +, -, @, \t, \r
+assert(escapeCsvCell("=1+1") === '"\'=1+1"', "Formula trigger = neutralized with single quote prefix");
+assert(escapeCsvCell("=cmd|' /C calc'!A0") === '"\'=cmd|\' /C calc\'!A0"', "Formula trigger =cmd neutralized");
+assert(escapeCsvCell("+SUM(A1:A10)") === '"\'+SUM(A1:A10)"', "Formula trigger + neutralized");
+assert(escapeCsvCell("-支出メモ") === '"\'-支出メモ"', "Formula trigger - in string neutralized");
+assert(escapeCsvCell("@admin") === '"\'@admin"', "Formula trigger @ neutralized");
+assert(escapeCsvCell("\ttabbed") === '"\'\ttabbed"', "Formula trigger tab neutralized");
+assert(escapeCsvCell("\rcarriage") === '"\'\rcarriage"', "Formula trigger carriage return neutralized");
+assert(escapeCsvCell(new Date("2026-10-18T12:00:00.000Z")) === '"2026-10-18T12:00:00.000Z"', "Date object ISO format escaped");
 
 // Test 8: generateCsv (BOM + RFC 4180)
 const genCsv = generateCsv(

@@ -209,13 +209,45 @@ export function normalizeType(input?: string): "expense" | "income" | "transfer"
 }
 
 /**
- * セル値をRFC 4180準拠でエスケープ
+ * 数式トリガー文字 (=, +, -, @, \t, \r)
+ */
+const FORMULA_TRIGGERS = ["=", "+", "-", "@", "\t", "\r"];
+
+/**
+ * セル値をRFC 4180準拠でエスケープし、数式インジェクション（CSV Injection）を無害化
  */
 export function escapeCsvCell(value: unknown): string {
   if (value === null || value === undefined) {
     return '""';
   }
-  const str = typeof value === "object" ? JSON.stringify(value) : String(value);
+
+  // 純粋な数値型（負の数値を含む）は数式インジェクション対策の対象外（計算用数値を保護）
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) {
+      return '""';
+    }
+    return `"${value}"`;
+  }
+
+  if (typeof value === "bigint" || typeof value === "boolean") {
+    return `"${value}"`;
+  }
+
+  let str: string;
+  if (value instanceof Date) {
+    str = value.toISOString();
+  } else if (typeof value === "object") {
+    str = JSON.stringify(value);
+  } else {
+    str = String(value);
+  }
+
+  // 文字列セルの先頭文字が数式トリガー文字 (=, +, -, @, \t, \r) に該当する場合、
+  // 先頭にシングルクォート (') を付与して Excel / スプレッドシートでの数式・DDE 実行を無害化
+  if (str.length > 0 && FORMULA_TRIGGERS.includes(str[0])) {
+    str = `'${str}`;
+  }
+
   return `"${str.replace(/"/g, '""')}"`;
 }
 

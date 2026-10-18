@@ -148,7 +148,7 @@
     2. `getCurrentSession()` において JWT 署名検証後に `masterDb` で `users`（`isActive === true`）および `household_memberships`（`status === "active"`）を照会し、メンバーの無効化・削除、ロール変更（`admin` ↔ `member`）、および正規の `schemaName` を DB の最新状態から毎回解決して返却する。
     3. ログアウト時（`POST /api/auth/logout`）およびパスワード変更・リセット時に既存の JWT を即時無効化できるよう、失効トークン管理またはユーザー更新時刻（`iat` と `updatedAt` の比較等）によるトークン無効化機構を実装する。
 
-- [ ] **7.4 [VULN-07] CSV エクスポートにおける CSV インジェクション (Formula Injection) 防御と RFC 4180 エスケープ統一**:
+- [x] **7.4 [VULN-07] CSV エクスポートにおける CSV インジェクション (Formula Injection) 防御と RFC 4180 エスケープ統一**:
   - **対象ファイル**: `src/lib/csv.ts`, `src/app/api/admin/csv/route.ts`
   - **実装内容**:
     1. `src/lib/csv.ts` の `escapeCsvCell()` を拡張し、文字列セルの先頭文字が数式トリガー文字（`=`, `+`, `-`, `@`, `\t`, `\r`）に該当する場合（純粋な負の数値型を除く）、先頭にシングルクォート（`'`）を付与して Excel / スプレッドシートでの数式・DDE 実行を無害化する。
