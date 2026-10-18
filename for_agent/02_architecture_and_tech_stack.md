@@ -5,15 +5,15 @@
 本システムは、**単一PostgreSQL 16データベース内で家庭ごとに専用スキーマを作成する「Schema per Tenant」方式**を採用しています。
 
 ```mermaid
-graph TB
-    subgraph Client [クライアント層 (Responsive Web)]
+flowchart TB
+    subgraph Client ["クライアント層 (Responsive Web)"]
         MobileWeb["スマートフォンブラウザ (iPhone最優先)"]
         DesktopWeb["PC / タブレットブラウザ"]
     end
 
-    subgraph AppServer [アプリケーション層 (Next.js 15 App Router)]
+    subgraph AppServer ["アプリケーション層 (Next.js 15 App Router)"]
         Gateway["認証 / JWT セッションミドルウェア"]
-        subgraph CoreModules [ドメインモジュール]
+        subgraph CoreModules ["ドメインモジュール"]
             AuthMod["認証・世帯管理 (Argon2id)"]
             TxMod["明細登録・一括入力・サジェスト"]
             DraftMod["2段階一時保存 (Manual / Auto 2s)"]
@@ -25,11 +25,11 @@ graph TB
         Logger["Pino Logger (スロークエリ200ms監視)"]
     end
 
-    subgraph DatabaseLayer [データベース層 (PostgreSQL 16 + Drizzle ORM)]
-        subgraph MasterSchema [public スキーマ]
+    subgraph DatabaseLayer ["データベース層 (PostgreSQL 16 + Drizzle ORM)"]
+        subgraph MasterSchema ["public スキーマ"]
             MasterTables["users, households, household_memberships, system_settings"]
         end
-        subgraph TenantSchemas [家庭専用スキーマ (tenant_xxx)]
+        subgraph TenantSchemas ["家庭専用スキーマ (tenant_xxx)"]
             SchemaA["tenant_yamada (accounts, transactions, categories, drafts, audit_logs...)"]
             SchemaB["tenant_sato (accounts, transactions, categories, drafts, audit_logs...)"]
         end
@@ -99,3 +99,10 @@ graph TB
     "traceId": "..."
   }
   ```
+
+---
+
+## 4. 改訂履歴
+
+- **2026-10-18**: 第1章のシステムアーキテクチャMermaid記法において、構文エラーを引き起こしていた `graph TB` を `flowchart TB` に変更し、括弧等の記号を含むsubgraphラベルを適切にダブルクォートでエスケープ修正。
+

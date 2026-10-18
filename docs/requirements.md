@@ -14,12 +14,12 @@
 本システムは、**複数家庭（マルチテナント）の家計簿を1つのアプリケーションで安全かつ高パフォーマンスに管理できるマルチテナント・スキーマ完全分離アーキテクチャ**を採用します。
 
 ```mermaid
-graph TD
-    subgraph Master [プラットフォーム層 (Master)]
+flowchart TD
+    subgraph Master ["プラットフォーム層 (Master)"]
         SuperAdmin["最上位管理者 (Super Admin)<br>・システム全体の運用管理"]
     end
 
-    subgraph TenantA [システムアカウント A (山田家専用スキーマ)]
+    subgraph TenantA ["システムアカウント A (山田家専用スキーマ)"]
         AdminA["家庭管理者 (Household Admin / 山田太郎)<br>・家族管理・招待<br>・24hリバート実行<br>・CSVフル入出力<br>・家庭内設定・ログ閲覧"]
         UserA["家庭メンバー (Household Member / 山田花子)<br>・明細登録・一括入力<br>・口座/カード確認<br>・ダッシュボード・草生やし"]
         DataA["【山田家専用】スキーマ (tenant_yamada)<br>(口座, 明細, 一時保存, 目標, 監査ログ)"]
@@ -27,7 +27,7 @@ graph TD
         UserA --> DataA
     end
 
-    subgraph TenantB [システムアカウント B (佐藤家専用スキーマ)]
+    subgraph TenantB ["システムアカウント B (佐藤家専用スキーマ)"]
         AdminB["家庭管理者 (Household Admin / 佐藤一郎)"]
         UserB["家庭メンバー (Household Member / 佐藤次郎)"]
         DataB["【佐藤家専用】スキーマ (tenant_sato)<br>(口座, 明細, 一時保存, 目標, 監査ログ)"]

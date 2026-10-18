@@ -5,16 +5,16 @@
 『Komame』は、**「複数家庭（マルチテナント）の家計簿データをスキーマ完全分離によって安全・高パフォーマンスに管理する」** とともに、**「開発環境（Windows）と本番環境（Ubuntu Linux）でPostgreSQL 16に完全統一し、環境差異ゼロの単一ビジネスロジックを貫く」** アーキテクチャを採用します。
 
 ```mermaid
-graph TB
-    subgraph Client [クライアント層 (Responsive & Mobile-First)]
+flowchart TB
+    subgraph Client ["クライアント層 (Responsive & Mobile-First)"]
         MobileWeb["iPhone / スマホブラウザ (最優先)"]
         DesktopWeb["PC / タブレットブラウザ"]
         FutureNativeApp["将来: モバイルネイティブアプリ (Flutter / React Native)"]
     end
 
-    subgraph AppServer [アプリケーション層 (Node.js - Next.js 15 App Router)]
+    subgraph AppServer ["アプリケーション層 (Node.js - Next.js 15 App Router)"]
         Gateway["API Gateway / Auth Middleware (JWT & Tenant Schema Router)"]
-        subgraph CoreModules [ドメインモジュール]
+        subgraph CoreModules ["ドメインモジュール"]
             AuthMod["認証・権限・世帯管理 (Argon2id)"]
             TxMod["明細登録・一括入力・サジェスト"]
             DraftMod["2段階一時保存 (Manual / Auto 2s debounce)"]
@@ -26,11 +26,11 @@ graph TB
         LoggingEngine["Pino Logger (HTTP / DBスロークエリ 200ms監視)"]
     end
 
-    subgraph DatabaseLayer [データベース永続化層 (PostgreSQL 16 + Drizzle ORM)]
-        subgraph MasterSchema [public スキーマ (認証・ルーティング)]
+    subgraph DatabaseLayer ["データベース永続化層 (PostgreSQL 16 + Drizzle ORM)"]
+        subgraph MasterSchema ["public スキーマ (認証・ルーティング)"]
             MasterTables["users, households, household_memberships, system_settings"]
         end
-        subgraph TenantSchemas [家庭専用スキーマ群 (Schema per Tenant)]
+        subgraph TenantSchemas ["家庭専用スキーマ群 (Schema per Tenant)"]
             SchemaA["tenant_yamada (accounts, transactions, categories, drafts, audit_logs...)"]
             SchemaB["tenant_sato (accounts, transactions, categories, drafts, audit_logs...)"]
         end

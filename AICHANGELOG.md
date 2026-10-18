@@ -2,7 +2,39 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-18] Mermaid構文エラーの修正およびガードレール追記
+
+### 1. 概要
+`docs/architecture_and_tech_stack.md` の「1. 全体アーキテクチャ方針」に記述されていたMermaid図において、パースエラー（構文エラー）が発生していた問題を修正した。また、同様の記法を用いていた仕様書正本（`for_agent/02_architecture_and_tech_stack.md`）および `docs/requirements.md` についても整合させ、全ダイアグラムのパース成功（Ground Truth）および型チェック・ビルド検証の通過を確認した。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `graph TB` 記法を使用しており、subgraph を直接ターゲットとするエッジ（`Gateway --> CoreModules` など）が存在したためパーサーが構文エラーとなっていた。
+  - subgraph のタイトル（`subgraph Client [クライアント層 (Responsive & Mobile-First)]` 等）に丸括弧 `( )` や記号 `&`, `+` がクォートなしで含まれており、Mermaidトークナイザでパースエラーとなっていた。
+  - `docs/requirements.md` においても `graph TD` かつ括弧を含む subgraph ラベルにより同様のエラーが発生していた。
+- **After**:
+  - `docs/architecture_and_tech_stack.md`:
+    - `graph TB` を subgraph リンク対応の `flowchart TB` に変更。
+    - 特殊記号を含む subgraph ラベルをダブルクォーテーションでクォート（`subgraph Client ["クライアント層 (Responsive & Mobile-First)"]` 等）。
+  - `for_agent/02_architecture_and_tech_stack.md`:
+    - 仕様書正本側も同様に `flowchart TB` およびラベルクォート形式に修正し、改訂履歴セクションを追加。
+  - `docs/requirements.md`:
+    - `flowchart TD` およびラベルクォート形式に修正。
+  - `for_agent/guardrails.md`:
+    - 「5. ドキュメント・Mermaid記法のガードレール」を新設し、subgraph 間接続時の `flowchart` 指定および記号を含むラベルのエスケープ方針を明文化。
+
+### 3. 変更理由
+- ユーザーからの不具合指摘（Mermaid構文エラー）に対応し、Markdownプレビューや各種レンダラーで正しく図が表示されるようにするため。
+
+### 4. 影響範囲
+- `docs/architecture_and_tech_stack.md`
+- `for_agent/02_architecture_and_tech_stack.md`
+- `docs/requirements.md`
+- `for_agent/guardrails.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-17] プロジェクト全体の最終レビュー & 仕様書最新化の完了 (`/review`)
+
 
 ### 1. 概要
 `review` スキル指示に基づき、`for_agent/` 内の全仕様書（00〜06, guardrails）と実装コード全体の突き合わせ点検を実施した。全23要件の完全実装、エッジケース（資金移動双方向残高連動、24時間リバート逆算、投資支出受入ペア明細連動、離脱ガード、家族管理者保護、RFC 4180準拠CSV入出力、3段階クレカ原資シグナル、草生やし28日マトリックス動的化、まめの樹4段階遷移、やさしいアドバイス動的生成）の網羅性を確認した。

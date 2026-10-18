@@ -92,3 +92,13 @@
 - **React 19 / TypeScript における `unknown` 型プロパティの JSX 条件レンダリングガードレール**:
   `AuditLogItem` 等の `unknown` 型プロパティ（`beforeDataJson`, `afterDataJson` 等）を JSX 内で `{item.data && <Component />}` と直接評価すると、戻り値の型が `unknown | ReactNode` と推論され `TS2322: Type 'unknown' is not assignable to type 'ReactNode'` エラーが発生する。必ず `{item.data != null && <Component />}` または `{Boolean(item.data) && <Component />}` を使用して明示的に真偽値に変換すること。
 
+---
+
+## 5. ドキュメント・Mermaid記法のガードレール
+
+### 5.1 Mermaid構文エラーの防止
+- **subgraph 間・subgraph への接続**:
+  `graph TB` や `graph TD` は旧記法であり、subgraph をターゲットとするエッジ（`Gateway --> CoreModules` など）を記述すると構文エラー（Parse error）となる。必ず `flowchart TB` または `flowchart TD` を使用すること。
+- **特殊記号を含むラベルのエスケープ**:
+  ノードや subgraph のラベルに丸括弧 `( )`、角括弧 `[ ]`、`&`、`+`、`/`、コロン `:` などの記号が含まれる場合、`subgraph ID [タイトル]` と直接書くとトークナイザが誤認して構文エラーとなる。必ずダブルクォーテーションで囲み、`subgraph ID ["タイトル (詳細)"]` または `nodeId["ラベル (詳細)"]` の形式で記述すること。
+
