@@ -2,6 +2,64 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-18] 【VULN-09】金額・入力パラメータの厳格な境界値バリデーションと DB トランザクション原子性の保証
+
+### 1. 概要
+ペネトレーションテスト結果（VULN-09）に基づき、以下のセキュリティ強化および整合性保証を実施した：
+1. `src/lib/utils.ts` に金額・口座残高・一括処理の上限定数（`MIN_AMOUNT=1`、`MAX_AMOUNT=9_999_999_999`、`MIN_BALANCE=0`、`MAX_BALANCE=9_999_999_999`、`MAX_BATCH_TRANSACTIONS=500`、`MAX_CSV_FILE_SIZE=5MB`、`MAX_CSV_ROWS=5000`）および厳格な整数検証関数（`isValidAmount`、`isValidBalance`、`parseValidAmount`、`parseValidBalance`）を実装。
+2. `src/app/api/transactions/route.ts`（POST / PUT / DELETE）、`src/app/api/accounts/route.ts`（POST / PUT）、`src/app/api/admin/csv/route.ts`（POST preview / import）、`src/app/api/goals/route.ts`（POST）の全エンドポイント入口で不正な金額・残高・ファイルサイズ・行数を `400 Bad Request` で拒絶する境界値バリデーションを導入。
+3. `transactions`（POST / PUT / DELETE）、`admin/csv`（POST import）、`admin/revert`（POST）における複数テーブル操作および残高更新処理を `db.transaction(async (tx) => { ... })` で囲み、エラー発生時の完全ロールバックとデータベースの原子性（ACID整合性）を保証。
+4. 単体テスト（`scratch/test-vuln09.ts`）、TypeScript型チェック（`npx tsc --noEmit`）、Next.js プロダクションビルド（`npm run build`）の全通過（Exit Code 0）を確認。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `src/lib/utils.ts`:
+    - 金額や残高の境界値検証ロジックが存在せず、負の金額、極端に巨大な数値（整数オーバーフローや浮動小数点数）の入力チェックが各APIで統一されていなかった。
+  - `src/app/api/transactions/route.ts`:
+    - POSTでの一括登録件数制限がなく、DoS攻撃や極端な大量登録が可能だった。
+    - 残高更新、明細登録、タグ紐付け、監査ログ記録が個別に行われており、途中でエラーが発生した場合に一部の口座残高のみが更新されたまま残る不整合リスクがあった。
+    - PUTおよびDELETE時も口座残高ロールバックと明細更新が非トランザクションで実行されていた。
+  - `src/app/api/accounts/route.ts`:
+    - 口座登録時の初期残高や資金色分け（予約額）の境界値チェックが不十分で、負の値や無効な数値がそのままDBに登録される恐れがあった。
+  - `src/app/api/admin/csv/route.ts`:
+    - CSVファイルサイズ（5MB制限）や行数（5,000行制限）のガードレールがなく、巨大ファイルによるメモリ枯渇DoSリスクがあった。
+    - インポート処理が非トランザクションで実行されており、途中でエラーが発生した場合に一部の明細のみがインポートされ残高不整合となるリスクがあった。
+  - `src/app/api/admin/revert/route.ts`:
+    - リバート処理中の複数口座残高逆算・明細削除・一時保存削除・チェックポイント無効化が非トランザクションで実行されていた。
+  - `src/app/api/goals/route.ts`:
+    - 目標金額（targetAmount）の境界値バリデーションが未実施だった。
+- **After**:
+  - `src/lib/utils.ts`:
+    - `MIN_AMOUNT` (1), `MAX_AMOUNT` (9,999,999,999), `MIN_BALANCE` (0), `MAX_BALANCE` (9,999,999,999), `MAX_BATCH_TRANSACTIONS` (500), `MAX_CSV_FILE_SIZE` (5MB), `MAX_CSV_ROWS` (5,000) を定義。
+    - `isValidAmount`, `isValidBalance`, `parseValidAmount`, `parseValidBalance` をエクスポート。
+  - `src/app/api/transactions/route.ts`:
+    - POST: 最大500件上限チェック、各明細の金額・取引種別・日付バリデーションを追加し、全体を `db.transaction(async (tx) => { ... })` でアトミック化。
+    - PUT: 金額（1〜9,999,999,999円）・日付バリデーションを追加し、残高同期と明細更新を `db.transaction` でアトミック化。存在しないID時は404を返却。
+    - DELETE: 残高巻き戻しと論理削除処理を `db.transaction` でアトミック化。
+  - `src/app/api/accounts/route.ts`:
+    - POST / PUT: 口座残高（0〜9,999,999,999円）および資金色分け金額（1〜9,999,999,999円）の境界値バリデーションを導入。
+  - `src/app/api/admin/csv/route.ts`:
+    - 最大5MBのファイルサイズ / データサイズ制限、最大5,000行の行数制限を導入。
+    - プレビューおよびインポート時の金額境界値バリデーション（`isValidAmount`）を適用。
+    - インポート登録処理全体を `db.transaction` でアトミック化。
+  - `src/app/api/admin/revert/route.ts`:
+    - リバート処理全体を `db.transaction` でアトミック化し、残高逆算・明細削除・一時保存初期化の完全ロールバックを保証。
+  - `src/app/api/goals/route.ts`:
+    - POST: 目標金額（1〜9,999,999,999円）の境界値バリデーションを導入。
+
+### 3. 変更理由
+- 異常値・巨大数値・負の金額の混入による家計簿残高の破壊やDoS攻撃を遮断し、複数のDB更新処理が途中で失敗した場合でもデータ不整合が一切生じないようトランザクション原子性を確立するため。
+
+### 4. 影響範囲
+- `src/lib/utils.ts`
+- `src/app/api/transactions/route.ts`
+- `src/app/api/accounts/route.ts`
+- `src/app/api/admin/csv/route.ts`
+- `src/app/api/admin/revert/route.ts`
+- `src/app/api/goals/route.ts`
+- `Plan.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-18] 【VULN-07】CSV エクスポートにおける CSV インジェクション (Formula Injection) 防御と RFC 4180 エスケープ統一
 
 ### 1. 概要

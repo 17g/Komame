@@ -3,6 +3,7 @@ import { getCurrentSession } from "@/lib/auth";
 import { getTenantDb } from "@/db";
 import { eq, and, isNull } from "drizzle-orm";
 import { logger } from "@/lib/logger";
+import { isValidAmount, isValidBalance, parseValidAmount, parseValidBalance } from "@/lib/utils";
 
 // GET: 口座一覧 & 決済手段 & 資金色分け取得
 export async function GET() {
@@ -80,12 +81,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "口座名と種別を入力してください。" }, { status: 400 });
       }
 
+      const rawBalance = balance !== undefined && balance !== null && balance !== "" ? balance : 0;
+      if (!isValidBalance(rawBalance)) {
+        return NextResponse.json({ error: "口座残高は0〜9,999,999,999円の整数で入力してください。" }, { status: 400 });
+      }
+      const validBalance = parseValidBalance(rawBalance)!;
+
       const id = `acc_${crypto.randomUUID().replace(/-/g, "")}`;
       await db.insert(schema.accounts).values({
         id,
         name,
         type,
-        balance: typeof balance === "number" ? balance : parseInt(balance || "0", 10),
+        balance: validBalance,
         icon: icon || (type === "bank" ? "🏛️" : type === "prepaid_wallet" ? "📱" : type === "cash" ? "💵" : "📈"),
         color: color || "#2E7D32",
         sortOrder: 10,
@@ -116,16 +123,20 @@ export async function POST(req: NextRequest) {
     } else {
       // 3. 資金色分け (バーチャル貯蓄) の新規追加
       const { accountId, name, amount, color, note } = body;
-      if (!accountId || !name || !amount) {
+      if (!accountId || !name || amount === undefined || amount === null) {
         return NextResponse.json({ error: "口座、目的名、金額は必須です。" }, { status: 400 });
       }
+      if (!isValidAmount(amount)) {
+        return NextResponse.json({ error: "金額は1〜9,999,999,999円の整数で入力してください。" }, { status: 400 });
+      }
+      const validAmount = parseValidAmount(amount)!;
 
       const id = `res_${crypto.randomUUID().replace(/-/g, "")}`;
       await db.insert(schema.accountReservations).values({
         id,
         accountId,
         name,
-        amount: parseInt(amount, 10),
+        amount: validAmount,
         color: color || "#E6A15C",
         note,
       });
@@ -156,12 +167,20 @@ export async function PUT(req: NextRequest) {
 
     if (actionType === "account") {
       const { name, type, balance, icon, color } = body;
+      if (balance !== undefined && balance !== null) {
+        if (!isValidBalance(balance)) {
+          return NextResponse.json({ error: "口座残高は0〜9,999,999,999円の整数で入力してください。" }, { status: 400 });
+        }
+      }
+      const validatedBalance =
+        balance !== undefined && balance !== null ? parseValidBalance(balance)! : undefined;
+
       await db
         .update(schema.accounts)
         .set({
           name: name !== undefined ? name : undefined,
           type: type !== undefined ? type : undefined,
-          balance: balance !== undefined ? (typeof balance === "number" ? balance : parseInt(balance, 10)) : undefined,
+          balance: validatedBalance,
           icon: icon !== undefined ? icon : undefined,
           color: color !== undefined ? color : undefined,
         })
@@ -170,11 +189,19 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: true, message: "口座情報を更新しました。" });
     } else if (actionType === "reservation") {
       const { name, amount, color, note, accountId } = body;
+      if (amount !== undefined && amount !== null) {
+        if (!isValidAmount(amount)) {
+          return NextResponse.json({ error: "金額は1〜9,999,999,999円の整数で入力してください。" }, { status: 400 });
+        }
+      }
+      const validatedAmount =
+        amount !== undefined && amount !== null ? parseValidAmount(amount)! : undefined;
+
       await db
         .update(schema.accountReservations)
         .set({
           name: name !== undefined ? name : undefined,
-          amount: amount !== undefined ? parseInt(amount, 10) : undefined,
+          amount: validatedAmount,
           color: color !== undefined ? color : undefined,
           note: note !== undefined ? note : undefined,
           accountId: accountId !== undefined ? accountId : undefined,

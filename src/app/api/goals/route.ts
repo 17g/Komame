@@ -3,6 +3,7 @@ import { getCurrentSession } from "@/lib/auth";
 import { getTenantDb } from "@/db";
 import { eq } from "drizzle-orm";
 import { logger } from "@/lib/logger";
+import { isValidAmount, parseValidAmount } from "@/lib/utils";
 
 // GET: 貯蓄目標一覧 & 現在の進捗額集計
 export async function GET() {
@@ -53,15 +54,21 @@ export async function POST(req: NextRequest) {
     const { db, schema } = getTenantDb(session.schemaName);
     const { title, targetAmount, targetDate, accountIds, color } = await req.json();
 
-    if (!title || !targetAmount) {
+    if (!title || targetAmount === undefined || targetAmount === null) {
       return NextResponse.json({ error: "タイトルと目標金額を入力してください。" }, { status: 400 });
     }
+
+    if (!isValidAmount(targetAmount)) {
+      return NextResponse.json({ error: "目標金額は1〜9,999,999,999円の整数で入力してください。" }, { status: 400 });
+    }
+
+    const validatedAmount = parseValidAmount(targetAmount)!;
 
     const id = `goal_${crypto.randomUUID().replace(/-/g, "")}`;
     await db.insert(schema.savingsGoals).values({
       id,
       title,
-      targetAmount,
+      targetAmount: validatedAmount,
       targetDate,
       accountIdsJson: accountIds || [],
       color: color || "#2E7D32",

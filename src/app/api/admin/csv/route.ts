@@ -12,7 +12,7 @@ import {
   generateCsv,
   ColumnMapping,
 } from "@/lib/csv";
-import { calculateWithdrawalDate } from "@/lib/utils";
+import { calculateWithdrawalDate, isValidAmount, MAX_CSV_FILE_SIZE, MAX_CSV_ROWS } from "@/lib/utils";
 import { CsvImportRow, CsvPreviewResult } from "@/types";
 
 // GET: CSVエクスポート
@@ -132,6 +132,9 @@ export async function POST(req: NextRequest) {
       action = (formData.get("action") as string) || "preview";
       const file = formData.get("file") as File | null;
       if (file) {
+        if (file.size > MAX_CSV_FILE_SIZE) {
+          return NextResponse.json({ error: "CSVファイルサイズは最大5MBまでです。" }, { status: 400 });
+        }
         csvText = await file.text();
       } else {
         csvText = (formData.get("csvText") as string) || "";
@@ -160,6 +163,10 @@ export async function POST(req: NextRequest) {
       itemsToImport = body.items || [];
     }
 
+    if (csvText && Buffer.byteLength(csvText, "utf-8") > MAX_CSV_FILE_SIZE) {
+      return NextResponse.json({ error: "CSVデータサイズは最大5MBまでです。" }, { status: 400 });
+    }
+
     // ==========================================
     // ACTION 1: プレビュー & 重複候補検証
     // ==========================================
@@ -172,6 +179,13 @@ export async function POST(req: NextRequest) {
       if (headers.length === 0 || rows.length === 0) {
         return NextResponse.json(
           { error: "有効なCSVデータ（行データ）が見つかりませんでした。" },
+          { status: 400 }
+        );
+      }
+
+      if (rows.length > MAX_CSV_ROWS) {
+        return NextResponse.json(
+          { error: `CSV行数が多すぎます。一度にインポートできる行数は最大${MAX_CSV_ROWS.toLocaleString()}行です。` },
           { status: 400 }
         );
       }
@@ -249,12 +263,12 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const isValid = !!date && amount !== null && amount > 0;
+        const isValid = !!date && amount !== null && isValidAmount(amount);
         let errorMessage: string | undefined;
         if (!date) {
           errorMessage = "日付の形式が不正です";
-        } else if (amount === null || amount <= 0) {
-          errorMessage = "金額の形式が不正です";
+        } else if (amount === null || !isValidAmount(amount)) {
+          errorMessage = "金額は1〜9,999,999,999円の整数で入力してください";
         }
 
         // 重複判定（同一日・店舗・金額）
@@ -308,161 +322,192 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      if (itemsToImport.length > MAX_CSV_ROWS) {
+        return NextResponse.json(
+          { error: `一度にインポートできる明細は最大${MAX_CSV_ROWS.toLocaleString()}件までです。` },
+          { status: 400 }
+        );
+      }
+
+      // 境界値およびパラメータバリデーション (VULN-09)
+      for (const item of itemsToImport) {
+        if (!isValidAmount(item.amount)) {
+          return NextResponse.json(
+            { error: "不正な金額が含まれています。金額は1〜9,999,999,999円の整数である必要があります。" },
+            { status: 400 }
+          );
+        }
+        if (!item.date || !normalizeDate(item.date)) {
+          return NextResponse.json(
+            { error: "不正な日付形式が含まれています。" },
+            { status: 400 }
+          );
+        }
+        if (!["expense", "income", "transfer"].includes(item.type)) {
+          return NextResponse.json(
+            { error: "不正な取引種別が含まれています。" },
+            { status: 400 }
+          );
+        }
+      }
+
       // 1. 24時間チェックポイントの作成（安全なロールバック担保）
       const checkpointId = `cp_${crypto.randomUUID().replace(/-/g, "")}`;
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-      await db.insert(schema.checkpoints).values({
-        id: checkpointId,
-        userId: session.userId,
-        description: `CSVインポート (${itemsToImport.length}件)`,
-        expiresAt,
-      });
-
       const createdTxIds: string[] = [];
 
-      // 2. 各明細の登録および残高・ログ連動処理
-      for (const item of itemsToImport) {
-        const txId = `tx_${crypto.randomUUID().replace(/-/g, "")}`;
-        createdTxIds.push(txId);
+      // 2. トランザクション内で各明細の登録および残高・ログ連動処理をアトミックに実行
+      await db.transaction(async (tx) => {
+        await tx.insert(schema.checkpoints).values({
+          id: checkpointId,
+          userId: session.userId,
+          description: `CSVインポート (${itemsToImport.length}件)`,
+          expiresAt,
+        });
 
-        let scheduledWithdrawalDate: string | null = null;
-        let isSettled = false;
+        for (const item of itemsToImport) {
+          const txId = `tx_${crypto.randomUUID().replace(/-/g, "")}`;
+          createdTxIds.push(txId);
 
-        if (item.type === "transfer") {
-          if (item.fromAccountId) {
-            await db
-              .update(schema.accounts)
-              .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
-              .where(eq(schema.accounts.id, item.fromAccountId));
-          }
-          if (item.toAccountId) {
-            await db
-              .update(schema.accounts)
-              .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
-              .where(eq(schema.accounts.id, item.toAccountId));
-          }
-          isSettled = true;
-        } else if (item.type === "income") {
-          if (item.toAccountId) {
-            await db
-              .update(schema.accounts)
-              .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
-              .where(eq(schema.accounts.id, item.toAccountId));
+          let scheduledWithdrawalDate: string | null = null;
+          let isSettled = false;
+
+          if (item.type === "transfer") {
+            if (item.fromAccountId) {
+              await tx
+                .update(schema.accounts)
+                .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
+                .where(eq(schema.accounts.id, item.fromAccountId));
+            }
+            if (item.toAccountId) {
+              await tx
+                .update(schema.accounts)
+                .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
+                .where(eq(schema.accounts.id, item.toAccountId));
+            }
             isSettled = true;
-          }
-        } else if (item.type === "expense") {
-          if (item.paymentMethodId) {
-            const [pm] = await db
-              .select()
-              .from(schema.paymentMethods)
-              .where(eq(schema.paymentMethods.id, item.paymentMethodId))
-              .limit(1);
+          } else if (item.type === "income") {
+            if (item.toAccountId) {
+              await tx
+                .update(schema.accounts)
+                .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
+                .where(eq(schema.accounts.id, item.toAccountId));
+              isSettled = true;
+            }
+          } else if (item.type === "expense") {
+            if (item.paymentMethodId) {
+              const [pm] = await tx
+                .select()
+                .from(schema.paymentMethods)
+                .where(eq(schema.paymentMethods.id, item.paymentMethodId))
+                .limit(1);
 
-            if (pm) {
-              if (pm.type === "credit_card") {
-                scheduledWithdrawalDate = calculateWithdrawalDate(
-                  item.date,
-                  pm.closingDay || 99,
-                  pm.withdrawalDay || 27,
-                  pm.withdrawalMonthOffset ?? 1
-                );
-                isSettled = false;
-              } else if (pm.sourceAccountId) {
-                await db
-                  .update(schema.accounts)
-                  .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
-                  .where(eq(schema.accounts.id, pm.sourceAccountId));
-                isSettled = true;
-              } else if (pm.type === "cash") {
-                const [cashAcc] = await db
-                  .select()
-                  .from(schema.accounts)
-                  .where(eq(schema.accounts.type, "cash"))
-                  .limit(1);
-                if (cashAcc) {
-                  await db
+              if (pm) {
+                if (pm.type === "credit_card") {
+                  scheduledWithdrawalDate = calculateWithdrawalDate(
+                    item.date,
+                    pm.closingDay || 99,
+                    pm.withdrawalDay || 27,
+                    pm.withdrawalMonthOffset ?? 1
+                  );
+                  isSettled = false;
+                } else if (pm.sourceAccountId) {
+                  await tx
                     .update(schema.accounts)
                     .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
-                    .where(eq(schema.accounts.id, cashAcc.id));
+                    .where(eq(schema.accounts.id, pm.sourceAccountId));
+                  isSettled = true;
+                } else if (pm.type === "cash") {
+                  const [cashAcc] = await tx
+                    .select()
+                    .from(schema.accounts)
+                    .where(eq(schema.accounts.type, "cash"))
+                    .limit(1);
+                  if (cashAcc) {
+                    await tx
+                      .update(schema.accounts)
+                      .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
+                      .where(eq(schema.accounts.id, cashAcc.id));
+                  }
+                  isSettled = true;
+                } else if (pm.type === "qr_code") {
+                  const [walletAcc] = await tx
+                    .select()
+                    .from(schema.accounts)
+                    .where(eq(schema.accounts.type, "prepaid_wallet"))
+                    .limit(1);
+                  if (walletAcc) {
+                    await tx
+                      .update(schema.accounts)
+                      .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
+                      .where(eq(schema.accounts.id, walletAcc.id));
+                  }
+                  isSettled = true;
                 }
-                isSettled = true;
-              } else if (pm.type === "qr_code") {
-                const [walletAcc] = await db
-                  .select()
-                  .from(schema.accounts)
-                  .where(eq(schema.accounts.type, "prepaid_wallet"))
-                  .limit(1);
-                if (walletAcc) {
-                  await db
-                    .update(schema.accounts)
-                    .set({ balance: sql`${schema.accounts.balance} - ${item.amount}` })
-                    .where(eq(schema.accounts.id, walletAcc.id));
-                }
-                isSettled = true;
               }
+            }
+
+            // 貯蓄・投資等で移動先口座が指定されている場合
+            if (item.toAccountId) {
+              await tx
+                .update(schema.accounts)
+                .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
+                .where(eq(schema.accounts.id, item.toAccountId));
             }
           }
 
-          // 貯蓄・投資等で移動先口座が指定されている場合
-          if (item.toAccountId) {
-            await db
-              .update(schema.accounts)
-              .set({ balance: sql`${schema.accounts.balance} + ${item.amount}` })
-              .where(eq(schema.accounts.id, item.toAccountId));
-          }
-        }
-
-        // 明細レコード作成
-        await db.insert(schema.transactions).values({
-          id: txId,
-          userId: session.userId,
-          type: item.type,
-          date: item.date,
-          amount: item.amount,
-          categoryId: item.categoryId || null,
-          paymentMethodId: item.paymentMethodId || null,
-          fromAccountId: item.fromAccountId || null,
-          toAccountId: item.toAccountId || null,
-          shopName: item.shopName || null,
-          note: item.note || null,
-          isSettled,
-          scheduledWithdrawalDate,
-          checkpointId,
-        });
-
-        // 監査ログ作成
-        await db.insert(schema.auditLogs).values({
-          id: `log_${crypto.randomUUID().replace(/-/g, "")}`,
-          userId: session.userId,
-          operatorUserId: session.userId,
-          action: "CREATE",
-          entityType: "transaction",
-          entityId: txId,
-          summary: `CSVインポート: ${item.shopName || "明細"} (${item.amount}円)`,
-          afterDataJson: item,
-          checkpointId,
-        });
-
-        // 貯蓄・投資の受入明細生成
-        if (item.type === "expense" && item.toAccountId) {
-          const transferTxId = `tx_${crypto.randomUUID().replace(/-/g, "")}`;
-          await db.insert(schema.transactions).values({
-            id: transferTxId,
+          // 明細レコード作成
+          await tx.insert(schema.transactions).values({
+            id: txId,
             userId: session.userId,
-            type: "transfer",
+            type: item.type,
             date: item.date,
             amount: item.amount,
             categoryId: item.categoryId || null,
-            toAccountId: item.toAccountId,
-            shopName: item.shopName ? `[振替受入] ${item.shopName}` : "振替受入",
-            note: item.note ? `自動振替受入: ${item.note}` : "貯蓄・投資支出に伴う自動振替受入",
-            isSettled: true,
-            parentTransactionId: txId,
+            paymentMethodId: item.paymentMethodId || null,
+            fromAccountId: item.fromAccountId || null,
+            toAccountId: item.toAccountId || null,
+            shopName: item.shopName || null,
+            note: item.note || null,
+            isSettled,
+            scheduledWithdrawalDate,
             checkpointId,
           });
+
+          // 監査ログ作成
+          await tx.insert(schema.auditLogs).values({
+            id: `log_${crypto.randomUUID().replace(/-/g, "")}`,
+            userId: session.userId,
+            operatorUserId: session.userId,
+            action: "CREATE",
+            entityType: "transaction",
+            entityId: txId,
+            summary: `CSVインポート: ${item.shopName || "明細"} (${item.amount}円)`,
+            afterDataJson: item,
+            checkpointId,
+          });
+
+          // 貯蓄・投資の受入明細生成
+          if (item.type === "expense" && item.toAccountId) {
+            const transferTxId = `tx_${crypto.randomUUID().replace(/-/g, "")}`;
+            await tx.insert(schema.transactions).values({
+              id: transferTxId,
+              userId: session.userId,
+              type: "transfer",
+              date: item.date,
+              amount: item.amount,
+              categoryId: item.categoryId || null,
+              toAccountId: item.toAccountId,
+              shopName: item.shopName ? `[振替受入] ${item.shopName}` : "振替受入",
+              note: item.note ? `自動振替受入: ${item.note}` : "貯蓄・投資支出に伴う自動振替受入",
+              isSettled: true,
+              parentTransactionId: txId,
+              checkpointId,
+            });
+          }
         }
-      }
+      });
 
       logger.info(
         { importedCount: itemsToImport.length, checkpointId },

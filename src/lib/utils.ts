@@ -52,3 +52,65 @@ export function calculateWithdrawalDate(
   const resDate = new Date(targetYear, targetMonth, effectiveWithdrawalDay);
   return resDate.toISOString().split("T")[0];
 }
+
+// 金額・数値パラメータの境界値定数 (VULN-09)
+export const MIN_AMOUNT = 1;
+export const MAX_AMOUNT = 9_999_999_999;
+export const MIN_BALANCE = 0;
+export const MAX_BALANCE = 9_999_999_999;
+export const MAX_BATCH_TRANSACTIONS = 500;
+export const MAX_CSV_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+export const MAX_CSV_ROWS = 5000;
+
+/**
+ * 金額の境界値・整数検証 (1 <= amount <= 9,999,999,999)
+ */
+export function isValidAmount(value: unknown): boolean {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= MIN_AMOUNT && value <= MAX_AMOUNT;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!/^\d+$/.test(trimmed)) return false;
+    const num = Number(trimmed);
+    return Number.isSafeInteger(num) && num >= MIN_AMOUNT && num <= MAX_AMOUNT;
+  }
+  return false;
+}
+
+/**
+ * 口座残高の境界値・整数検証 (0 <= balance <= 9,999,999,999)
+ */
+export function isValidBalance(value: unknown): boolean {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value >= MIN_BALANCE && value <= MAX_BALANCE;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!/^\d+$/.test(trimmed)) return false;
+    const num = Number(trimmed);
+    return Number.isSafeInteger(num) && num >= MIN_BALANCE && num <= MAX_BALANCE;
+  }
+  return false;
+}
+
+/**
+ * 安全な金額整数をパースして返す。不正な場合は null
+ */
+export function parseValidAmount(value: unknown): number | null {
+  if (isValidAmount(value)) {
+    return typeof value === "number" ? value : parseInt(String(value).trim(), 10);
+  }
+  return null;
+}
+
+/**
+ * 安全な残高整数をパースして返す。不正な場合は null
+ */
+export function parseValidBalance(value: unknown): number | null {
+  if (isValidBalance(value)) {
+    return typeof value === "number" ? value : parseInt(String(value).trim(), 10);
+  }
+  return null;
+}
+

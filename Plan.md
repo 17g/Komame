@@ -154,7 +154,7 @@
     1. `src/lib/csv.ts` の `escapeCsvCell()` を拡張し、文字列セルの先頭文字が数式トリガー文字（`=`, `+`, `-`, `@`, `\t`, `\r`）に該当する場合（純粋な負の数値型を除く）、先頭にシングルクォート（`'`）を付与して Excel / スプレッドシートでの数式・DDE 実行を無害化する。
     2. `src/app/api/admin/csv/route.ts` の `GET`（口座一覧・全明細の CSV エクスポート）における手動文字列結合を廃止し、`generateCsv()` を使用した RFC 4180 準拠エスケープ出力に統一する。
 
-- [ ] **7.5 [VULN-09] 金額・入力パラメータの厳格な境界値バリデーションと DB トランザクション原子性の保証**:
+- [x] **7.5 [VULN-09] 金額・入力パラメータの厳格な境界値バリデーションと DB トランザクション原子性の保証**:
   - **対象ファイル**: `src/lib/utils.ts`（またはバリデーションヘルパー）, `src/app/api/transactions/route.ts`, `src/app/api/accounts/route.ts`, `src/app/api/admin/csv/route.ts`, `src/app/api/admin/revert/route.ts`, `src/app/api/goals/route.ts`
   - **実装内容**:
     1. 金額・数値パラメータの検証関数（整数かつ `1 <= amount <= 9_999_999_999`、口座初期残高は `0 <= balance <= 9_999_999_999`）および一括処理の上限（一括明細登録最大 500 件、CSV ファイルサイズ最大 5MB・最大 5,000 行）を実装し、各 API エンドポイントの入口で不正値を `400 Bad Request` で拒否する。
