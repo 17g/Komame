@@ -2,6 +2,57 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-18] 【VULN-03, VULN-05, VULN-12】脆弱な NPM 依存パッケージのアップデートと互換性検証
+
+### 1. 概要
+ペネトレーションテスト結果（VULN-03, VULN-05, VULN-12）に基づき、脆弱性が報告されていた主要パッケージおよび間接依存パッケージのセキュリティパッチ適用を実施した：
+1. **Next.js のアップデート (`15.1.6` → `15.5.28`)**:
+   - Windows 環境における未認証リモートコード実行 (RCE) 脆弱性 (GHSA-p293-qw3h-jr36) を解消。
+   - 画像最適化 API における AVIF ファイル悪用 RCE 脆弱性 (GHSA-2xp9-vwfh-vxw4) を解消。
+   - SSG/ISR キャッシュポイズニング脆弱性 (GHSA-4jqv-mc3x-m676, GHSA-mcj8-r9mp-w47p) を解消。
+2. **Drizzle ORM & Kit のアップデート (`drizzle-orm: 0.38.4` → `0.45.4`, `drizzle-kit: 0.30.4` → `0.31.11`)**:
+   - 不適切にエスケープされた SQL 識別子による SQL インジェクション脆弱性 (GHSA-gpj5-g38j-94v9) を構造的に解消。
+3. **`overrides` による間接依存パッケージのセキュリティパッチ強制適用**:
+   - `postcss`: `8.5.30`（XSS / 任意ファイル読み取り / ソースマップパストラバーサル脆弱性 GHSA-qx2v-qp2m-jg93, GHSA-6g55-p6wh-862q, GHSA-fxqj-rqcc-2cmp, GHSA-r28c-9q8g-f849 を解消）
+   - `postcss-selector-parser`: `7.1.6`（CPU 枯渇 DoS 脆弱性 GHSA-rj75-hqrm-r3gf を解消）
+   - `sharp`: `0.35.5`（libvips, libheif, librsvg 関連脆弱性 GHSA-f88m-g3jw-g9cj, GHSA-rgj7-g3m4-5g8c, GHSA-wq5f-xc86-pv6w を解消）
+   - `shell-quote`: `1.12.0`（コマンドインジェクション脆弱性 GHSA-pqg4-j6r4-53mv を解消）
+   - `source-map-js`: `1.2.2`（イベントループ DoS 脆弱性 GHSA-68fv-2mgg-jv7q を解消）
+   - `fast-copy`: `4.2.0`（スタック枯渇 DoS 脆弱性 GHSA-jggr-w7fw-pc2j を解消）
+   - `esbuild`: `0.28.2`（開発サーバーの不正リクエスト受信脆弱性 GHSA-67mh-4wv8-2f99 を解消）
+   - `braces`: `3.0.3`
+4. **客観的検証 (Ground Truth)**:
+   - `npm audit`: 当初 18 件（Critical 2件、High 9件、Moderate 7件）存在した脆弱性のうち、Critical および Moderate をゼロにし、主要な High 脆弱性をすべて解消。
+   - 型チェック: `npx tsc --noEmit` によるエラーゼロ（Exit Code 0）を確認。
+   - プロダクションビルド: `npm run build` による全 22 ページの正常ビルド完了（Exit Code 0）を確認。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `package.json`:
+    - `next`: `^15.1.6`（Windows RCE, AVIF RCE, SSG キャッシュポイズニング脆弱性）
+    - `drizzle-orm`: `^0.38.4`（SQL インジェクション脆弱性 GHSA-gpj5-g38j-94v9）
+    - `drizzle-kit`: `^0.30.4`
+    - `postcss`: `^8.5.1`（XSS, 任意ファイル読み取り脆弱性）
+    - `overrides` 未設定のため、間接依存の `sharp`, `shell-quote`, `source-map-js`, `fast-copy`, `esbuild`, `postcss-selector-parser` 等に脆弱性バージョンが採用されていた。
+- **After**:
+  - `package.json`:
+    - `next`: `^15.5.28`
+    - `drizzle-orm`: `^0.45.4`
+    - `drizzle-kit`: `^0.31.11`
+    - `postcss`: `^8.5.30`
+    - `overrides`: `braces`, `esbuild`, `fast-copy`, `postcss`, `postcss-selector-parser`, `sharp`, `shell-quote`, `source-map-js` を最新安全バージョンにピン留め。
+  - `package-lock.json`:
+    - セキュリティパッチ適用済みバージョンで依存関係ツリーを再解決。
+
+### 3. 変更理由
+- ペネトレーションテストで指摘された依存ライブラリの既知脆弱性（特に Windows 実行時 RCE、SQL インジェクション、コマンドインジェクション）を迅速かつ安全に排除し、サプライチェーン攻撃や DoS 攻撃のリスクを最小化するため。
+
+### 4. 影響範囲
+- `package.json`
+- `package-lock.json`
+- `Plan.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-18] 【VULN-08 & VULN-11】認証・重要 API のレートリミッター導入および HTTP セキュリティヘッダー・CSRF Origin 検証の実装
 
 ### 1. 概要

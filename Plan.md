@@ -167,7 +167,7 @@
     2. 状態変更リクエスト（`POST` / `PUT` / `DELETE`）における `Origin` / `Host` ヘッダー整合性検証を追加し、クロスサイトリクエストフォージェリ（CSRF）に対する多層防御を強化する。
     3. `next.config.ts` の `headers()` に `X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`Permissions-Policy`、`Content-Security-Policy` を設定する。
 
-- [ ] **7.7 [VULN-03, VULN-05, VULN-12] 脆弱な NPM 依存パッケージのアップデートと互換性検証**:
+- [x] **7.7 [VULN-03, VULN-05, VULN-12] 脆弱な NPM 依存パッケージのアップデートと互換性検証**:
   - **対象ファイル**: `package.json`, `package-lock.json`
   - **実装内容**:
     1. `next`、`drizzle-orm`（`>=0.45.2`）、`drizzle-kit`、`postcss`、`sharp` および間接依存パッケージ（`shell-quote`, `source-map-js`, `braces`, `esbuild`, `fast-copy` 等）をセキュリティパッチ適用済みバージョンへアップデート（必要に応じて `overrides` を活用）する。
