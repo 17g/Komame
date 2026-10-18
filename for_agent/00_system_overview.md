@@ -41,12 +41,12 @@
 
 | レイヤー | 採用技術 | バージョン / 詳細 |
 | :--- | :--- | :--- |
-| **Framework** | Next.js (App Router) | 15.1.6 |
+| **Framework** | Next.js (App Router) | 15.5.28 |
 | **Core UI** | React / React DOM | 19.0.0 |
 | **Language** | TypeScript | 5.7.3 |
 | **Styling** | Tailwind CSS / Lucide React | 3.4.17 / 0.474.0 |
 | **Database** | PostgreSQL | 16 (開発・本番共通) |
-| **ORM / Driver** | Drizzle ORM / postgres (postgres.js) | 0.38.4 / 3.4.5 |
+| **ORM / Driver** | Drizzle ORM / postgres (postgres.js) | 0.45.4 / 3.4.5 |
 | **Authentication** | `@node-rs/argon2` + `jose` (JWT) | Argon2id + HS256 JWT |
 | **Logging** | Pino + pino-pretty | 9.6.0 / 13.0.0 |
 | **Testing** | Playwright / tsx | 1.63.0 / 4.19.2 |
@@ -106,5 +106,5 @@ Komame/
 ---
 
 ## 6. 改訂履歴
-
+- **2026-10-18**: セキュリティ脆弱性改修（Phase 7）に伴う依存パッケージのアップデート（Next.js `15.5.28`、Drizzle ORM `0.45.4`）を技術スタック表に反映。
 - **2026-10-18**: 開発・本番環境のポート番号をアプリケーション: `3080`、PostgreSQL: `5532` に統一改訂し、ポート構成一覧および `README.md` の参照を追加。

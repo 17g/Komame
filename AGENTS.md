@@ -2,9 +2,9 @@
 
 ## 1. プロジェクト概要 & 技術スタック
 
-- Framework: Next.js 15.1.6 (App Router) / React 19
+- Framework: Next.js 15.5.28 (App Router) / React 19
 - Language: TypeScript 5.7.3
-- Database / ORM: PostgreSQL 16 / Drizzle ORM 0.38.4 (postgres.js)
+- Database / ORM: PostgreSQL 16 / Drizzle ORM 0.45.4 (postgres.js)
 - Styling: Tailwind CSS 3.4.17
 - Package Manager: npm
 
@@ -14,6 +14,7 @@
 
 - 型チェック: `npx tsc --noEmit`
 - ビルド検証: `npm run build`
+- 単体・セキュリティ検証: `npx tsx scripts/test-security-unit.ts`
 - 総合テスト（※開発サーバー起動時）: `npx tsx scripts/comprehensive-test.ts`
 
 ## 3. 参照ディレクトリ

@@ -54,6 +54,12 @@ npx tsx scripts/test-csv-unit.ts
 # 家族メンバー管理・招待トークン・Argon2idハッシュ検証単体テスト
 npx tsx scripts/test-members-unit.ts
 
+# 認証・JWTセッション・Fail-Fast検証・トークン失効単体テスト
+npx tsx scripts/test-auth-session-unit.ts
+
+# レートリミッター & CSRF Origin 検証単体テスト
+npx tsx scripts/test-rate-limit-csrf.ts
+
 # セキュリティ単体テスト & 静的コード検査 (スキーマ検証、CSVインジェクション無害化、金額境界値、レートリミッター、raw.unsafeゼロ件検査)
 npx tsx scripts/test-security-unit.ts
 ```
@@ -83,7 +89,7 @@ docker compose -f docker-compose.prod.yml exec app npm run db:migrate
 
 ## 4. 改訂履歴
 
-- **2026-10-18**: 単体テストにセキュリティ単体テスト & 静的コード検査（`test-security-unit.ts`）を追加。
+- **2026-10-18**: 単体テストに認証セッション検証（`test-auth-session-unit.ts`）、レートリミッター・CSRF検証（`test-rate-limit-csrf.ts`）、セキュリティ単体テスト & 静的コード検査（`test-security-unit.ts`）を追加。
 - **2026-10-18**: 開発・本番環境のポート番号をアプリケーション: `3080`、PostgreSQL: `5532` に統一改訂し、アクセスURLおよび検証前提条件を更新。
 - **2026-10-17**: 検証手順に DB 不要・高速実行可能な単体テスト（`test-csv-unit.ts`, `test-members-unit.ts`）を追加。
 - **2026-10-17**: `AGENTS.md` の技術スタック（Next.js 15 / TypeScript / Drizzle ORM）との整合性を同期。

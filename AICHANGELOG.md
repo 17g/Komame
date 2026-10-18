@@ -2,6 +2,43 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-10-18] 【Review】全体のビルド・テスト・仕様整合性の点検および仕様書・設定の完全同期
+
+### 1. 概要
+`review` スキルに基づき、`for_agent/` 配下の全仕様書、`AGENTS.md`、および実装コード・テストスイート全体の包括的点検を実施した：
+1. **仕様書と実装コード・依存バージョンの突合・最新化**:
+   - `for_agent/00_system_overview.md`: セキュリティパッチ適用後の Next.js (`15.5.28`) および Drizzle ORM (`0.45.4`) の最新バージョンを反映し改訂履歴を追記。
+   - `AGENTS.md`: 技術スタックの Framework/ORM バージョン表記を更新し、検証 Ground Truth にセキュリティ単体テスト（`scripts/test-security-unit.ts`）を追加。
+   - `for_agent/01_requirements_specification.md`: Phase 7 で実装された動的スキーマ名ホワイトリスト検証（1-5）、レートリミッター（1-6）、HTTP セキュリティヘッダー & CSRF 防御（1-7）、DB 突合リアルタイム認可 & セッション失効（1-8）、CSV 数式インジェクション防御（要件 7）、金額・残高境界値検証および DB トランザクション原子性（要件 11）を要件仕様に反映し改訂履歴を追記。
+   - `for_agent/06_operation_and_testing_guide.md`: 2.2 単体テストに、作成済みの全単体テストスクリプト（`test-auth-session-unit.ts`, `test-rate-limit-csrf.ts`, `test-security-unit.ts` 等）を追加し改訂履歴を追記。
+2. **全単体テストスイート & フルビルドによる回帰検証 (Ground Truth)**:
+   - `scripts/test-csv-unit.ts` (Exit Code 0)
+   - `scripts/test-members-unit.ts` (Exit Code 0)
+   - `scripts/test-auth-session-unit.ts` (Exit Code 0)
+   - `scripts/test-rate-limit-csrf.ts` (Exit Code 0)
+   - `scripts/test-security-unit.ts` (Exit Code 0 - 静的コード検査 58 ファイル含む)
+   - `npx tsc --noEmit` (Exit Code 0)
+   - `npm run build` (Exit Code 0 - 全 22 ページのビルド成功)
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `for_agent/00_system_overview.md` および `AGENTS.md` の技術スタック表に旧バージョン（Next.js 15.1.6, Drizzle ORM 0.38.4）が残存していた。
+  - `for_agent/01_requirements_specification.md` に Phase 7 のセキュリティ強化要件（スキーマ検証、レートリミット、CSRF、トランザクション原子性等）が未反映だった。
+  - `for_agent/06_operation_and_testing_guide.md` に一部の単体テスト（認証セッション、レートリミット/CSRF）の実行手順が記載されていなかった。
+- **After**:
+  - 全仕様書および `AGENTS.md` が最新の実装コードおよびセキュリティ仕様と完全に一致した。
+  - プロジェクト内の全 5 つの単体テストスクリプト、型チェック、およびプロダクションビルドがすべて Exit Code 0 で正常終了することを確認した。
+
+### 3. 変更理由
+- システムの全仕様書、管理ドキュメント、および実装コードの完全な整合性を保証し、回帰バグがないことを網羅的な自動テストで証明するため。
+
+### 4. 影響範囲
+- `AGENTS.md`
+- `for_agent/00_system_overview.md`
+- `for_agent/01_requirements_specification.md`
+- `for_agent/06_operation_and_testing_guide.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-18] 【Task 7.8】セキュリティ単体テストの作成・仕様書 (for_agent/) 同期・総合ビルド検証
 
 ### 1. 概要
