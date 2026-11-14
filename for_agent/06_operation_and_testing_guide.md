@@ -42,7 +42,7 @@ npm run dev
 # TypeScript 型チェック
 npx tsc --noEmit
 
-# Next.js 本番ビルド検証
+# Next.js 本番ビルド検証 (Standalone 出力含む)
 npm run build
 ```
 
@@ -72,23 +72,38 @@ npx tsx scripts/comprehensive-test.ts
 
 ---
 
-## 3. 本番環境 (Ubuntu Linux + Docker)
+## 3. 本番環境 (自宅サーバー / ミニPC / Linux + Docker Compose)
 
-### 3.1 構成
+詳細な本番環境構築・HTTPS化（Cloudflare Tunnel / Nginx + Let's Encrypt / Tailscale Serve）・バックアップ手順は `docs/environment_setup_guide.md` を参照。
+
+### 3.1 構成ファイル
+- `next.config.ts`: `output: "standalone"` による本番用スタンドアロン出力を有効化
+- `.dockerignore`: ホスト側の `node_modules` や `.next`、`.env*` のコンテナ混入を防止
+- `Dockerfile`: Next.js スタンドアロン実行環境に加え、コンテナ内での `npm run db:migrate` / `npm run db:seed` 実行に必要なモジュール・スクリプトを同梱
+- `.env.production.example`: 本番用環境変数テンプレート（`POSTGRES_PASSWORD`, 32文字以上のランダム `JWT_SECRET` 等）
 - `docker-compose.prod.yml`:
   - `komame-prod-app`: Next.js アプリケーション (公開ポート: `3080:3080`)
-  - `komame-prod-postgres`: PostgreSQL 16 (内部ポート: `5532`)
+  - `komame-prod-postgres`: PostgreSQL 16 (内部ポート: `5532`、ホスト外部非公開)
 
-### 3.2 起動手順
+### 3.2 本番起動・マイグレーション手順
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml exec app npm run db:migrate
+# 1. 本番用環境変数ファイルの作成とシークレット設定
+cp .env.production.example .env.production
+chmod 600 .env.production
+# ※ .env.production 内の POSTGRES_PASSWORD と JWT_SECRET (openssl rand -base64 48) を設定
+
+# 2. コンテナのビルドとバックグラウンド起動
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+
+# 3. マスタスキーマおよびテナントスキーマのマイグレーション
+docker compose --env-file .env.production -f docker-compose.prod.yml exec app npm run db:migrate
 ```
 
 ---
 
 ## 4. 改訂履歴
 
+- **2026-11-14**: 本番用 Docker ビルド構成（`next.config.ts` の `output: "standalone"`、`.dockerignore`、`Dockerfile` のマイグレーション対応、`.env.production.example`）を整備し、本番環境構築手順書（`docs/environment_setup_guide.md`）との連携を更新。
 - **2026-10-18**: 単体テストに認証セッション検証（`test-auth-session-unit.ts`）、レートリミッター・CSRF検証（`test-rate-limit-csrf.ts`）、セキュリティ単体テスト & 静的コード検査（`test-security-unit.ts`）を追加。
 - **2026-10-18**: 開発・本番環境のポート番号をアプリケーション: `3080`、PostgreSQL: `5532` に統一改訂し、アクセスURLおよび検証前提条件を更新。
 - **2026-10-17**: 検証手順に DB 不要・高速実行可能な単体テスト（`test-csv-unit.ts`, `test-members-unit.ts`）を追加。

@@ -2,6 +2,45 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-14] 【Phase 8】自宅サーバー・ミニPC向け本番環境構築手順書の整備および Docker 本番ビルド構成の不備修正
+
+### 1. 概要
+ユーザーの要望（自宅サーバー・ミニPC・NAS等の環境＋独自ドメイン HTTPS 化による本番構築）に基づき、本番用 Docker ビルド・マイグレーション構成の不整合を修正するとともに、実践的な本番環境構築・運用手順書を整備した：
+1. **本番用 Docker ビルド・マイグレーション構成の修正**:
+   - `next.config.ts`: `Dockerfile` の `COPY --from=builder /app/.next/standalone ./` に対応する `output: "standalone"` 設定を追加。
+   - `.dockerignore`: ホスト側の `node_modules`（Windows バイナリ等）や `.next`、`.env*` が Docker ビルドコンテキストに混入し Linux コンテナ内のネイティブモジュール（`@node-rs/argon2`）を上書きする問題を防止するため新規作成。
+   - `Dockerfile`: `runner` ステージ内から `docker compose exec app npm run db:migrate` および `npm run db:seed` が正常実行できるよう、`node_modules`, `package.json`, `tsconfig.json`, `src/db`, `src/lib` を適切に配置。
+   - `.env.production.example` & `docker-compose.prod.yml`: 本番環境変数テンプレートを作成し、PostgreSQL タイムゾーン（`Asia/Tokyo`）や環境変数注入を整理。
+2. **本番環境構築・運用手順書の全面拡充 (`docs/environment_setup_guide.md`, `for_agent/06_operation_and_testing_guide.md`, `README.md`)**:
+   - OpenSSL による安全なシークレット生成手順（Fail-Fast 仕様への対応）。
+   - 独自ドメイン＋HTTPS 化の 3 方式（方式A: ポート開放不要の Cloudflare Tunnel、方式B: Nginx + Let's Encrypt、方式C: Tailscale Serve による VPN 閉域網 HTTPS）および CSRF `Origin`/`Host` 検証・`Secure` Cookie に関する必須ヘッダー設定手順。
+   - 初期セットアップ（Web サインアップまたはシード投入、家族メンバーの招待リンク発行）。
+   - 日常運用（`pg_dump` による全スキーマ一括バックアップ & cron 自動化、`psql` リストア、安全なアップデート手順、トラブルシューティング FAQ）。
+
+### 2. 変更内容 (Before / After)
+- **Before**:
+  - `next.config.ts` に `output: "standalone"` が未設定であり、`.dockerignore` も存在しなかったため、Docker 本番ビルド時に `.next/standalone` 未生成エラーやホスト側 `node_modules` 混入が発生する状態だった。
+  - `Dockerfile` の `runner` ステージに `src/db/migrate.ts` 等が含まれておらず、本番コンテナでの `npm run db:migrate` が実行できなかった。
+  - `.env.production.example` が存在せず、自宅サーバーでの HTTPS 化やリバースプロキシのヘッダー設定、バックアップ手順の記載が不足していた。
+- **After**:
+  - `next.config.ts`、`.dockerignore`、`Dockerfile`、`docker-compose.prod.yml`、`.env.production.example` が完全に整合し、本番コンテナのビルドからマイグレーションまで一貫して動作する構成となった。
+  - `docs/environment_setup_guide.md` に自宅サーバー・ミニPC＋独自ドメイン HTTPS 化のステップ・バイ・ステップ手順書を完備した。
+
+### 3. 変更理由
+- 自宅サーバー・ミニPC 環境で本番運用を開始するにあたり、Docker ビルド・マイグレーション時の不整合を事前に解消し、セキュリティ仕様（Fail-Fast、`Secure` Cookie、CSRF `Origin`/`Host` 検証）を満たす確実な構築・運用手順を提供するため。
+
+### 4. 影響範囲
+- `next.config.ts`
+- `.dockerignore` (新規)
+- `Dockerfile`
+- `docker-compose.prod.yml`
+- `.env.production.example` (新規)
+- `docs/environment_setup_guide.md`
+- `for_agent/06_operation_and_testing_guide.md`
+- `README.md`
+- `Plan.md`
+- `AICHANGELOG.md`
+
 ## [2026-10-18] 【Review】全体のビルド・テスト・仕様整合性の点検および仕様書・設定の完全同期
 
 ### 1. 概要

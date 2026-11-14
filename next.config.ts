@@ -35,6 +35,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   reactStrictMode: true,
   serverExternalPackages: ["@node-rs/argon2", "pino", "pino-pretty"],
   async headers() {

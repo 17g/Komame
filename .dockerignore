@@ -1,0 +1,28 @@
+# Dependencies & Build outputs
+node_modules
+.next
+out
+dist
+build
+tsconfig.tsbuildinfo
+
+# Version control & IDE
+.git
+.gitignore
+.vscode
+.idea
+.agent
+scratch
+
+# Environment files (Injected at runtime via Docker Compose)
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Logs & Test artifacts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+playwright-report
+test-results

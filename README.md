@@ -117,17 +117,22 @@ npm run dev
 
 ## 🚢 本番環境のデプロイ (Docker Compose)
 
-本番用 Docker Compose 設定により、アプリケーション（Next.js スタンドアロンビルド）と PostgreSQL 16 をワンコマンドで起動できます。
+本番用 Docker Compose 設定により、アプリケーション（Next.js スタンドアロンビルド）と PostgreSQL 16 を安全に起動できます。  
+自宅サーバー・ミニPC・NAS での構築、独自ドメイン＋HTTPS 化（Cloudflare Tunnel / Nginx + Let's Encrypt / Tailscale）、DB バックアップ・リストア等の詳細手順は **[本番環境・開発環境 構築および運用手順書 (docs/environment_setup_guide.md)](docs/environment_setup_guide.md)** を参照してください。
 
 ```bash
-# 1. コンテナのビルド & バックグラウンド起動
-docker compose -f docker-compose.prod.yml up -d --build
+# 1. 本番用環境変数ファイルの作成 (POSTGRES_PASSWORD と 32文字以上の JWT_SECRET を設定)
+cp .env.production.example .env.production
+chmod 600 .env.production
 
-# 2. 本番データベースのマイグレーション実行
-docker compose -f docker-compose.prod.yml exec app npm run db:migrate
+# 2. コンテナのビルド & バックグラウンド起動
+docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+
+# 3. 本番データベースのマイグレーション実行
+docker compose --env-file .env.production -f docker-compose.prod.yml exec app npm run db:migrate
 ```
 
-- Web アプリケーションへのアクセス: `http://<ホスト名・IP>:3080`
+- Web アプリケーションへのアクセス: リバースプロキシ / トンネル経由で `http://localhost:3080` へ転送
 - PostgreSQL サービスはコンテナ内部ネットワーク（ポート `5532`）でのみ通信し、外部からの不正アクセスを遮断します。
 
 ---

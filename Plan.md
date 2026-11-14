@@ -13,6 +13,7 @@
 - [x] Phase 5: 検証・テスト実行およびプロジェクト設定の最新化
 - [x] Phase 6: アプリケーション・DBのポート変更 (3080 / 5532) および README.md 作成・仕様書同期
 - [x] Phase 7: ペネトレーションテスト結果に基づく脆弱性改修・セキュリティ強化計画 (VULN-01〜VULN-12)
+- [x] Phase 8: 自宅サーバー・ミニPC向け本番環境構築手順書の整備および Docker 本番ビルド構成の不備修正
 
 
 ---
@@ -179,4 +180,23 @@
     1. スキーマ名バリデーション、CSV 数式インジェクション無害化、金額境界値検証、レートリミッター動作、`raw.unsafe` 不使用の静的コード検査を含むセキュリティ単体テスト（`scripts/test-security-unit.ts`）を作成・実行する。
     2. `for_agent/` 配下の仕様書および `for_agent/guardrails.md` にセキュリティ強化仕様と再発防止ガードレールを反映し、改訂履歴を追記する。
     3. `npx tsc --noEmit` および `npm run build` を実行して Exit Code 0 を確認し、`AICHANGELOG.md` に変更履歴を記録して Git コミットを行う。
+
+---
+
+## Phase 8: 自宅サーバー・ミニPC向け本番環境構築手順書の整備および Docker 本番ビルド構成の不備修正
+
+- [x] **8.1 本番用 Docker ビルド・マイグレーション構成の不備修正 (`next.config.ts`, `Dockerfile`, `.dockerignore`, `docker-compose.prod.yml`, `.env.production.example`)**:
+  - `next.config.ts`: `Dockerfile` のマルチステージビルドに対応する `output: "standalone"` を追加。
+  - `.dockerignore`: ホスト側の `node_modules`（Windows バイナリ等）や `.next`、`.env*` がコンテナ内に混入するのを防ぐ `.dockerignore` を新規作成。
+  - `Dockerfile`: `runner` ステージで `npm run db:migrate` および `npm run db:seed` がコンテナ内から正常実行できるよう、`node_modules`・`src/db`・`src/lib`・`tsconfig.json` を適切に配置。
+  - `docker-compose.prod.yml` & `.env.production.example`: 本番用環境変数テンプレート `.env.production.example` を作成し、ヘルスチェック・環境変数読み込み・セキュリティ要件（32文字以上のランダム `JWT_SECRET` 等）を整備。
+- [x] **8.2 自宅サーバー・ミニPC・NAS＋独自ドメイン HTTPS 化（Cloudflare Tunnel / Nginx + Let's Encrypt / Tailscale）対応の本番環境構築手順書の作成・更新**:
+  - `docs/environment_setup_guide.md` および `for_agent/06_operation_and_testing_guide.md`、`README.md` を更新し、以下の実践的な手順を網羅：
+    1. 事前準備・要件（ハードウェア目安、Docker / Docker Compose、ポート 3080 / 5532）
+    2. 本番用シークレット生成（`openssl rand -base64 48` 等）と環境変数設定（Fail-Fast 仕様への対応）
+    3. Docker Compose による本番ビルド・起動・DBマイグレーション・初期管理者作成手順
+    4. 自宅サーバー＋独自ドメイン HTTPS 化手順（パターンA: ポート開放不要の Cloudflare Tunnel 構成、パターンB: Nginx リバースプロキシ + Let's Encrypt 構成、パターンC: Tailscale Serve / Funnel による VPN 内 HTTPS 構成）※CSRF `Origin`/`Host`/`X-Forwarded-*` ヘッダーおよび `Secure` Cookie の注意点を含む
+    5. DB バックアップ・リストア（`pg_dump` / `psql`）、アップデート手順、死活監視・ログ確認・トラブルシューティング
+- [x] **8.3 ビルド検証・単体テスト実行・変更履歴記録 (`AICHANGELOG.md`)**
+
 
