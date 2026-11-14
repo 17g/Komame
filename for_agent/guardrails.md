@@ -106,6 +106,9 @@
   - 口座残高の更新と明細の挿入・更新・削除など、複数の状態変更が伴う処理は必ず `db.transaction(async (tx) => { ... })` で囲むこと。途中でエラーが発生した場合は自動ロールバックを行い、残高の不整合を残さないこと。
 - **Scratch テストスクリプト実行時のインポートパス解決**:
   `<appDataDir>\brain\<conversationId>\scratch\` 配下に作成した一時スクリプトからプロジェクト内モジュールを読み込む場合、相対パス（`./src/...`）は scratch フォルダ起点となり `MODULE_NOT_FOUND` となるため、絶対パス（例: `c:/Users/.../Komame/src/db/index`）またはエイリアス解決を利用すること。
+- **Docker 本番ビルドにおけるフォントのセルフホスト徹底 (`next/font/google` 禁止)**:
+  - **原因となった事象**: Docker コンテナ内での `next build` 実行時に `next/font/google` が Google Fonts へ外部アクセスして CSS/フォントファイルを解析・取得する際、環境や CDN 応答差異により `TypeError: Cannot read properties of null (reading '1')` (`@next/font/dist/google/loader.js:122`) でビルドが失敗した。
+  - **再発防止策**: フォントは外部ネットワークに依存する `next/font/google` ではなく、`@fontsource/noto-sans-jp` および `@fontsource/plus-jakarta-sans` によるローカルバンドル（セルフホスト）を維持すること。
 
 ---
 
@@ -121,6 +124,7 @@
 
 ## 6. 改訂履歴
 
+- **2026-11-14**: Docker 本番ビルド時の `next/font/google` ビルドエラー再発防止のため、フォントの `@fontsource` セルフホスト必須化ガードレールを追記。
 - **2026-10-18**: セキュリティ強化ガードレール（金額境界値検証、CSV数式インジェクション防止、DBトランザクション原子性、`raw.unsafe` ゼロ件検査）を追記。
 - **2026-10-18**: SQLインジェクション防止ガイドライン（`raw.unsafe` 排除・スキーマ名ホワイトリスト検証）および Scratch スクリプトのパス解決注意事項を追記。
 - **2026-10-18**: 開発用 PostgreSQL 起動ポートの変更（5432 → 5532）に伴い、事前確認ガードレールのポート番号を更新。

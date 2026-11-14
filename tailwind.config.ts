@@ -34,8 +34,8 @@ const config: Config = {
         border: "var(--border-color)",
       },
       fontFamily: {
-        sans: ["var(--font-noto-sans-jp)", "var(--font-plus-jakarta)", "sans-serif"],
-        display: ["var(--font-plus-jakarta)", "var(--font-noto-sans-jp)", "sans-serif"],
+        sans: ["'Noto Sans JP'", "'Plus Jakarta Sans'", "sans-serif"],
+        display: ["'Plus Jakarta Sans'", "'Noto Sans JP'", "sans-serif"],
       },
       borderRadius: {
         sm: "var(--radius-sm)",

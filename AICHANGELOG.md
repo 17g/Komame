@@ -2,6 +2,32 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-14] 【Hotfix】Docker 本番ビルド時の `next/font/google` エラー解消（@fontsource セルフホスト化）
+
+### 1. 概要
+Docker コンテナ環境で `npm run build` を実行した際に発生した `src/app/layout.tsx` の `next/font` エラー（`TypeError: Cannot read properties of null (reading '1') at @next/font/dist/google/loader.js:122:78`）を根本解消するため、ビルド時の Google Fonts 外部通信を撤廃し、`@fontsource` パッケージによるセルフホストへ切り替えた：
+1. **依存パッケージの追加 (`package.json`, `package-lock.json`)**:
+   - `@fontsource/noto-sans-jp` (`5.3.1`) および `@fontsource/plus-jakarta-sans` (`5.3.0`) を追加。
+2. **フォント読み込み・Tailwind 設定の更新 (`src/app/layout.tsx`, `tailwind.config.ts`)**:
+   - `next/font/google` の `Noto_Sans_JP` / `Plus_Jakarta_Sans` の呼び出しを削除し、`@fontsource/noto-sans-jp`（400/500/600/700）および `@fontsource/plus-jakarta-sans`（500/600/700/800）の CSS を直接インポート。
+   - `tailwind.config.ts` の `fontFamily`（`sans`, `display`）を `'Noto Sans JP'`, `'Plus Jakarta Sans'` に更新。
+3. **ガードレール追記 (`for_agent/guardrails.md`)**:
+   - 本番 Docker ビルドでの外部ネットワーク依存を排除するため、`next/font/google` を使用しない旨の再発防止ガードレールを追記。
+
+### 2. 変更内容 (Before / After)
+- **Before**: `next build` 実行時に Google Fonts (`fonts.googleapis.com` / `fonts.gstatic.com`) へアクセスして数百のフォントファイルを取得・解析していたため、Docker 環境で `loader.js:122` の正規表現パースエラーが発生する場合があった。
+- **After**: フォントファイルが npm パッケージ内に同梱され、完全オフライン・確定的にローカルからバンドル（`font-src 'self'` 準拠）される構成となった。
+
+### 3. 変更理由
+- Docker 本番ビルド時の `next/font/google` 障害を完全に排除し、どの本番環境でも安定してビルド成功させるため。
+
+### 4. 影響範囲
+- `package.json`, `package-lock.json`
+- `src/app/layout.tsx`
+- `tailwind.config.ts`
+- `for_agent/guardrails.md`
+- `AICHANGELOG.md`
+
 ## [2026-11-14] 【Phase 8】自宅サーバー・ミニPC向け本番環境構築手順書の整備および Docker 本番ビルド構成の不備修正
 
 ### 1. 概要
