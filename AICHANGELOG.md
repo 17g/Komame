@@ -2,6 +2,28 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-15] 【Phase 10.1】単価×個数計算ヘルパー・境界値バリデーション & 多言語翻訳キー追加
+
+### 1. 概要
+要件 2-7（支出金額入力欄の「単価×個数」計算補助機能）の基盤として、計算・境界値検証ロジックと日英翻訳辞書を実装した：
+1. **単価×個数計算ヘルパー追加 (`src/lib/utils.ts`)**:
+   - `calculateUnitTotal(unitPrice, quantity)` および関連型（`UnitTotalErrorCode`, `UnitTotalResult`）を追加。
+   - 単価・個数双方に対する正の整数チェック（半角数字、1以上、小数・負数・0・非数値拒否）および `BigInt` 乗算によるオーバーフロー安全な境界値検証（`1 <= 合計金額 <= MAX_AMOUNT (9,999,999,999)`）を実装。
+2. **多言語翻訳キー追加 (`src/lib/i18n.ts`)**:
+   - `translations.ja.register` および `translations.en.register` に、計算補助UI用ラベル（`unitCalcToggle`, `unitCalcToggleTitle`, `unitPriceLabel`, `unitPricePlaceholder`, `quantityLabel`, `quantityPlaceholder`, `unitCalcTotalLabel`, `unitCalcInvalidUnitPrice`, `unitCalcInvalidQuantity`, `unitCalcExceedsMax`）を追加。
+
+### 2. 変更内容 (Before / After)
+- **Before**: 単価と個数から取引金額上限（`MAX_AMOUNT`）を考慮して安全に合計金額を算出・検証する純粋関数および多言語UI用ラベルが存在しなかった。
+- **After**: 整数・境界値・未入力を厳密に区別する `calculateUnitTotal()` 関数と、日英両対応の計算補助UI翻訳キーが利用可能になった。
+
+### 3. 変更理由
+- 後続タスク（`UnitPriceCalculator.tsx` コンポーネント作成および記帳タブ・明細編集モーダルへの組み込み、単体テスト作成）で共通利用できる信頼性の高い計算・検証基盤および多言語対応を整えるため。
+
+### 4. 影響範囲
+- `src/lib/utils.ts`
+- `src/lib/i18n.ts`
+- `Plan.md`, `AICHANGELOG.md`
+
 ## [2026-11-15] 【Phase 9】費目マスターメンテナンス機能の実装
 
 ### 1. 概要

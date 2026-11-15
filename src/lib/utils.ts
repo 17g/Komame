@@ -114,3 +114,117 @@ export function parseValidBalance(value: unknown): number | null {
   return null;
 }
 
+export type UnitTotalErrorCode =
+  | "EMPTY_INPUT"
+  | "INVALID_UNIT_PRICE"
+  | "INVALID_QUANTITY"
+  | "EXCEEDS_MAX_AMOUNT";
+
+export type UnitTotalResult =
+  | {
+      ok: true;
+      unitPrice: number;
+      quantity: number;
+      total: number;
+    }
+  | {
+      ok: false;
+      errorCode: UnitTotalErrorCode;
+      error: string;
+    };
+
+type ParsedPositiveInt =
+  | { status: "empty" }
+  | { status: "invalid" }
+  | { status: "overflow" }
+  | { status: "ok"; value: number };
+
+function parsePositiveIntegerInput(value: unknown): ParsedPositiveInt {
+  if (value === null || value === undefined) {
+    return { status: "empty" };
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || !Number.isInteger(value) || value < 1) {
+      return { status: "invalid" };
+    }
+    if (!Number.isSafeInteger(value) || value > MAX_AMOUNT) {
+      return { status: "overflow" };
+    }
+    return { status: "ok", value };
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      return { status: "empty" };
+    }
+    if (!/^\d+$/.test(trimmed)) {
+      return { status: "invalid" };
+    }
+    const big = BigInt(trimmed);
+    if (big < BigInt(1)) {
+      return { status: "invalid" };
+    }
+    if (big > BigInt(MAX_AMOUNT)) {
+      return { status: "overflow" };
+    }
+    return { status: "ok", value: Number(big) };
+  }
+  return { status: "invalid" };
+}
+
+/**
+ * 単価と個数から合計金額（単価 × 個数）を算出・検証する純粋関数 (要件 2-7)
+ * - 単価・個数ともに正の整数（1以上）のみ許可
+ * - 合計金額が 1 <= total <= MAX_AMOUNT (9,999,999,999) に収まることを保証
+ */
+export function calculateUnitTotal(unitPrice: unknown, quantity: unknown): UnitTotalResult {
+  const parsedUnit = parsePositiveIntegerInput(unitPrice);
+  const parsedQty = parsePositiveIntegerInput(quantity);
+
+  if (parsedUnit.status === "invalid") {
+    return {
+      ok: false,
+      errorCode: "INVALID_UNIT_PRICE",
+      error: "単価は1以上の整数で入力してください。",
+    };
+  }
+  if (parsedQty.status === "invalid") {
+    return {
+      ok: false,
+      errorCode: "INVALID_QUANTITY",
+      error: "個数は1以上の整数で入力してください。",
+    };
+  }
+  if (parsedUnit.status === "overflow" || parsedQty.status === "overflow") {
+    return {
+      ok: false,
+      errorCode: "EXCEEDS_MAX_AMOUNT",
+      error: `計算結果が上限（${MAX_AMOUNT.toLocaleString("ja-JP")}円）を超えています。`,
+    };
+  }
+  if (parsedUnit.status === "empty" || parsedQty.status === "empty") {
+    return {
+      ok: false,
+      errorCode: "EMPTY_INPUT",
+      error: "単価と個数を入力してください。",
+    };
+  }
+
+  const totalBig = BigInt(parsedUnit.value) * BigInt(parsedQty.value);
+  if (totalBig < BigInt(MIN_AMOUNT) || totalBig > BigInt(MAX_AMOUNT)) {
+    return {
+      ok: false,
+      errorCode: "EXCEEDS_MAX_AMOUNT",
+      error: `計算結果が上限（${MAX_AMOUNT.toLocaleString("ja-JP")}円）を超えています。`,
+    };
+  }
+
+  return {
+    ok: true,
+    unitPrice: parsedUnit.value,
+    quantity: parsedQty.value,
+    total: Number(totalBig),
+  };
+}
+
+
