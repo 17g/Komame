@@ -2,6 +2,30 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-15] 【Phase 10.5】単価×個数計算補助機能の単体テスト作成・総合ビルド検証・仕様書同期
+
+### 1. 概要
+要件 2-7 および `Plan.md` Phase 10.5 に基づき、単価×個数計算補助機能の単体テスト作成、開発・運用・検証ガイド同期、および総合ビルド・テスト検証を実施した：
+1. **単体テスト新規作成 (`scripts/test-unit-calculator.ts`)**:
+   - `calculateUnitTotal()` の正常系（数値・文字列・空白トリム・先頭ゼロ・混在入力）、境界値（最小 `1`、最大 `9,999,999,999`、単独/積の上限超過、`MAX_SAFE_INTEGER` 超過文字列の BigInt 検証）、異常系（未入力、`0`、負数、小数、非数字、`NaN`/`Infinity`、不正型）を網羅的に検証。
+   - `sanitizeUnitCalcInput()` による全角数字変換および非数字文字除去の挙動もあわせて検証。
+2. **仕様書同期 (`for_agent/06_operation_and_testing_guide.md`)**:
+   - 単体テスト一覧（第2.2節）に `npx tsx scripts/test-unit-calculator.ts` を追記し、改訂履歴を更新。
+3. **総合検証 (Ground Truth)**:
+   - `npx tsc --noEmit`、`npm run build`、`npx tsx scripts/test-unit-calculator.ts`、`npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 でパスすることを確認。
+
+### 2. 変更内容 (Before / After)
+- **Before**: 単価×個数計算補助機能（`calculateUnitTotal` / `sanitizeUnitCalcInput`）の自動単体テストが存在せず、`for_agent/06_operation_and_testing_guide.md` の単体テスト一覧にも未記載だった。
+- **After**: 正常系・境界値・異常系・入力サニタイザーを網羅する `scripts/test-unit-calculator.ts` を整備・実行し、仕様書同期および全ビルド・セキュリティ検証を完了した。
+
+### 3. 変更理由
+- 要件 2-7 の境界値（`1 ～ 9,999,999,999`）および不正入力拒否の品質を自動テストで継続担保し、Phase 10 を完全に完了させるため。
+
+### 4. 影響範囲
+- `scripts/test-unit-calculator.ts` (新規)
+- `for_agent/06_operation_and_testing_guide.md`
+- `Plan.md`, `AICHANGELOG.md`
+
 ## [2026-11-15] 【Phase 10.4】明細編集モーダル (`EditTransactionModal.tsx`) の支出編集欄への「単価×個数」計算補助機能組み込み
 
 ### 1. 概要
