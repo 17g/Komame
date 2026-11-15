@@ -16,6 +16,7 @@
 - [x] Phase 8: 自宅サーバー・ミニPC向け本番環境構築手順書の整備および Docker 本番ビルド構成の不備修正
 - [x] Phase 9: 費目マスターメンテナンス機能の実装（標準12費目保護・追加・編集・並び替え・アーカイブ/復元・監査ログ）
 - [x] Phase 10: 支出金額入力欄の「単価×個数」計算補助機能の実装（要件 2-7）
+- [ ] Phase 11: 単価×個数 計算補助UIの個数入力セレクトボックス化（要件 2-7 改訂）
 
 
 ---
@@ -249,5 +250,22 @@
   - `for_agent/06_operation_and_testing_guide.md` の単体テスト一覧および改訂履歴を更新する。
   - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-unit-calculator.ts`, `npx tsx scripts/test-security-unit.ts` を実行してすべて Exit Code 0 を確認する。
   - `AICHANGELOG.md` に作業内容を記録し、Git コミットを行う。
+
+---
+
+## Phase 11: 単価×個数 計算補助UIの個数入力セレクトボックス化（要件 2-7 改訂）
+
+- [x] **11.1 `UnitPriceCalculator` コンポーネントの個数UIセレクトボックス化 (`src/components/UnitPriceCalculator.tsx` / `src/lib/i18n.ts`)**:
+  - `UnitPriceCalculatorPanel` の個数入力欄（`<input>`）を `1` 〜 `30` の整数を選択する `<select>` 要素（`DEFAULT_QUANTITY = "1"`, `MAX_UI_QUANTITY = 30` 等の定数・オプション配列を使用）へ変更する（31個以上は金額入力欄へ直接手入力する仕様）。
+  - 個数の選択変更時はリアルタイムで `calculateUnitTotal(unitPrice, nextQty)` を実行し、上限内であれば `onApplyAmount` を呼び出す。
+  - 非制御モード（`UnitPriceCalculator`）の `internalQuantity` 初期値および `resetKey` 変化時のリセット値を `"1"` に変更し、単価入力時点で即座に `単価 × 1` が反映される挙動にする。
+  - 必要に応じ `src/lib/i18n.ts` の個数関連ラベル/プレースホルダー表現を確認・調整する。
+- [ ] **11.2 利用側コンポーネントの個数初期値・リセット値の `"1"` 統一 (`src/components/RegisterTab.tsx` & `src/components/EditTransactionModal.tsx`)**:
+  - `RegisterTab.tsx`: `DEFAULT_ROW_CALC_STATE.quantity`、`singleCalcQuantity` の初期値、および `resetCalculators()` 内の `setSingleCalcQuantity("1")` を `"1"` に更新する（`single` / `shop_batch` / `category_batch` 全モード対応）。
+  - `EditTransactionModal.tsx`: `calcQuantity` の初期値およびモーダル開閉・対象明細切り替え時のリセット値 `setCalcQuantity("1")` を `"1"` に更新する。
+- [ ] **11.3 単体テスト拡充・総合ビルド検証・変更履歴記録 (`scripts/test-unit-calculator.ts` / `AICHANGELOG.md`)**:
+  - `scripts/test-unit-calculator.ts`: `calculateUnitTotal` が引き続き `1` 以上の正の整数（31以上含む）を受け付ける汎用仕様のテストを維持しつつ、UI用個数オプション範囲（`1`〜`30`）および初期値 `"1"` に関する検証を追加・実行する。
+  - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-unit-calculator.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。
+  - `AICHANGELOG.md` に変更内容を記録し、Git コミットを行う。
 
 

@@ -5,6 +5,18 @@ import { AlertCircle, Calculator, X } from "lucide-react";
 import { calculateUnitTotal, formatCurrency, UnitTotalErrorCode } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 
+/** 個数セレクトボックスの初期値 */
+export const DEFAULT_QUANTITY = "1";
+
+/** 個数セレクトボックスの上限値（31個以上は金額入力欄へ直接手入力） */
+export const MAX_UI_QUANTITY = 30;
+
+/** 個数セレクトボックス用の選択肢配列（"1" 〜 "30"） */
+export const UNIT_CALC_QUANTITY_OPTIONS: readonly string[] = Array.from(
+  { length: MAX_UI_QUANTITY },
+  (_, index) => String(index + 1)
+);
+
 /**
  * 全角数字を半角数字へ変換し、数字以外の文字を除去する入力サニタイザー
  */
@@ -101,20 +113,25 @@ export function UnitPriceCalculatorPanel({
   className = "",
 }: UnitPriceCalculatorPanelProps) {
   const { t } = useTranslation();
-  const result = calculateUnitTotal(unitPrice, quantity);
+  const selectedQuantity = UNIT_CALC_QUANTITY_OPTIONS.includes(quantity)
+    ? quantity
+    : DEFAULT_QUANTITY;
+  const result = calculateUnitTotal(unitPrice, selectedQuantity);
   const errorMessage = result.ok ? null : getUnitCalcErrorMessage(result.errorCode, t);
 
   const handleUnitPriceChange = (raw: string) => {
     const nextUnit = sanitizeUnitCalcInput(raw);
     onUnitPriceChange(nextUnit);
-    const nextResult = calculateUnitTotal(nextUnit, quantity);
+    const nextResult = calculateUnitTotal(nextUnit, selectedQuantity);
     if (nextResult.ok) {
       onApplyAmount(String(nextResult.total));
     }
   };
 
-  const handleQuantityChange = (raw: string) => {
-    const nextQty = sanitizeUnitCalcInput(raw);
+  const handleQuantityChange = (nextValue: string) => {
+    const nextQty = UNIT_CALC_QUANTITY_OPTIONS.includes(nextValue)
+      ? nextValue
+      : DEFAULT_QUANTITY;
     onQuantityChange(nextQty);
     const nextResult = calculateUnitTotal(unitPrice, nextQty);
     if (nextResult.ok) {
@@ -154,18 +171,25 @@ export function UnitPriceCalculatorPanel({
           <label className="block text-[11px] font-bold text-content-muted mb-1">
             {t.register.quantityLabel}
           </label>
-          <input
-            type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
-            placeholder={t.register.quantityPlaceholder}
+          <select
             aria-label={t.register.quantityLabel}
-            value={quantity}
+            title={t.register.unitCalcQuantityHint}
+            value={selectedQuantity}
             onChange={(e) => handleQuantityChange(e.target.value)}
-            className="w-full px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs font-bold text-right focus:border-primary outline-none"
-          />
+            className="w-full px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs font-bold focus:border-primary outline-none cursor-pointer"
+          >
+            {UNIT_CALC_QUANTITY_OPTIONS.map((qtyOption) => (
+              <option key={qtyOption} value={qtyOption}>
+                {qtyOption}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
+
+      <p className="text-[10px] text-content-subtle leading-tight">
+        {t.register.unitCalcQuantityHint}
+      </p>
 
       <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-border/60">
         <div className="flex items-center gap-1.5">
@@ -248,7 +272,7 @@ export function UnitPriceCalculator({
 }: UnitPriceCalculatorProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const [internalUnitPrice, setInternalUnitPrice] = useState("");
-  const [internalQuantity, setInternalQuantity] = useState("");
+  const [internalQuantity, setInternalQuantity] = useState(DEFAULT_QUANTITY);
 
   const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
   const unitPrice = controlledUnitPrice !== undefined ? controlledUnitPrice : internalUnitPrice;
@@ -281,7 +305,7 @@ export function UnitPriceCalculator({
       prevResetKeyRef.current = resetKey;
       if (controlledOpen === undefined) setInternalOpen(false);
       if (controlledUnitPrice === undefined) setInternalUnitPrice("");
-      if (controlledQuantity === undefined) setInternalQuantity("");
+      if (controlledQuantity === undefined) setInternalQuantity(DEFAULT_QUANTITY);
     }
   }, [resetKey, controlledOpen, controlledUnitPrice, controlledQuantity]);
 

@@ -2,6 +2,49 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-15] 【Phase 11.1】`UnitPriceCalculator` コンポーネントの個数UIセレクトボックス化 (`UnitPriceCalculator.tsx` / `i18n.ts`)
+
+### 1. 概要
+要件 2-7 改訂および `Plan.md` Phase 11.1 に基づき、`UnitPriceCalculator` コンポーネントの個数入力UIをセレクトボックス化し、初期値 `"1"` による即時計算体験を実装した：
+1. **定数・選択肢配列の定義と個数 `<select>` 化 (`src/components/UnitPriceCalculator.tsx`)**:
+   - `DEFAULT_QUANTITY = "1"`、`MAX_UI_QUANTITY = 30`、`UNIT_CALC_QUANTITY_OPTIONS`（`"1"` 〜 `"30"`）をエクスポート定数として定義。
+   - `UnitPriceCalculatorPanel` の個数欄を `<input>` から `<select>`（`1` 〜 `30` の整数選択）に変更し、選択変更時に `calculateUnitTotal(unitPrice, nextQty)` をリアルタイム実行して上限内の場合のみ `onApplyAmount` を呼び出すよう実装。
+   - `quantity` として空文字や範囲外の値が渡された場合も `selectedQuantity` が `"1"` にフォールバックする設計とし、単価入力時点で即座に `単価 × 1` が算出・反映されるようにした。
+2. **非制御モードの初期値・リセット値統一 (`UnitPriceCalculator`)**:
+   - `internalQuantity` の初期値および `resetKey` 変化時のリセット値を `DEFAULT_QUANTITY` (`"1"`) に変更。
+3. **多言語辞書 (`src/lib/i18n.ts`) の調整**:
+   - セレクトボックス化に伴い不要となった `quantityPlaceholder` を削除し、31個以上は金額欄へ直接入力する旨のヒントキー `unitCalcQuantityHint`（日英）を追加してパネル内に表示。
+
+### 2. 変更内容 (Before / After)
+- **Before**: `UnitPriceCalculatorPanel` の個数欄が自由入力の `<input>`（初期値 `""`）であり、利用者が毎回単価と個数の両方を入力する必要があった。
+- **After**: 個数欄が `1` 〜 `30` を選択する `<select>`（初期値 `"1"`）となり、単価を入力した時点で即座に `単価 × 1` が合計金額欄へ反映され、31個以上は金額欄への直接手入力を案内するUIとなった。
+
+### 3. 変更理由
+- 要件 2-7 改訂に従い、モバイル端末でのテンキー入力とプルダウン選択を組み合わせたより素早い金額計算体験を実現するため。
+
+### 4. 影響範囲
+- `src/components/UnitPriceCalculator.tsx`
+- `src/lib/i18n.ts`
+- `Plan.md`, `AICHANGELOG.md`
+
+## [2026-11-15] 【Review】全体コード・仕様書整合性点検およびビルド・テスト総合検証
+- **変更内容 (Before / After):**
+  - Before: Phase 10.5 完了後、全体の仕様書 (`for_agent/`) と実装コードの突合レビューおよび記録が未実施だった。
+  - After: `for_agent/` 配下の全仕様書と `src/` 配下の全実装コードを照合し、型チェック・本番ビルド・全7種の単体テストを実行して回帰がないことを確認した（コード・仕様書の変更はなし）。残存する仕様ギャップおよびエッジケースを整理し、レビュー結果を記録した。
+- **検証結果:**
+  - `npx tsc --noEmit`: 正常終了 (Exit Code 0)
+  - `npm run build`: 正常終了 (Exit Code 0, 22ルート生成)
+  - 単体テスト全7本 (`test-security-unit.ts`, `test-unit-calculator.ts`, `test-categories-unit.ts`, `test-csv-unit.ts`, `test-members-unit.ts`, `test-auth-session-unit.ts`, `test-rate-limit-csrf.ts`): すべて正常終了 (Exit Code 0)
+  - `scripts/comprehensive-test.ts`: PostgreSQL (localhost:5532) 未起動 (`TcpTestSucceeded: False`) のため未実行
+- **検出された主な仕様ギャップ・エッジケース:**
+  1. `src/app/invite/page.tsx` が未実装のため、招待リンク (`/invite?token=...`) にブラウザアクセスすると 404 になる。
+  2. `src/app/api/auth/signup/route.ts` の初期設定シード (`'"¥"'` / `'"YYYY/MM/DD"'`) と `src/app/api/admin/settings/route.ts` が期待する `{ value: ... }` 形式に差異がある。
+  3. `src/app/page.tsx` の `notifications` 初期値にデモ用固定メッセージが残存している。
+  4. `src/components/EditTransactionModal.tsx` ではアクティブ費目のみ渡されるため、アーカイブ済み費目が設定された過去明細の編集時に当該費目が選択肢に表示されない。
+  5. `src/app/api/admin/csv/route.ts` のインポート処理において、`paymentMethodId` が未指定の支出 (`expense`) は `isSettled` が `false` のまま登録される。
+- **変更理由・影響範囲:**
+  - `/review` スキル手順に基づく全体点検の証跡保存。アプリケーションの挙動やデータベーススキーマへの変更はなし。
+
 ## [2026-11-15] 【Phase 10.5】単価×個数計算補助機能の単体テスト作成・総合ビルド検証・仕様書同期
 
 ### 1. 概要
