@@ -4,6 +4,11 @@ import React, { useState, useEffect, useRef } from "react";
 import { CategoryItem, PaymentMethodItem, AccountItem, SuggestionItem, SuggestionResult, TagItem } from "@/types";
 import { Sparkles, Save, Check, Plus, Trash2, RotateCcw, Clock, AlertTriangle, X, ArrowRightLeft, TrendingUp, Tag } from "lucide-react";
 import { HelpTooltip } from "./HelpTooltip";
+import {
+  UnitPriceCalculator,
+  UnitPriceCalculatorPanel,
+  UnitPriceCalculatorToggle,
+} from "./UnitPriceCalculator";
 import { formatCurrency } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 
@@ -24,6 +29,72 @@ interface DraftData {
   formType: "single" | "shop_batch" | "category_batch";
   payloadJson: any;
   savedAt: string;
+}
+
+interface ShopBatchRow {
+  rowId: string;
+  categoryId: string;
+  amount: string;
+  note: string;
+}
+
+interface CategoryBatchRow {
+  rowId: string;
+  date: string;
+  shopName: string;
+  amount: string;
+  note: string;
+}
+
+interface RowCalcState {
+  isOpen: boolean;
+  unitPrice: string;
+  quantity: string;
+}
+
+const DEFAULT_ROW_CALC_STATE: RowCalcState = {
+  isOpen: false,
+  unitPrice: "",
+  quantity: "",
+};
+
+function buildDraftPayload(params: {
+  date: string;
+  shopName: string;
+  amount: string;
+  categoryId: string;
+  paymentMethodId: string;
+  toAccountId?: string;
+  note: string;
+  grossAmount: string;
+  taxDeduction: string;
+  batchRows: ShopBatchRow[];
+  categoryBatchRows: CategoryBatchRow[];
+  selectedTagIds: string[];
+}) {
+  return {
+    date: params.date,
+    shopName: params.shopName,
+    amount: params.amount,
+    categoryId: params.categoryId,
+    paymentMethodId: params.paymentMethodId,
+    toAccountId: params.toAccountId,
+    note: params.note,
+    grossAmount: params.grossAmount,
+    taxDeduction: params.taxDeduction,
+    batchRows: params.batchRows.map(({ categoryId, amount, note }) => ({
+      categoryId,
+      amount,
+      note,
+    })),
+    categoryBatchRows: params.categoryBatchRows.map(({ date, shopName, amount, note }) => ({
+      date,
+      shopName,
+      amount,
+      note,
+    })),
+    selectedTagIds: params.selectedTagIds,
+  };
 }
 
 export function RegisterTab({
@@ -69,16 +140,92 @@ export function RegisterTab({
   const [isTemporaryIncome, setIsTemporaryIncome] = useState(false);
 
   // 一括登録用の行データ (同店舗一括)
-  const [batchRows, setBatchRows] = useState([
-    { categoryId: "", amount: "", note: "" },
-    { categoryId: "", amount: "", note: "" },
+  const rowSeqRef = useRef(0);
+  const createRowId = (prefix: string) => {
+    rowSeqRef.current += 1;
+    return `${prefix}_${Date.now()}_${rowSeqRef.current}`;
+  };
+
+  const [batchRows, setBatchRows] = useState<ShopBatchRow[]>([
+    { rowId: "shop_init_1", categoryId: "", amount: "", note: "" },
+    { rowId: "shop_init_2", categoryId: "", amount: "", note: "" },
   ]);
 
   // 一括登録用の行データ (同費目一括)
-  const [categoryBatchRows, setCategoryBatchRows] = useState([
-    { date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
-    { date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
+  const [categoryBatchRows, setCategoryBatchRows] = useState<CategoryBatchRow[]>([
+    { rowId: "cat_init_1", date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
+    { rowId: "cat_init_2", date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
   ]);
+
+  // 単価×個数 計算補助UI状態 (1件登録 / 各一括行独立管理)
+  const [singleCalcOpen, setSingleCalcOpen] = useState(false);
+  const [singleCalcUnitPrice, setSingleCalcUnitPrice] = useState("");
+  const [singleCalcQuantity, setSingleCalcQuantity] = useState("");
+  const [rowCalcStates, setRowCalcStates] = useState<Record<string, RowCalcState>>({});
+
+  const resetCalculators = () => {
+    setSingleCalcOpen(false);
+    setSingleCalcUnitPrice("");
+    setSingleCalcQuantity("");
+    setRowCalcStates({});
+  };
+
+  const getRowCalcState = (rowId: string): RowCalcState =>
+    rowCalcStates[rowId] ?? DEFAULT_ROW_CALC_STATE;
+
+  const toggleRowCalc = (rowId: string) => {
+    setRowCalcStates((prev) => {
+      const current = prev[rowId] ?? DEFAULT_ROW_CALC_STATE;
+      return {
+        ...prev,
+        [rowId]: { ...current, isOpen: !current.isOpen },
+      };
+    });
+  };
+
+  const closeRowCalc = (rowId: string) => {
+    setRowCalcStates((prev) => {
+      const current = prev[rowId];
+      if (!current || !current.isOpen) return prev;
+      return {
+        ...prev,
+        [rowId]: { ...current, isOpen: false },
+      };
+    });
+  };
+
+  const updateRowCalcField = (
+    rowId: string,
+    field: "unitPrice" | "quantity",
+    value: string
+  ) => {
+    setRowCalcStates((prev) => {
+      const current = prev[rowId] ?? DEFAULT_ROW_CALC_STATE;
+      return {
+        ...prev,
+        [rowId]: { ...current, [field]: value },
+      };
+    });
+  };
+
+  const removeRowCalcState = (rowId: string) => {
+    setRowCalcStates((prev) => {
+      if (!(rowId in prev)) return prev;
+      const next = { ...prev };
+      delete next[rowId];
+      return next;
+    });
+  };
+
+  const handleRemoveBatchRow = (rowId: string) => {
+    setBatchRows((prev) => prev.filter((r) => r.rowId !== rowId));
+    removeRowCalcState(rowId);
+  };
+
+  const handleRemoveCategoryBatchRow = (rowId: string) => {
+    setCategoryBatchRows((prev) => prev.filter((r) => r.rowId !== rowId));
+    removeRowCalcState(rowId);
+  };
 
   // 一時保存ドラフト状態 (手動 / 自動)
   const [manualDraft, setManualDraft] = useState<DraftData | null>(null);
@@ -178,8 +325,29 @@ export function RegisterTab({
       if (p.note !== undefined) setNote(p.note);
       if (p.grossAmount !== undefined) setGrossAmount(p.grossAmount);
       if (p.taxDeduction !== undefined) setTaxDeduction(p.taxDeduction);
-      if (p.batchRows && Array.isArray(p.batchRows)) setBatchRows(p.batchRows);
-      if (p.categoryBatchRows && Array.isArray(p.categoryBatchRows)) setCategoryBatchRows(p.categoryBatchRows);
+      if (p.batchRows && Array.isArray(p.batchRows)) {
+        setBatchRows(
+          p.batchRows.map((r: { categoryId?: string; amount?: string; note?: string }) => ({
+            rowId: createRowId("shop"),
+            categoryId: r.categoryId || "",
+            amount: r.amount || "",
+            note: r.note || "",
+          }))
+        );
+      }
+      if (p.categoryBatchRows && Array.isArray(p.categoryBatchRows)) {
+        setCategoryBatchRows(
+          p.categoryBatchRows.map(
+            (r: { date?: string; shopName?: string; amount?: string; note?: string }) => ({
+              rowId: createRowId("cat"),
+              date: r.date || new Date().toISOString().split("T")[0],
+              shopName: r.shopName || "",
+              amount: r.amount || "",
+              note: r.note || "",
+            })
+          )
+        );
+      }
       if (p.selectedTagIds && Array.isArray(p.selectedTagIds)) setSelectedTagIds(p.selectedTagIds);
 
       if (draft.formType) setFormMode(draft.formType);
@@ -189,6 +357,7 @@ export function RegisterTab({
         setEntryType("expense");
       }
 
+      resetCalculators();
       setIsDraftRestored(true);
       onTriggerToast(`📂 ${draft.draftType === "manual" ? t.register.manualDraftSlot : t.register.autoDraftSlot} ${t.register.restoreBtn}`);
     } catch {
@@ -340,7 +509,7 @@ export function RegisterTab({
             body: JSON.stringify({
               draftType: "auto",
               formType: formMode,
-              payloadJson: {
+              payloadJson: buildDraftPayload({
                 date,
                 shopName,
                 amount,
@@ -353,7 +522,7 @@ export function RegisterTab({
                 batchRows,
                 categoryBatchRows,
                 selectedTagIds,
-              },
+              }),
             }),
           });
           fetchDrafts();
@@ -393,7 +562,7 @@ export function RegisterTab({
         body: JSON.stringify({
           draftType: "manual",
           formType: formMode,
-          payloadJson: {
+          payloadJson: buildDraftPayload({
             date,
             shopName,
             amount,
@@ -406,7 +575,7 @@ export function RegisterTab({
             batchRows,
             categoryBatchRows,
             selectedTagIds,
-          },
+          }),
         }),
       });
       if (res.ok) {
@@ -522,13 +691,14 @@ export function RegisterTab({
         setNote("");
         setSelectedTagIds([]);
         setBatchRows([
-          { categoryId: "", amount: "", note: "" },
-          { categoryId: "", amount: "", note: "" },
+          { rowId: createRowId("shop"), categoryId: "", amount: "", note: "" },
+          { rowId: createRowId("shop"), categoryId: "", amount: "", note: "" },
         ]);
         setCategoryBatchRows([
-          { date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
-          { date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
+          { rowId: createRowId("cat"), date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
+          { rowId: createRowId("cat"), date: new Date().toISOString().split("T")[0], shopName: "", amount: "", note: "" },
         ]);
+        resetCalculators();
 
         onTriggerToast(`✓ ${payload.length}件のデータを登録しました！`);
         onSubmitSuccess();
@@ -829,11 +999,21 @@ export function RegisterTab({
               {/* 金額・費目・決済手段 */}
               {formMode === "single" && (
                 <>
-                  <div>
-                    <label className="block text-xs font-bold text-content-muted mb-1 flex items-center gap-1">
-                      <span>{t.register.amount}</span>
-                      <HelpTooltip text={t.register.amountTooltip} />
-                    </label>
+                  <UnitPriceCalculator
+                    onApplyAmount={setAmount}
+                    isOpen={singleCalcOpen}
+                    onOpenChange={setSingleCalcOpen}
+                    unitPrice={singleCalcUnitPrice}
+                    onUnitPriceChange={setSingleCalcUnitPrice}
+                    quantity={singleCalcQuantity}
+                    onQuantityChange={setSingleCalcQuantity}
+                    labelContent={
+                      <label className="text-xs font-bold text-content-muted flex items-center gap-1">
+                        <span>{t.register.amount}</span>
+                        <HelpTooltip text={t.register.amountTooltip} />
+                      </label>
+                    }
+                  >
                     <input
                       type="text"
                       inputMode="numeric"
@@ -843,7 +1023,7 @@ export function RegisterTab({
                       className="w-full px-3.5 py-2.5 bg-app-subtle border border-border rounded-xl text-content-main font-display text-xl font-extrabold focus:border-primary outline-none"
                       required
                     />
-                  </div>
+                  </UnitPriceCalculator>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -954,7 +1134,10 @@ export function RegisterTab({
                     <button
                       type="button"
                       onClick={() =>
-                        setBatchRows([...batchRows, { categoryId: "", amount: "", note: "" }])
+                        setBatchRows((prev) => [
+                          ...prev,
+                          { rowId: createRowId("shop"), categoryId: "", amount: "", note: "" },
+                        ])
                       }
                       className="text-xs text-primary font-bold flex items-center gap-1 cursor-pointer hover:underline"
                     >
@@ -962,61 +1145,109 @@ export function RegisterTab({
                     </button>
                   </div>
 
-                  {batchRows.map((row, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <select
-                        value={row.categoryId || categoryId}
-                        onChange={(e) => {
-                          const newRows = [...batchRows];
-                          newRows[idx].categoryId = e.target.value;
-                          setBatchRows(newRows);
-                        }}
-                        className="w-1/3 px-2.5 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs cursor-pointer"
+                  {batchRows.map((row) => {
+                    const rowCalc = getRowCalcState(row.rowId);
+                    return (
+                      <div
+                        key={row.rowId}
+                        className="p-2.5 bg-app-subtle/60 border border-border/70 rounded-xl space-y-1 transition-all hover:border-primary/40"
                       >
-                        {categories.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.icon} {c.name}
-                          </option>
-                        ))}
-                      </select>
+                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                          <select
+                            value={row.categoryId || categoryId}
+                            onChange={(e) => {
+                              const nextCatId = e.target.value;
+                              setBatchRows((prev) =>
+                                prev.map((r) =>
+                                  r.rowId === row.rowId ? { ...r, categoryId: nextCatId } : r
+                                )
+                              );
+                            }}
+                            className="w-full sm:w-[30%] px-2.5 py-2 bg-app-surface border border-border rounded-lg text-content-main text-xs cursor-pointer outline-none focus:border-primary"
+                          >
+                            {categories.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.icon} {c.name}
+                              </option>
+                            ))}
+                          </select>
 
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="金額"
-                        value={row.amount}
-                        onChange={(e) => {
-                          const newRows = [...batchRows];
-                          newRows[idx].amount = e.target.value.replace(/[^0-9]/g, "");
-                          setBatchRows(newRows);
-                        }}
-                        className="w-1/3 px-2.5 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs font-bold text-right"
-                      />
+                          <div className="flex items-center gap-1.5 flex-1 sm:w-[36%]">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              placeholder="金額"
+                              value={row.amount}
+                              onChange={(e) => {
+                                const nextAmt = e.target.value.replace(/[^0-9]/g, "");
+                                setBatchRows((prev) =>
+                                  prev.map((r) =>
+                                    r.rowId === row.rowId ? { ...r, amount: nextAmt } : r
+                                  )
+                                );
+                              }}
+                              className="w-full min-w-0 px-2.5 py-2 bg-app-surface border border-border rounded-lg text-content-main text-xs font-bold text-right outline-none focus:border-primary"
+                            />
+                            <UnitPriceCalculatorToggle
+                              compact
+                              isOpen={rowCalc.isOpen}
+                              onToggle={() => toggleRowCalc(row.rowId)}
+                            />
+                          </div>
 
-                      <input
-                        type="text"
-                        placeholder="メモ・品名"
-                        value={row.note}
-                        onChange={(e) => {
-                          const newRows = [...batchRows];
-                          newRows[idx].note = e.target.value;
-                          setBatchRows(newRows);
-                        }}
-                        className="w-1/3 px-2.5 py-2 bg-app-subtle border border-border rounded-lg text-content-main text-xs"
-                      />
+                          <div className="flex items-center gap-1.5 w-full sm:w-[34%]">
+                            <input
+                              type="text"
+                              placeholder="メモ・品名"
+                              value={row.note}
+                              onChange={(e) => {
+                                const nextNote = e.target.value;
+                                setBatchRows((prev) =>
+                                  prev.map((r) =>
+                                    r.rowId === row.rowId ? { ...r, note: nextNote } : r
+                                  )
+                                );
+                              }}
+                              className="flex-1 min-w-0 px-2.5 py-2 bg-app-surface border border-border rounded-lg text-content-main text-xs outline-none focus:border-primary"
+                            />
 
-                      {batchRows.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setBatchRows(batchRows.filter((_, i) => i !== idx))}
-                          className="p-1.5 text-content-subtle hover:text-danger rounded-lg transition-colors cursor-pointer"
-                          title="行を削除"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                            {batchRows.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveBatchRow(row.rowId)}
+                                className="p-1.5 text-content-subtle hover:text-danger rounded-lg transition-colors cursor-pointer shrink-0"
+                                title="行を削除"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {rowCalc.isOpen && (
+                          <UnitPriceCalculatorPanel
+                            unitPrice={rowCalc.unitPrice}
+                            quantity={rowCalc.quantity}
+                            onUnitPriceChange={(val) =>
+                              updateRowCalcField(row.rowId, "unitPrice", val)
+                            }
+                            onQuantityChange={(val) =>
+                              updateRowCalcField(row.rowId, "quantity", val)
+                            }
+                            onApplyAmount={(val) => {
+                              setBatchRows((prev) =>
+                                prev.map((r) =>
+                                  r.rowId === row.rowId ? { ...r, amount: val } : r
+                                )
+                              );
+                            }}
+                            onClose={() => closeRowCalc(row.rowId)}
+                            className="bg-app-surface"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
 
                   {/* 店舗一括 合計表示 */}
                   <div className="flex items-center justify-between p-3 bg-app-subtle border border-border/80 rounded-xl text-xs font-bold text-content-main mt-1">
@@ -1107,10 +1338,11 @@ export function RegisterTab({
                       <button
                         type="button"
                         onClick={() =>
-                          setCategoryBatchRows([
-                            ...categoryBatchRows,
+                          setCategoryBatchRows((prev) => [
+                            ...prev,
                             {
-                              date: categoryBatchRows[categoryBatchRows.length - 1]?.date || date,
+                              rowId: createRowId("cat"),
+                              date: prev[prev.length - 1]?.date || date,
                               shopName: "",
                               amount: "",
                               note: "",
@@ -1123,81 +1355,123 @@ export function RegisterTab({
                       </button>
                     </div>
 
-                    {categoryBatchRows.map((row, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 bg-app-subtle border border-border/70 rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-2 transition-all hover:border-primary/40"
-                      >
-                        <div className="flex items-center gap-2 sm:w-36">
-                          <input
-                            type="date"
-                            value={row.date}
-                            onChange={(e) => {
-                              const newRows = [...categoryBatchRows];
-                              newRows[idx].date = e.target.value;
-                              setCategoryBatchRows(newRows);
-                            }}
-                            className="w-full px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs outline-none focus:border-primary"
-                          />
-                        </div>
+                    {categoryBatchRows.map((row) => {
+                      const rowCalc = getRowCalcState(row.rowId);
+                      return (
+                        <div
+                          key={row.rowId}
+                          className="p-3 bg-app-subtle border border-border/70 rounded-xl transition-all hover:border-primary/40"
+                        >
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                            <div className="flex items-center gap-2 sm:w-36">
+                              <input
+                                type="date"
+                                value={row.date}
+                                onChange={(e) => {
+                                  const nextDate = e.target.value;
+                                  setCategoryBatchRows((prev) =>
+                                    prev.map((r) =>
+                                      r.rowId === row.rowId ? { ...r, date: nextDate } : r
+                                    )
+                                  );
+                                }}
+                                className="w-full px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs outline-none focus:border-primary"
+                              />
+                            </div>
 
-                        <div className="flex-1">
-                          <input
-                            type="text"
-                            placeholder="店舗・取引先名"
-                            value={row.shopName}
-                            onChange={(e) => {
-                              const newRows = [...categoryBatchRows];
-                              newRows[idx].shopName = e.target.value;
-                              setCategoryBatchRows(newRows);
-                            }}
-                            className="w-full px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs outline-none focus:border-primary"
-                          />
-                        </div>
+                            <div className="flex-1">
+                              <input
+                                type="text"
+                                placeholder="店舗・取引先名"
+                                value={row.shopName}
+                                onChange={(e) => {
+                                  const nextShop = e.target.value;
+                                  setCategoryBatchRows((prev) =>
+                                    prev.map((r) =>
+                                      r.rowId === row.rowId ? { ...r, shopName: nextShop } : r
+                                    )
+                                  );
+                                }}
+                                className="w-full px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs outline-none focus:border-primary"
+                              />
+                            </div>
 
-                        <div className="flex items-center gap-2 sm:w-32">
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            placeholder="金額 (円)"
-                            value={row.amount}
-                            onChange={(e) => {
-                              const newRows = [...categoryBatchRows];
-                              newRows[idx].amount = e.target.value.replace(/[^0-9]/g, "");
-                              setCategoryBatchRows(newRows);
-                            }}
-                            className="w-full px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs font-bold outline-none focus:border-primary text-right"
-                          />
-                        </div>
+                            <div className="flex items-center gap-1.5 sm:w-36">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="金額 (円)"
+                                value={row.amount}
+                                onChange={(e) => {
+                                  const nextAmt = e.target.value.replace(/[^0-9]/g, "");
+                                  setCategoryBatchRows((prev) =>
+                                    prev.map((r) =>
+                                      r.rowId === row.rowId ? { ...r, amount: nextAmt } : r
+                                    )
+                                  );
+                                }}
+                                className="w-full min-w-0 px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs font-bold outline-none focus:border-primary text-right"
+                              />
+                              <UnitPriceCalculatorToggle
+                                compact
+                                isOpen={rowCalc.isOpen}
+                                onToggle={() => toggleRowCalc(row.rowId)}
+                              />
+                            </div>
 
-                        <div className="flex-1 flex items-center gap-2">
-                          <input
-                            type="text"
-                            placeholder="メモ・品名"
-                            value={row.note}
-                            onChange={(e) => {
-                              const newRows = [...categoryBatchRows];
-                              newRows[idx].note = e.target.value;
-                              setCategoryBatchRows(newRows);
-                            }}
-                            className="flex-1 px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs outline-none focus:border-primary"
-                          />
+                            <div className="flex-1 flex items-center gap-2">
+                              <input
+                                type="text"
+                                placeholder="メモ・品名"
+                                value={row.note}
+                                onChange={(e) => {
+                                  const nextNote = e.target.value;
+                                  setCategoryBatchRows((prev) =>
+                                    prev.map((r) =>
+                                      r.rowId === row.rowId ? { ...r, note: nextNote } : r
+                                    )
+                                  );
+                                }}
+                                className="flex-1 px-2.5 py-1.5 bg-app-surface border border-border rounded-lg text-content-main text-xs outline-none focus:border-primary"
+                              />
 
-                          {categoryBatchRows.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setCategoryBatchRows(categoryBatchRows.filter((_, i) => i !== idx))
+                              {categoryBatchRows.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveCategoryBatchRow(row.rowId)}
+                                  className="p-1.5 text-content-subtle hover:text-danger rounded-lg transition-colors cursor-pointer"
+                                  title="行を削除"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {rowCalc.isOpen && (
+                            <UnitPriceCalculatorPanel
+                              unitPrice={rowCalc.unitPrice}
+                              quantity={rowCalc.quantity}
+                              onUnitPriceChange={(val) =>
+                                updateRowCalcField(row.rowId, "unitPrice", val)
                               }
-                              className="p-1.5 text-content-subtle hover:text-danger rounded-lg transition-colors cursor-pointer"
-                              title="行を削除"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                              onQuantityChange={(val) =>
+                                updateRowCalcField(row.rowId, "quantity", val)
+                              }
+                              onApplyAmount={(val) => {
+                                setCategoryBatchRows((prev) =>
+                                  prev.map((r) =>
+                                    r.rowId === row.rowId ? { ...r, amount: val } : r
+                                  )
+                                );
+                              }}
+                              onClose={() => closeRowCalc(row.rowId)}
+                              className="bg-app-surface"
+                            />
                           )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     {/* 費目一括 合計表示 */}
                     <div className="flex items-center justify-between p-3 bg-app-subtle border border-border/80 rounded-xl text-xs font-bold text-content-main">
