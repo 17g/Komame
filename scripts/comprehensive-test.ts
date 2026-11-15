@@ -37,7 +37,8 @@ async function apiFetch(path: string, options: RequestInit = {}) {
     ctx.cookieHeader = setCookie.split(";")[0];
   }
 
-  const text = await res.text();
+  const buf = Buffer.from(await res.arrayBuffer());
+  const text = buf.toString("utf-8");
   let json: any = null;
   try {
     json = JSON.parse(text);
@@ -370,11 +371,11 @@ async function runComprehensiveTest() {
   const exportFullRes = await apiFetch("/api/admin/csv?type=full");
   assert(exportFullRes.ok, "全明細CSVエクスポート成功 (GET /api/admin/csv?type=full)");
   assert(exportFullRes.text.startsWith("\uFEFF"), "エクスポートCSVがUTF-8 BOM付きであることを確認");
-  assert(exportFullRes.text.includes("明細ID,日付,種別,金額"), "CSVヘッダーの整合性確認");
+  assert(exportFullRes.text.includes('"明細ID","日付","種別","金額"'), "CSVヘッダーの整合性確認");
 
   const exportAccRes = await apiFetch("/api/admin/csv?type=accounts");
   assert(exportAccRes.ok, "口座一覧CSVエクスポート成功 (GET /api/admin/csv?type=accounts)");
-  assert(exportAccRes.text.includes("口座ID,口座名,種別,現在残高"), "口座CSVヘッダーの整合性確認");
+  assert(exportAccRes.text.includes('"口座ID","口座名","種別","現在残高"'), "口座CSVヘッダーの整合性確認");
 
   // 11.2 重複候補の事前明細登録
   const dupCheckDate = "2026-10-15";
@@ -706,20 +707,22 @@ ${dupCheckDate},${dupCheckShop},${dupCheckAmount},食費,,重複検証用
   const updateSettingsRes = await apiFetch("/api/admin/settings", {
     method: "PUT",
     body: JSON.stringify({
-      passwordMinLength: 8,
-      passwordRequireUpper: true,
-      passwordRequireLower: true,
-      passwordRequireNumber: true,
-      passwordRequireSymbol: false,
       currencySymbol: "¥",
-      dateFormat: "YYYY-MM-DD",
+      dateFormat: "YYYY/MM/DD",
+      passwordPolicy: {
+        minLength: 8,
+        requireUppercase: true,
+        requireLowercase: true,
+        requireNumbers: true,
+        requireSpecialChars: false,
+      },
     }),
   });
   assert(updateSettingsRes.ok, "システム設定更新成功 (PUT /api/admin/settings)");
 
-  const logExportRes = await apiFetch("/api/admin/logs?export=csv");
-  assert(logExportRes.ok, "監査ログCSVエクスポート成功 (GET /api/admin/logs?export=csv)");
-  assert(logExportRes.text.includes("ログID,日時,操作種別,対象種別"), "監査ログCSVヘッダーの整合性確認");
+  const logExportRes = await apiFetch("/api/admin/logs?format=csv");
+  assert(logExportRes.ok, "監査ログCSVエクスポート成功 (GET /api/admin/logs?format=csv)");
+  assert(logExportRes.text.includes('"ログID","日時","操作者メール","操作者ユーザーID","操作種別","対象種別"'), "監査ログCSVヘッダーの整合性確認");
 
   console.log("\n==========================================================");
   console.log("🎉 すべてのテスト（全15カテゴリ・資金移動・QR逆算・CSV・CRUD・一括登録・残高整合性・管理機能）に完全合格しました！");

@@ -59,8 +59,10 @@ export function EditTransactionModal({
       setDate(transaction.date || "");
       setShopName(transaction.shopName || "");
       setAmount(transaction.amount ? String(transaction.amount) : "");
-      setCategoryId(transaction.categoryId || (categories[0]?.id || ""));
-      setPaymentMethodId(transaction.paymentMethodId || (paymentMethods[0]?.id || ""));
+      setCategoryId(transaction.categoryId || (transaction.type === "expense" ? categories[0]?.id || "" : ""));
+      setPaymentMethodId(
+        transaction.paymentMethodId || (transaction.type === "expense" ? paymentMethods[0]?.id || "" : "")
+      );
       setNote(transaction.note || "");
       setSelectedTagIds(transaction.tags?.map((t) => t.id) || []);
       setIsCreatingTag(false);
@@ -119,8 +121,9 @@ export function EditTransactionModal({
           date,
           shopName,
           amount: parseInt(amount, 10),
-          categoryId,
-          paymentMethodId,
+          categoryId: transaction.type === "expense" ? categoryId : transaction.categoryId,
+          paymentMethodId: transaction.type === "expense" ? paymentMethodId : transaction.paymentMethodId,
+          fromAccountId: transaction.fromAccountId,
           toAccountId: transaction.toAccountId,
           note,
           tagIds: selectedTagIds,
@@ -246,38 +249,47 @@ export function EditTransactionModal({
             </div>
           )}
 
-          {/* 費目 ＆ 支払手段 */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-content-muted mb-1">費目</label>
-              <select
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-xs font-medium text-content-main focus:border-primary outline-none cursor-pointer"
-              >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.icon} {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          {/* 費目 ＆ 支払手段（支出明細のみ） */}
+          {transaction.type === "expense" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-content-muted mb-1">費目</label>
+                <select
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-xs font-medium text-content-main focus:border-primary outline-none cursor-pointer"
+                >
+                  {transaction.categoryId &&
+                    !categories.some((c) => c.id === transaction.categoryId) && (
+                      <option value={transaction.categoryId}>
+                        {transaction.categoryIcon || "📁"}{" "}
+                        {transaction.categoryName || transaction.categoryId} (アーカイブ済)
+                      </option>
+                    )}
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.icon} {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <label className="block text-xs font-bold text-content-muted mb-1">支払手段</label>
-              <select
-                value={paymentMethodId}
-                onChange={(e) => setPaymentMethodId(e.target.value)}
-                className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-xs font-medium text-content-main focus:border-primary outline-none cursor-pointer"
-              >
-                {paymentMethods.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              <div>
+                <label className="block text-xs font-bold text-content-muted mb-1">支払手段</label>
+                <select
+                  value={paymentMethodId}
+                  onChange={(e) => setPaymentMethodId(e.target.value)}
+                  className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-xs font-medium text-content-main focus:border-primary outline-none cursor-pointer"
+                >
+                  {paymentMethods.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* 商品名等 */}
           <div>

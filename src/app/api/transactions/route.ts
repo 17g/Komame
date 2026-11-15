@@ -417,7 +417,18 @@ export async function PUT(req: NextRequest) {
 
   try {
     const { db, schema } = getTenantDb(session.schemaName);
-    const { id, date, amount, categoryId, paymentMethodId, toAccountId, shopName, note, tagIds } = await req.json();
+    const {
+      id,
+      date,
+      amount,
+      categoryId,
+      paymentMethodId,
+      fromAccountId,
+      toAccountId,
+      shopName,
+      note,
+      tagIds,
+    } = await req.json();
 
     if (!id || amount === undefined || amount === null) {
       return NextResponse.json({ error: "更新パラメータが不足しています。" }, { status: 400 });
@@ -445,84 +456,140 @@ export async function PUT(req: NextRequest) {
         throw new Error("NOT_FOUND");
       }
 
-      const targetPmId = paymentMethodId || existingTx.paymentMethodId;
+      const targetPmId =
+        existingTx.type === "expense"
+          ? paymentMethodId !== undefined
+            ? paymentMethodId
+            : existingTx.paymentMethodId
+          : existingTx.paymentMethodId;
       const targetDate = date || existingTx.date;
       const targetShopName = shopName !== undefined ? shopName : existingTx.shopName;
       const targetNote = note !== undefined ? note : existingTx.note;
+      const targetFromAccountId =
+        fromAccountId !== undefined ? fromAccountId : existingTx.fromAccountId;
       const targetToAccountId = toAccountId !== undefined ? toAccountId : existingTx.toAccountId;
+      const targetCategoryId =
+        categoryId !== undefined ? categoryId || null : existingTx.categoryId;
 
-      // 1. 旧明細が即時決済（isSettled）だった場合、旧出金元口座の残高を元に戻す (ロールバック)
-      if (existingTx.isSettled && existingTx.paymentMethodId) {
-        const [oldPm] = await tx
-          .select()
-          .from(schema.paymentMethods)
-          .where(eq(schema.paymentMethods.id, existingTx.paymentMethodId))
-          .limit(1);
-
-        let oldSourceAccId = oldPm?.sourceAccountId;
-        if (!oldSourceAccId && oldPm?.type === "cash") {
-          const [c] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "cash")).limit(1);
-          oldSourceAccId = c?.id;
-        } else if (!oldSourceAccId && oldPm?.type === "qr_code") {
-          const [w] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "prepaid_wallet")).limit(1);
-          oldSourceAccId = w?.id;
-        }
-
-        if (oldSourceAccId) {
-          await tx
-            .update(schema.accounts)
-            .set({ balance: sql`${schema.accounts.balance} + ${existingTx.amount}` })
-            .where(eq(schema.accounts.id, oldSourceAccId));
-        }
-      }
-
-      // 2. 旧明細が投資・積立支出（type === "expense" かつ toAccountId）だった場合、旧受入先口座の残高を戻す (減額ロールバック)
-      if (existingTx.type === "expense" && existingTx.toAccountId) {
-        await tx
-          .update(schema.accounts)
-          .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
-          .where(eq(schema.accounts.id, existingTx.toAccountId));
-      }
-
-      // 3. 新しい支払手段に応じた残高減額と決済状態の計算
       let isSettled = false;
       let scheduledWithdrawalDate: string | null = null;
 
-      if (targetPmId) {
-        const [newPm] = await tx
-          .select()
-          .from(schema.paymentMethods)
-          .where(eq(schema.paymentMethods.id, targetPmId))
-          .limit(1);
+      if (existingTx.type === "transfer") {
+        // 振替明細: 旧残高ロールバックと新残高反映
+        if (existingTx.isSettled) {
+          if (existingTx.fromAccountId) {
+            await tx
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} + ${existingTx.amount}` })
+              .where(eq(schema.accounts.id, existingTx.fromAccountId));
+          }
+          if (!existingTx.parentTransactionId && existingTx.toAccountId) {
+            await tx
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
+              .where(eq(schema.accounts.id, existingTx.toAccountId));
+          }
+        }
 
-        if (newPm) {
-          if (newPm.type === "credit_card") {
-            // クレジットカード: 即時決済せず、引き落とし予定日を計算
-            scheduledWithdrawalDate = calculateWithdrawalDate(
-              targetDate,
-              newPm.closingDay || 99,
-              newPm.withdrawalDay || 27,
-              newPm.withdrawalMonthOffset ?? 1
-            );
-            isSettled = false;
-          } else {
-            // 即時決済 (現金, QR, デビット等): 口座から即座に減額
-            let newSourceAccId = newPm.sourceAccountId;
-            if (!newSourceAccId && newPm.type === "cash") {
-              const [c] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "cash")).limit(1);
-              newSourceAccId = c?.id;
-            } else if (!newSourceAccId && newPm.type === "qr_code") {
-              const [w] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "prepaid_wallet")).limit(1);
-              newSourceAccId = w?.id;
-            }
+        if (targetFromAccountId) {
+          await tx
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} - ${newAmount}` })
+            .where(eq(schema.accounts.id, targetFromAccountId));
+        }
+        if (!existingTx.parentTransactionId && targetToAccountId) {
+          await tx
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} + ${newAmount}` })
+            .where(eq(schema.accounts.id, targetToAccountId));
+        }
+        isSettled = true;
+      } else if (existingTx.type === "income") {
+        // 収入明細: 旧受入口座残高ロールバックと新金額加算
+        if (existingTx.isSettled && existingTx.toAccountId) {
+          await tx
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
+            .where(eq(schema.accounts.id, existingTx.toAccountId));
+        }
+        if (targetToAccountId) {
+          await tx
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} + ${newAmount}` })
+            .where(eq(schema.accounts.id, targetToAccountId));
+          isSettled = true;
+        }
+      } else {
+        // 1. 旧明細が即時決済（isSettled）だった場合、旧出金元口座の残高を元に戻す (ロールバック)
+        if (existingTx.isSettled && existingTx.paymentMethodId) {
+          const [oldPm] = await tx
+            .select()
+            .from(schema.paymentMethods)
+            .where(eq(schema.paymentMethods.id, existingTx.paymentMethodId))
+            .limit(1);
 
-            if (newSourceAccId) {
-              await tx
-                .update(schema.accounts)
-                .set({ balance: sql`${schema.accounts.balance} - ${newAmount}` })
-                .where(eq(schema.accounts.id, newSourceAccId));
+          let oldSourceAccId = oldPm?.sourceAccountId;
+          if (!oldSourceAccId && oldPm?.type === "cash") {
+            const [c] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "cash")).limit(1);
+            oldSourceAccId = c?.id;
+          } else if (!oldSourceAccId && oldPm?.type === "qr_code") {
+            const [w] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "prepaid_wallet")).limit(1);
+            oldSourceAccId = w?.id;
+          }
+
+          if (oldSourceAccId) {
+            await tx
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} + ${existingTx.amount}` })
+              .where(eq(schema.accounts.id, oldSourceAccId));
+          }
+        }
+
+        // 2. 旧明細が投資・積立支出（type === "expense" かつ toAccountId）だった場合、旧受入先口座の残高を戻す (減額ロールバック)
+        if (existingTx.type === "expense" && existingTx.toAccountId) {
+          await tx
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
+            .where(eq(schema.accounts.id, existingTx.toAccountId));
+        }
+
+        // 3. 新しい支払手段に応じた残高減額と決済状態の計算
+        if (targetPmId) {
+          const [newPm] = await tx
+            .select()
+            .from(schema.paymentMethods)
+            .where(eq(schema.paymentMethods.id, targetPmId))
+            .limit(1);
+
+          if (newPm) {
+            if (newPm.type === "credit_card") {
+              // クレジットカード: 即時決済せず、引き落とし予定日を計算
+              scheduledWithdrawalDate = calculateWithdrawalDate(
+                targetDate,
+                newPm.closingDay || 99,
+                newPm.withdrawalDay || 27,
+                newPm.withdrawalMonthOffset ?? 1
+              );
+              isSettled = false;
+            } else {
+              // 即時決済 (現金, QR, デビット等): 口座から即座に減額
+              let newSourceAccId = newPm.sourceAccountId;
+              if (!newSourceAccId && newPm.type === "cash") {
+                const [c] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "cash")).limit(1);
+                newSourceAccId = c?.id;
+              } else if (!newSourceAccId && newPm.type === "qr_code") {
+                const [w] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "prepaid_wallet")).limit(1);
+                newSourceAccId = w?.id;
+              }
+
+              if (newSourceAccId) {
+                await tx
+                  .update(schema.accounts)
+                  .set({ balance: sql`${schema.accounts.balance} - ${newAmount}` })
+                  .where(eq(schema.accounts.id, newSourceAccId));
+              }
+              isSettled = true;
             }
-            isSettled = true;
           }
         }
       }
@@ -662,8 +729,9 @@ export async function PUT(req: NextRequest) {
         .set({
           date: targetDate,
           amount: newAmount,
-          categoryId: categoryId || existingTx.categoryId,
+          categoryId: targetCategoryId,
           paymentMethodId: targetPmId,
+          fromAccountId: targetFromAccountId || null,
           toAccountId: targetToAccountId || null,
           shopName: targetShopName,
           note: targetNote,
@@ -750,8 +818,30 @@ export async function DELETE(req: NextRequest) {
         throw new Error("NOT_FOUND");
       }
 
-      // 1. 出金元口座の残高ロールバック (即時決済されていた場合)
-      if (existingTx.isSettled && existingTx.paymentMethodId) {
+      // 1. 出金元・受入先口座の残高ロールバック (即時決済されていた場合)
+      if (existingTx.type === "transfer" && !existingTx.parentTransactionId) {
+        if (existingTx.isSettled) {
+          if (existingTx.fromAccountId) {
+            await tx
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} + ${existingTx.amount}` })
+              .where(eq(schema.accounts.id, existingTx.fromAccountId));
+          }
+          if (existingTx.toAccountId) {
+            await tx
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
+              .where(eq(schema.accounts.id, existingTx.toAccountId));
+          }
+        }
+      } else if (existingTx.type === "income") {
+        if (existingTx.isSettled && existingTx.toAccountId) {
+          await tx
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
+            .where(eq(schema.accounts.id, existingTx.toAccountId));
+        }
+      } else if (existingTx.isSettled && existingTx.paymentMethodId) {
         const [pm] = await tx
           .select()
           .from(schema.paymentMethods)

@@ -2,6 +2,31 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-15] 【Review】全体コード・仕様整合性レビューとエッジケース・API不整合修正
+
+- **変更理由:** `/review` スキルに基づく全仕様書（`for_agent/`）と実装コード（`src/`, `scripts/`）の照合、エッジケース点検、および全検証テストの実行により発見された不整合・不具合を解消するため。
+- **変更内容 (Before -> After):**
+  1. `src/components/EditTransactionModal.tsx`:
+     - Before: アーカイブ済み費目の明細を編集すると有効費目先頭にフォールバックする可能性があり、また収入・振替明細でも費目／支払手段のセレクトボックスが表示・送信されていた。
+     - After: アーカイブ済み費目を `(アーカイブ済)` 選択肢として保持するフォールバックを追加し、費目・支払手段の編集UIおよびデフォルト補完を支出明細（`type === "expense"`）限定にして `fromAccountId` も保持するよう修正。
+  2. `src/components/RegisterTab.tsx`:
+     - Before: ドラフト復元時にアーカイブ済み費目IDがそのまま復元されうる状態だった。また収入登録時に支出タブの `amount` 入力値が残っていると `grossAmount` より優先されていた。
+     - After: ドラフト復元時に有効な費目一覧との照合を行い無効な場合はフォールバックさせ、収入登録時の額面計算・メモ生成を `grossAmount || amount` 優先に修正。
+  3. `src/app/api/transactions/route.ts`:
+     - Before: `PUT` / `DELETE` が `expense` 前提の実装になっており、単独の口座間振替（`transfer`）および収入（`income`）明細の編集・削除時に `fromAccountId` / `toAccountId` 残高が再計算・ロールバックされず、`isSettled` も `false` になっていた。
+     - After: `PUT` / `DELETE` で `transfer` / `income` / `expense` の種別ごとに旧残高ロールバックと新残高反映（および `fromAccountId` 更新）を正しく分岐実装。
+  4. `scripts/comprehensive-test.ts`:
+     - Before: システム設定更新ボディや監査ログCSVエンドポイント・RFC 4180引用符付きヘッダー、Node `fetch` の `res.text()` によるUTF-8 BOMストリップにより一部アサーションが古い仕様のままだった。
+     - After: `passwordPolicy` 構造・`/api/admin/logs?format=csv`・引用符付きCSVヘッダーおよび `arrayBuffer()` ベースのUTF-8 BOM検証へ更新。
+  5. `for_agent/04_api_specifications.md`:
+     - Before: 6.6 `POST /api/admin/members` の仕様記述が Phase 7.2（VULN-02）の招待トークン運用反映前だった。
+     - After: パスワードポリシー検証・招待リンク発行・既存別世帯ユーザー保護・複数世帯所属ユーザーのパスワードリセット制限に合わせて仕様書を更新し、改訂履歴を追記。
+- **影響範囲・検証結果:**
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（22ルート生成完了）
+  - 単体テスト全7本（`test-csv-unit.ts`, `test-members-unit.ts`, `test-auth-session-unit.ts`, `test-rate-limit-csrf.ts`, `test-categories-unit.ts`, `test-unit-calculator.ts`, `test-security-unit.ts`）: すべて終了コード 0
+  - `npx tsx scripts/comprehensive-test.ts`: 全15カテゴリ合格・終了コード 0
+
 ## [2026-11-15] 【Phase 11.3】単価×個数 計算補助UIセレクトボックス化に伴う単体テスト拡充・総合ビルド検証
 
 ### 1. 概要

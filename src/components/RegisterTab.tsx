@@ -320,7 +320,11 @@ export function RegisterTab({
       if (p.date) setDate(p.date);
       if (p.shopName !== undefined) setShopName(p.shopName);
       if (p.amount !== undefined) setAmount(p.amount);
-      if (p.categoryId) setCategoryId(p.categoryId);
+      if (p.categoryId) {
+        const isValidCategory =
+          categories.length === 0 || categories.some((c) => c.id === p.categoryId);
+        setCategoryId(isValidCategory ? p.categoryId : categories[0]?.id || "");
+      }
       if (p.paymentMethodId) setPaymentMethodId(p.paymentMethodId);
       if (p.toAccountId) setToAccountId(p.toAccountId);
       if (p.note !== undefined) setNote(p.note);
@@ -328,12 +332,17 @@ export function RegisterTab({
       if (p.taxDeduction !== undefined) setTaxDeduction(p.taxDeduction);
       if (p.batchRows && Array.isArray(p.batchRows)) {
         setBatchRows(
-          p.batchRows.map((r: { categoryId?: string; amount?: string; note?: string }) => ({
-            rowId: createRowId("shop"),
-            categoryId: r.categoryId || "",
-            amount: r.amount || "",
-            note: r.note || "",
-          }))
+          p.batchRows.map((r: { categoryId?: string; amount?: string; note?: string }) => {
+            const isValidRowCat =
+              Boolean(r.categoryId) &&
+              (categories.length === 0 || categories.some((c) => c.id === r.categoryId));
+            return {
+              rowId: createRowId("shop"),
+              categoryId: isValidRowCat ? r.categoryId! : "",
+              amount: r.amount || "",
+              note: r.note || "",
+            };
+          })
         );
       }
       if (p.categoryBatchRows && Array.isArray(p.categoryBatchRows)) {
@@ -609,7 +618,7 @@ export function RegisterTab({
     try {
       let payload;
       if (entryType === "income") {
-        const netAmt = parseInt(amount || grossAmount || "0", 10) - parseInt(taxDeduction || "0", 10);
+        const netAmt = parseInt(grossAmount || amount || "0", 10) - parseInt(taxDeduction || "0", 10);
         payload = [
           {
             type: "income",
@@ -617,7 +626,7 @@ export function RegisterTab({
             amount: netAmt,
             toAccountId: incomeAccountId,
             shopName: shopName || (isTemporaryIncome ? "臨時収入・賞与" : "給与振込"),
-            note: `額面:${grossAmount || amount} 控除:${taxDeduction || 0} ${note}`,
+            note: `額面:${grossAmount || amount || 0} 控除:${taxDeduction || 0} ${note}`,
             tagIds: selectedTagIds,
           },
         ];
