@@ -3,19 +3,27 @@
  * 実行方法: npx tsx scripts/test-unit-calculator.ts
  *
  * 検証対象:
- *   1. 正常系 (正の整数・数値文字列・前後空白トリミング・先頭ゼロ付き数字文字列)
+ *   1. 正常系 (正の整数・31以上の個数・数値文字列・前後空白トリミング・先頭ゼロ付き数字文字列)
  *   2. 境界値 (MIN_AMOUNT=1, MAX_AMOUNT=9,999,999,999, 上限超過オーバーフロー)
  *   3. 異常系 (未入力, 0, 負数, 小数, 非数字, NaN/Infinity, 不正型)
  *   4. UI入力サニタイザー (sanitizeUnitCalcInput)
+ *   5. UI用個数セレクトボックス仕様 (DEFAULT_QUANTITY="1", 範囲 "1"〜"30", 初期計算・利用側統一)
  */
 
+import fs from "fs";
+import path from "path";
 import {
   calculateUnitTotal,
   isValidAmount,
   MIN_AMOUNT,
   MAX_AMOUNT,
 } from "../src/lib/utils";
-import { sanitizeUnitCalcInput } from "../src/components/UnitPriceCalculator";
+import {
+  DEFAULT_QUANTITY,
+  MAX_UI_QUANTITY,
+  UNIT_CALC_QUANTITY_OPTIONS,
+  sanitizeUnitCalcInput,
+} from "../src/components/UnitPriceCalculator";
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -63,6 +71,18 @@ const n5 = calculateUnitTotal(500, "3");
 assert(
   n5.ok && n5.total === 1500,
   "Mixed number and string inputs: 500 * '3' = 1500"
+);
+
+const n31PlusNum = calculateUnitTotal(100, 31);
+assert(
+  n31PlusNum.ok && n31PlusNum.quantity === 31 && n31PlusNum.total === 3100,
+  "Generic calculateUnitTotal accepts quantity >= 31 (100 * 31 = 3100)"
+);
+
+const n31PlusStr = calculateUnitTotal("120", "50");
+assert(
+  n31PlusStr.ok && n31PlusStr.quantity === 50 && n31PlusStr.total === 6000,
+  "Generic calculateUnitTotal accepts string quantity >= 31 ('120' * '50' = 6000)"
 );
 
 // =========================================================
@@ -244,6 +264,90 @@ assert(sanitizeUnitCalcInput("120円") === "120", "Non-digit suffix stripped");
 assert(sanitizeUnitCalcInput("-50.5") === "505", "Minus sign and decimal point stripped");
 assert(sanitizeUnitCalcInput("abcあいう") === "", "Non-numeric text stripped to empty string");
 assert(sanitizeUnitCalcInput("０") === "0", "Full-width zero converted to '0'");
+
+// =========================================================
+// 5. UI用個数セレクトボックス仕様 (1〜30, 初期値 "1")
+// =========================================================
+console.log("\n--- 5. UI Quantity Select Options (1 to 30, Default '1') ---");
+
+assert(DEFAULT_QUANTITY === "1", "DEFAULT_QUANTITY is '1'");
+assert(MAX_UI_QUANTITY === 30, "MAX_UI_QUANTITY is 30");
+assert(
+  UNIT_CALC_QUANTITY_OPTIONS.length === MAX_UI_QUANTITY &&
+    UNIT_CALC_QUANTITY_OPTIONS.length === 30,
+  "UNIT_CALC_QUANTITY_OPTIONS has exactly 30 items"
+);
+assert(
+  UNIT_CALC_QUANTITY_OPTIONS[0] === DEFAULT_QUANTITY,
+  "First UI quantity option matches DEFAULT_QUANTITY ('1')"
+);
+assert(
+  UNIT_CALC_QUANTITY_OPTIONS[UNIT_CALC_QUANTITY_OPTIONS.length - 1] === "30",
+  "Last UI quantity option is '30'"
+);
+
+const expectedOptions = Array.from({ length: 30 }, (_, i) => String(i + 1));
+const optionsMatch = expectedOptions.every(
+  (expected, index) => UNIT_CALC_QUANTITY_OPTIONS[index] === expected
+);
+assert(
+  optionsMatch,
+  "UNIT_CALC_QUANTITY_OPTIONS contains contiguous integer strings '1' through '30'"
+);
+assert(
+  !UNIT_CALC_QUANTITY_OPTIONS.includes("0") &&
+    !UNIT_CALC_QUANTITY_OPTIONS.includes("31"),
+  "UNIT_CALC_QUANTITY_OPTIONS excludes '0' and '31' (31+ is entered directly in amount input)"
+);
+
+const defaultCalc = calculateUnitTotal(250, DEFAULT_QUANTITY);
+assert(
+  defaultCalc.ok && defaultCalc.quantity === 1 && defaultCalc.total === 250,
+  "Immediate calculation with DEFAULT_QUANTITY ('1'): 250 * '1' = 250"
+);
+
+const allOptionsValid = UNIT_CALC_QUANTITY_OPTIONS.every((qty) => {
+  const res = calculateUnitTotal(100, qty);
+  return res.ok && res.quantity === Number(qty) && res.total === 100 * Number(qty);
+});
+assert(
+  allOptionsValid,
+  "All UI quantity options ('1'..'30') calculate valid totals with calculateUnitTotal"
+);
+
+// 静的コード整合性チェック (LF正規化の上で検証)
+const rootDir = path.resolve(__dirname, "..");
+const unitCalcSource = fs
+  .readFileSync(path.join(rootDir, "src/components/UnitPriceCalculator.tsx"), "utf-8")
+  .replace(/\r\n/g, "\n");
+assert(
+  unitCalcSource.includes("<select") &&
+    unitCalcSource.includes("UNIT_CALC_QUANTITY_OPTIONS.map"),
+  "UnitPriceCalculatorPanel renders <select> using UNIT_CALC_QUANTITY_OPTIONS"
+);
+assert(
+  unitCalcSource.includes("useState(DEFAULT_QUANTITY)"),
+  "UnitPriceCalculator initializes internalQuantity with DEFAULT_QUANTITY"
+);
+
+const registerTabSource = fs
+  .readFileSync(path.join(rootDir, "src/components/RegisterTab.tsx"), "utf-8")
+  .replace(/\r\n/g, "\n");
+assert(
+  registerTabSource.includes("quantity: DEFAULT_QUANTITY") &&
+    registerTabSource.includes("useState(DEFAULT_QUANTITY)") &&
+    registerTabSource.includes("setSingleCalcQuantity(DEFAULT_QUANTITY)"),
+  "RegisterTab uses DEFAULT_QUANTITY ('1') for initial and reset quantity states"
+);
+
+const editModalSource = fs
+  .readFileSync(path.join(rootDir, "src/components/EditTransactionModal.tsx"), "utf-8")
+  .replace(/\r\n/g, "\n");
+assert(
+  editModalSource.includes("useState(DEFAULT_QUANTITY)") &&
+    editModalSource.includes("setCalcQuantity(DEFAULT_QUANTITY)"),
+  "EditTransactionModal uses DEFAULT_QUANTITY ('1') for initial and reset quantity state"
+);
 
 console.log("\n=================================================");
 console.log("🎉 ALL UNIT PRICE CALCULATOR UNIT TESTS PASSED!");

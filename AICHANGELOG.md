@@ -2,6 +2,27 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-15] 【Phase 11.3】単価×個数 計算補助UIセレクトボックス化に伴う単体テスト拡充・総合ビルド検証
+
+### 1. 概要
+要件 2-7 改訂および `Plan.md` Phase 11.3 に基づき、単価×個数 計算補助ロジックの単体テストを拡充し、総合ビルドおよび各種単体テストの正常終了を確認した：
+1. **単体テスト拡充 (`scripts/test-unit-calculator.ts`)**:
+   - `calculateUnitTotal` が引き続き `31` 以上の正の整数（数値 `31`、文字列 `"50"` 等）を受け付ける汎用仕様の検証を明示的に追加。
+   - UI用個数セレクトボックス定数・仕様（`DEFAULT_QUANTITY === "1"`, `MAX_UI_QUANTITY === 30`, `UNIT_CALC_QUANTITY_OPTIONS` の `"1"` 〜 `"30"` 連続30件・`"0"` および `"31"` 非含有、初期値 `"1"` での即時計算、`UnitPriceCalculator.tsx` / `RegisterTab.tsx` / `EditTransactionModal.tsx` での `<select>` および `DEFAULT_QUANTITY` 統一利用の静的整合性）を検証するセクションを追加。
+2. **総合検証 (Ground Truth)**:
+   - `npx tsc --noEmit`、`npm run build`、`npx tsx scripts/test-unit-calculator.ts`、`npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認。
+
+### 2. 変更内容 (Before / After)
+- **Before**: `scripts/test-unit-calculator.ts` は `calculateUnitTotal` および `sanitizeUnitCalcInput` のみを検証しており、Phase 11.1〜11.2 で導入した個数セレクトボックス範囲（`"1"` 〜 `"30"`）および初期値・リセット値（`DEFAULT_QUANTITY = "1"`）の自動検証が含まれていなかった。
+- **After**: 31個以上の汎用計算テストおよび UI 個数セレクトボックス範囲・初期値・利用側コンポーネントの統一利用に関する検証を追加し、Phase 11 全体の動作・型・ビルド整合性を自動テストで担保した。
+
+### 3. 変更理由
+- 要件 2-7 改訂（個数 `1〜30` セレクトボックス化・初期値 `1`・31個以上は金額欄直接手入力）と計算ヘルパーの汎用性（1以上の正の整数対応）の双方を回帰テストで継続保証し、Phase 11 を完了させるため。
+
+### 4. 影響範囲
+- `scripts/test-unit-calculator.ts`
+- `Plan.md`, `AICHANGELOG.md`
+
 ## [2026-11-15] 【Phase 11.2】利用側コンポーネントの個数初期値・リセット値の `"1"` 統一 (`RegisterTab.tsx` / `EditTransactionModal.tsx`)
 
 ### 1. 概要

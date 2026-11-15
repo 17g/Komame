@@ -16,7 +16,7 @@
 - [x] Phase 8: 自宅サーバー・ミニPC向け本番環境構築手順書の整備および Docker 本番ビルド構成の不備修正
 - [x] Phase 9: 費目マスターメンテナンス機能の実装（標準12費目保護・追加・編集・並び替え・アーカイブ/復元・監査ログ）
 - [x] Phase 10: 支出金額入力欄の「単価×個数」計算補助機能の実装（要件 2-7）
-- [ ] Phase 11: 単価×個数 計算補助UIの個数入力セレクトボックス化（要件 2-7 改訂）
+- [x] Phase 11: 単価×個数 計算補助UIの個数入力セレクトボックス化（要件 2-7 改訂）
 
 
 ---
@@ -263,7 +263,7 @@
 - [x] **11.2 利用側コンポーネントの個数初期値・リセット値の `"1"` 統一 (`src/components/RegisterTab.tsx` & `src/components/EditTransactionModal.tsx`)**:
   - `RegisterTab.tsx`: `DEFAULT_ROW_CALC_STATE.quantity`、`singleCalcQuantity` の初期値、および `resetCalculators()` 内の `setSingleCalcQuantity("1")` を `"1"` に更新する（`single` / `shop_batch` / `category_batch` 全モード対応）。
   - `EditTransactionModal.tsx`: `calcQuantity` の初期値およびモーダル開閉・対象明細切り替え時のリセット値 `setCalcQuantity("1")` を `"1"` に更新する。
-- [ ] **11.3 単体テスト拡充・総合ビルド検証・変更履歴記録 (`scripts/test-unit-calculator.ts` / `AICHANGELOG.md`)**:
+- [x] **11.3 単体テスト拡充・総合ビルド検証・変更履歴記録 (`scripts/test-unit-calculator.ts` / `AICHANGELOG.md`)**:
   - `scripts/test-unit-calculator.ts`: `calculateUnitTotal` が引き続き `1` 以上の正の整数（31以上含む）を受け付ける汎用仕様のテストを維持しつつ、UI用個数オプション範囲（`1`〜`30`）および初期値 `"1"` に関する検証を追加・実行する。
   - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-unit-calculator.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。
   - `AICHANGELOG.md` に変更内容を記録し、Git コミットを行う。
