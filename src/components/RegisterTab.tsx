@@ -5,6 +5,7 @@ import { CategoryItem, PaymentMethodItem, AccountItem, SuggestionItem, Suggestio
 import { Sparkles, Save, Check, Plus, Trash2, RotateCcw, Clock, AlertTriangle, X, ArrowRightLeft, TrendingUp, Tag } from "lucide-react";
 import { HelpTooltip } from "./HelpTooltip";
 import {
+  DEFAULT_QUANTITY,
   UnitPriceCalculator,
   UnitPriceCalculatorPanel,
   UnitPriceCalculatorToggle,
@@ -55,7 +56,7 @@ interface RowCalcState {
 const DEFAULT_ROW_CALC_STATE: RowCalcState = {
   isOpen: false,
   unitPrice: "",
-  quantity: "",
+  quantity: DEFAULT_QUANTITY,
 };
 
 function buildDraftPayload(params: {
@@ -160,13 +161,13 @@ export function RegisterTab({
   // 単価×個数 計算補助UI状態 (1件登録 / 各一括行独立管理)
   const [singleCalcOpen, setSingleCalcOpen] = useState(false);
   const [singleCalcUnitPrice, setSingleCalcUnitPrice] = useState("");
-  const [singleCalcQuantity, setSingleCalcQuantity] = useState("");
+  const [singleCalcQuantity, setSingleCalcQuantity] = useState(DEFAULT_QUANTITY);
   const [rowCalcStates, setRowCalcStates] = useState<Record<string, RowCalcState>>({});
 
   const resetCalculators = () => {
     setSingleCalcOpen(false);
     setSingleCalcUnitPrice("");
-    setSingleCalcQuantity("");
+    setSingleCalcQuantity(DEFAULT_QUANTITY);
     setRowCalcStates({});
   };
 

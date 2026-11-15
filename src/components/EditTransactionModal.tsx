@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { TransactionItem, CategoryItem, PaymentMethodItem, TagItem } from "@/types";
 import { X, Check, Trash2, Edit3, Tag, Plus } from "lucide-react";
 import { HelpTooltip } from "./HelpTooltip";
-import { UnitPriceCalculator } from "./UnitPriceCalculator";
+import { DEFAULT_QUANTITY, UnitPriceCalculator } from "./UnitPriceCalculator";
 
 interface EditTransactionModalProps {
   transaction: TransactionItem | null;
@@ -42,7 +42,7 @@ export function EditTransactionModal({
   const [isDeleting, setIsDeleting] = useState(false);
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcUnitPrice, setCalcUnitPrice] = useState("");
-  const [calcQuantity, setCalcQuantity] = useState("");
+  const [calcQuantity, setCalcQuantity] = useState(DEFAULT_QUANTITY);
 
   useEffect(() => {
     setAvailableTags(tags);
@@ -51,7 +51,7 @@ export function EditTransactionModal({
   useEffect(() => {
     setCalcOpen(false);
     setCalcUnitPrice("");
-    setCalcQuantity("");
+    setCalcQuantity(DEFAULT_QUANTITY);
   }, [isOpen, transaction?.id]);
 
   useEffect(() => {

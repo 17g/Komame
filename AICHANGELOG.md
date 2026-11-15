@@ -2,6 +2,27 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-15] 【Phase 11.2】利用側コンポーネントの個数初期値・リセット値の `"1"` 統一 (`RegisterTab.tsx` / `EditTransactionModal.tsx`)
+
+### 1. 概要
+要件 2-7 改訂および `Plan.md` Phase 11.2 に基づき、単価×個数 計算補助UIを利用する全コンポーネントの個数初期値およびリセット値を `DEFAULT_QUANTITY` (`"1"`) に統一した：
+1. **記帳タブ (`src/components/RegisterTab.tsx`)**:
+   - `UnitPriceCalculator.tsx` から `DEFAULT_QUANTITY` (`"1"`) をインポートし、`DEFAULT_ROW_CALC_STATE.quantity`（`shop_batch` / `category_batch` 行の初期状態・リセット状態）、`singleCalcQuantity` の初期値、および `resetCalculators()` 内の `setSingleCalcQuantity(DEFAULT_QUANTITY)` をすべて `"1"` に統一。
+2. **明細編集モーダル (`src/components/EditTransactionModal.tsx`)**:
+   - `DEFAULT_QUANTITY` (`"1"`) をインポートし、`calcQuantity` の初期値およびモーダル開閉・対象明細切り替え時（`isOpen`, `transaction?.id` の変化時）のリセット値 `setCalcQuantity(DEFAULT_QUANTITY)` を `"1"` に統一。
+
+### 2. 変更内容 (Before / After)
+- **Before**: `RegisterTab.tsx`（`DEFAULT_ROW_CALC_STATE.quantity`, `singleCalcQuantity`, `resetCalculators()`）および `EditTransactionModal.tsx`（`calcQuantity` 初期値・リセット処理）の個数状態が `""`（空文字）のまま保持されており、親側の状態値とセレクトボックス初期値 `"1"` の管理にズレが生じる可能性があった。
+- **After**: `UnitPriceCalculator` 側の `DEFAULT_QUANTITY` (`"1"`) を参照して全モード（1件登録・同店舗一括・同費目一括・明細編集モーダル）の個数初期値・リセット値を `"1"` に統一した。
+
+### 3. 変更理由
+- Phase 11.1 でセレクトボックス化された個数UIの初期値 `"1"` と親コンポーネント側の制御ステートを完全に一致させ、登録完了・ドラフト復元・モーダル再表示の後も一貫して `単価 × 1` の即時計算が動作するようにするため。
+
+### 4. 影響範囲
+- `src/components/RegisterTab.tsx`
+- `src/components/EditTransactionModal.tsx`
+- `Plan.md`, `AICHANGELOG.md`
+
 ## [2026-11-15] 【Phase 11.1】`UnitPriceCalculator` コンポーネントの個数UIセレクトボックス化 (`UnitPriceCalculator.tsx` / `i18n.ts`)
 
 ### 1. 概要
