@@ -2,6 +2,39 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-15] 【Phase 9】費目マスターメンテナンス機能の実装
+
+### 1. 概要
+`for_agent/` 配下の仕様書改訂に基づき、管理タブ（`AdminTab`）内に「費目マスター管理」機能および `/api/categories` の完全な CRUD・並び替え・アーカイブ/復元 API を実装した：
+1. **DB スキーマ・マイグレーション・シード拡張 (`src/db/schema/tenant.ts`, `src/db/migrate.ts`, `src/db/seed.ts`, `src/app/api/auth/signup/route.ts`, `src/types/index.ts`)**:
+   - `categories` テーブルに `is_system`（`BOOLEAN DEFAULT FALSE NOT NULL`）カラムを追加し、初期プリセット12費目を保護対象として識別。
+   - 既存テナントスキーマ向けに `ADD COLUMN IF NOT EXISTS is_system` および既存標準12費目への `is_system = TRUE` バックフィルを `migrate.ts` に実装。
+2. **バリデーション・保護ロジック & `/api/categories` API 完全実装 (`src/lib/category-helpers.ts`, `src/app/api/categories/route.ts`)**:
+   - `GET`: `includeArchived=true`（管理者限定）対応、`sortOrder ASC` 順での返却。
+   - `POST`: 家庭管理者（`admin`）限定、重複名・文字数・カラー検証、末尾 `sortOrder` 自動採番、`audit_logs` 記録。
+   - `PUT`: 家庭管理者（`admin`）限定、編集（`update`: 標準12費目保護）・全費目並び順一括更新（`reorder`: 標準12費目含む）・アーカイブ復元（`restore`）、`audit_logs` 記録。
+   - `DELETE`: 家庭管理者（`admin`）限定、論理削除アーカイブ（`isArchived = true`、標準12費目保護）、`audit_logs` 記録。
+3. **管理タブ UI & 多言語対応 (`src/components/AdminTab.tsx`, `src/components/CategoryEditModal.tsx`, `src/lib/i18n.ts`, `src/app/page.tsx`)**:
+   - 管理タブ内に「費目マスター管理」セクションを新設し、標準費目保護バッジ表示、全費目の上下並び替え、追加・編集モーダル、アーカイブ・復元トグル一覧を実装。変更時は `onRefreshAll()` で記帳・検索・ダッシュボードへ即時反映。
+4. **仕様書同期・単体テスト追加 (`for_agent/*`, `scripts/test-categories-unit.ts`)**:
+   - `for_agent/01, 03, 04, 05, 06` を最新仕様に同期し、費目バリデーション・標準12費目保護ロジックの単体テスト `scripts/test-categories-unit.ts` を追加・実行。
+
+### 2. 変更内容 (Before / After)
+- **Before**: 初期プリセット12種の自動投入と `GET` / `POST /api/categories`（権限チェック・重複検証・監査ログなし）のみが存在し、UI上から費目の追加・編集・並び替え・アーカイブ・復元ができなかった。
+- **After**: 家庭管理者のみが管理タブから安全に費目の追加・編集・全費目並び替え・アーカイブ・復元を行えるようになり、標準12費目は編集・アーカイブから保護され、すべての操作が `audit_logs` に記録されるようになった。
+
+### 3. 変更理由
+- ユーザーが家計簿の運用スタイルに合わせてカスタム費目を追加・整理・表示順調整できるようにしつつ、標準費目の誤削除・誤変更や一般メンバーによるマスタ改変を防止するため。
+
+### 4. 影響範囲
+- `for_agent/01_requirements_specification.md`, `for_agent/03_database_design.md`, `for_agent/04_api_specifications.md`, `for_agent/05_ui_ux_and_design_system.md`, `for_agent/06_operation_and_testing_guide.md`
+- `src/db/schema/tenant.ts`, `src/db/migrate.ts`, `src/db/seed.ts`, `src/types/index.ts`
+- `src/lib/category-helpers.ts` (新規), `src/lib/i18n.ts`
+- `src/app/api/auth/signup/route.ts`, `src/app/api/categories/route.ts`, `src/app/page.tsx`
+- `src/components/AdminTab.tsx`, `src/components/CategoryEditModal.tsx` (新規)
+- `scripts/test-categories-unit.ts` (新規)
+- `Plan.md`, `AICHANGELOG.md`
+
 ## [2026-11-14] 【Hotfix】Docker 本番ビルド時の `next/font/google` エラー解消（@fontsource セルフホスト化）
 
 ### 1. 概要

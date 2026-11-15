@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { AuditLogItem, CheckpointItem, MemberItem, SystemSettingsConfig } from "@/types";
+import { AuditLogItem, CategoryItem, CheckpointItem, MemberItem, SystemSettingsConfig } from "@/types";
 import {
   History,
   Download,
@@ -19,23 +19,38 @@ import {
   FileSpreadsheet,
   FileJson,
   Eye,
+  Tag,
+  Plus,
+  ArrowUp,
+  ArrowDown,
+  Edit2,
+  Archive,
 } from "lucide-react";
 import { RevertModal } from "./RevertModal";
 import { CsvImportModal } from "./CsvImportModal";
 import { InviteMemberModal } from "./InviteMemberModal";
 import { ResetPasswordModal } from "./ResetPasswordModal";
 import { AuditLogDetailModal } from "./AuditLogDetailModal";
+import { CategoryEditModal } from "./CategoryEditModal";
+import { isSystemProtectedCategory } from "@/lib/category-helpers";
 import { useTranslation } from "@/lib/i18n";
 
 interface AdminTabProps {
+  userRole?: "admin" | "member";
   onTriggerToast: (msg: string) => void;
   onRefreshAll: () => void;
 }
 
-export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
+export function AdminTab({ userRole = "admin", onTriggerToast, onRefreshAll }: AdminTabProps) {
   const { t } = useTranslation();
+  const isAdmin = userRole === "admin";
 
   const [members, setMembers] = useState<MemberItem[]>([]);
+  const [categoriesList, setCategoriesList] = useState<CategoryItem[]>([]);
+  const [showArchivedCategories, setShowArchivedCategories] = useState(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<CategoryItem | null>(null);
+  const [isReorderingCategories, setIsReorderingCategories] = useState(false);
   const [checkpoints, setCheckpoints] = useState<CheckpointItem[]>([]);
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
 
@@ -67,11 +82,13 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
 
   const fetchAdminData = async () => {
     try {
-      const [membersRes, cpRes, logRes, settingsRes] = await Promise.all([
+      const catUrl = isAdmin ? "/api/categories?includeArchived=true" : "/api/categories";
+      const [membersRes, cpRes, logRes, settingsRes, catRes] = await Promise.all([
         fetch("/api/admin/members"),
         fetch("/api/admin/checkpoints"),
         fetch("/api/admin/logs"),
         fetch("/api/admin/settings"),
+        fetch(catUrl),
       ]);
 
       if (membersRes.ok) {
@@ -91,6 +108,10 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
         if (data.settings) {
           setSettings(data.settings);
         }
+      }
+      if (catRes.ok) {
+        const data = await catRes.json();
+        setCategoriesList(data.categories || []);
       }
     } catch {
       // ignore
@@ -272,6 +293,100 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
     }
   };
 
+  const activeCategories = categoriesList.filter((c) => !c.isArchived);
+  const archivedCategories = categoriesList.filter((c) => c.isArchived);
+
+  const handleMoveCategory = async (index: number, direction: -1 | 1) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= activeCategories.length || isReorderingCategories) {
+      return;
+    }
+
+    const reorderedActive = [...activeCategories];
+    const [moved] = reorderedActive.splice(index, 1);
+    reorderedActive.splice(targetIndex, 0, moved);
+
+    const orderedIds = [
+      ...reorderedActive.map((c) => c.id),
+      ...archivedCategories.map((c) => c.id),
+    ];
+
+    setIsReorderingCategories(true);
+    try {
+      const res = await fetch("/api/categories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reorder",
+          orderedIds,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCategoriesList([...reorderedActive, ...archivedCategories]);
+        onTriggerToast(`✓ ${data.message || "費目の並び順を更新しました"}`);
+        await fetchAdminData();
+        onRefreshAll();
+      } else {
+        onTriggerToast(data.error || "並び順の更新に失敗しました");
+      }
+    } catch {
+      onTriggerToast("通信エラーが発生しました");
+    } finally {
+      setIsReorderingCategories(false);
+    }
+  };
+
+  const handleArchiveCategory = async (cat: CategoryItem) => {
+    if (isSystemProtectedCategory(cat)) return;
+    if (
+      !window.confirm(
+        `費目「${cat.name}」をアーカイブしますか？\n（新規明細の選択肢から非表示になりますが、過去の明細・グラフ表示は維持されます）`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/categories?id=${encodeURIComponent(cat.id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (res.ok) {
+        onTriggerToast(`✓ ${data.message || "費目をアーカイブしました"}`);
+        await fetchAdminData();
+        onRefreshAll();
+      } else {
+        onTriggerToast(data.error || "アーカイブに失敗しました");
+      }
+    } catch {
+      onTriggerToast("通信エラーが発生しました");
+    }
+  };
+
+  const handleRestoreCategory = async (cat: CategoryItem) => {
+    try {
+      const res = await fetch("/api/categories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "restore",
+          id: cat.id,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        onTriggerToast(`✓ ${data.message || "費目を復元しました"}`);
+        await fetchAdminData();
+        onRefreshAll();
+      } else {
+        onTriggerToast(data.error || "復元に失敗しました");
+      }
+    } catch {
+      onTriggerToast("通信エラーが発生しました");
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 pb-20">
       {/* 家族メンバー管理 セクション */}
@@ -420,6 +535,183 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
             ))
           )}
         </div>
+      </div>
+
+      {/* 費目マスター管理 セクション */}
+      <div className="p-4 bg-app-surface border border-border rounded-xl shadow-sm">
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-content-main">
+            <Tag className="w-4 h-4 text-primary" />
+            <span>{t.admin.categoriesSectionTitle}</span>
+          </div>
+
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingCategory(null);
+                setIsCategoryModalOpen(true);
+              }}
+              className="py-1.5 px-3 bg-primary text-white text-xs font-bold rounded-lg shadow-xs hover:bg-primary-hover transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{t.admin.addCategoryBtn}</span>
+            </button>
+          )}
+        </div>
+
+        <p className="text-[11px] text-content-muted mb-3 leading-relaxed">
+          {t.admin.categoriesSectionDesc}
+        </p>
+
+        {!isAdmin && (
+          <div className="mb-3 p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[11px] text-amber-700 dark:text-amber-300 flex items-center gap-1.5">
+            <Lock className="w-3.5 h-3.5 shrink-0" />
+            <span>{t.admin.categoryAdminOnlyNotice}</span>
+          </div>
+        )}
+
+        {/* 有効な費目一覧 */}
+        <div className="space-y-1.5">
+          {activeCategories.map((cat, idx) => {
+            const isProtected = isSystemProtectedCategory(cat);
+            const catColor = cat.color || "#2E7D32";
+            return (
+              <div
+                key={cat.id}
+                className="p-2.5 bg-app-subtle border border-border rounded-xl flex items-center justify-between gap-2"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-base shrink-0"
+                    style={{
+                      backgroundColor: `${catColor}20`,
+                      border: `1px solid ${catColor}40`,
+                    }}
+                  >
+                    {cat.icon || "📁"}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: catColor }}
+                      />
+                      <span className="text-xs font-bold text-content-main truncate">
+                        {cat.name}
+                      </span>
+                      {isProtected && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.2 rounded bg-app-surface border border-border text-content-muted shrink-0">
+                          <Lock className="w-2.5 h-2.5" />
+                          <span>{t.admin.systemCategoryBadge}</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {isAdmin && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      disabled={idx === 0 || isReorderingCategories}
+                      onClick={() => handleMoveCategory(idx, -1)}
+                      title={t.admin.moveUpBtn}
+                      className="p-1.5 rounded-lg border border-border bg-app-surface text-content-muted hover:text-content-main hover:bg-border/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    >
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={idx === activeCategories.length - 1 || isReorderingCategories}
+                      onClick={() => handleMoveCategory(idx, 1)}
+                      title={t.admin.moveDownBtn}
+                      className="p-1.5 rounded-lg border border-border bg-app-surface text-content-muted hover:text-content-main hover:bg-border/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    >
+                      <ArrowDown className="w-3.5 h-3.5" />
+                    </button>
+
+                    {!isProtected && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCategory(cat);
+                            setIsCategoryModalOpen(true);
+                          }}
+                          title={t.admin.editCategoryBtn}
+                          className="px-2 py-1 text-[11px] font-bold rounded-lg border border-border bg-app-surface text-content-main hover:bg-border/60 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          <span className="hidden sm:inline">{t.admin.editCategoryBtn}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleArchiveCategory(cat)}
+                          title={t.admin.archiveCategoryBtn}
+                          className="px-2 py-1 text-[11px] font-bold rounded-lg border border-danger/30 text-danger hover:bg-danger-light transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <Archive className="w-3 h-3" />
+                          <span className="hidden sm:inline">{t.admin.archiveCategoryBtn}</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* アーカイブ済み費目表示トグル & 一覧 */}
+        {isAdmin && (
+          <div className="mt-3 pt-3 border-t border-border/60">
+            <button
+              type="button"
+              onClick={() => setShowArchivedCategories((prev) => !prev)}
+              className="text-[11px] font-bold text-content-muted hover:text-primary transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              <Archive className="w-3.5 h-3.5" />
+              <span>
+                {showArchivedCategories
+                  ? t.admin.hideArchivedCategories
+                  : `${t.admin.showArchivedCategories} (${archivedCategories.length})`}
+              </span>
+            </button>
+
+            {showArchivedCategories && (
+              <div className="mt-2 space-y-1.5">
+                {archivedCategories.length === 0 ? (
+                  <div className="p-3 bg-app-subtle rounded-lg text-center text-xs text-content-muted">
+                    {t.admin.noArchivedCategories}
+                  </div>
+                ) : (
+                  archivedCategories.map((cat) => (
+                    <div
+                      key={cat.id}
+                      className="p-2.5 bg-app-subtle/60 border border-border/60 rounded-xl flex items-center justify-between gap-2 opacity-80"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base">{cat.icon || "📁"}</span>
+                        <span className="text-xs font-medium text-content-muted line-through truncate">
+                          {cat.name}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRestoreCategory(cat)}
+                        className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>{t.admin.restoreCategoryBtn}</span>
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* システム設定 & セキュリティポリシー セクション */}
@@ -913,6 +1205,24 @@ export function AdminTab({ onTriggerToast, onRefreshAll }: AdminTabProps) {
         log={selectedLogDetail}
         isOpen={!!selectedLogDetail}
         onClose={() => setSelectedLogDetail(null)}
+      />
+
+      {/* 費目追加・編集モーダル */}
+      <CategoryEditModal
+        isOpen={isCategoryModalOpen}
+        editingCategory={editingCategory}
+        onClose={() => {
+          setIsCategoryModalOpen(false);
+          setEditingCategory(null);
+        }}
+        onSuccess={(msg) => {
+          onTriggerToast(`✓ ${msg}`);
+          fetchAdminData();
+          onRefreshAll();
+        }}
+        onError={(msg) => {
+          onTriggerToast(msg);
+        }}
       />
     </div>
 

@@ -470,7 +470,11 @@ export default function Home() {
           )}
 
           {activeTab === "admin" && (
-            <AdminTab onTriggerToast={triggerToast} onRefreshAll={fetchAllData} />
+            <AdminTab
+              userRole={user.role}
+              onTriggerToast={triggerToast}
+              onRefreshAll={fetchAllData}
+            />
           )}
         </main>
 

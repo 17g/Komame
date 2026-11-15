@@ -355,7 +355,66 @@
 
 ---
 
+## 9. 費目マスター管理 API (`/api/categories`)
+
+### 9.1 `GET /api/categories`
+- **概要**: 費目マスター一覧の取得。`sortOrder ASC` 順で返却。
+- **クエリパラメータ**:
+  - `includeArchived?: "true"`: `"true"` 指定かつ家庭管理者（`admin`）の場合はアーカイブ済み費目も含めて全件返却（管理画面用）。未指定または一般メンバー時は `isArchived === false` のみ返却。
+- **レスポンス (200 OK)**:
+  ```json
+  {
+    "categories": [
+      {
+        "id": "cat_food_hh_xxx",
+        "name": "食費 (食材・自炊)",
+        "parentId": null,
+        "icon": "🥦",
+        "color": "#2E7D32",
+        "sortOrder": 1,
+        "isArchived": false,
+        "isSystem": true
+      }
+    ]
+  }
+  ```
+
+### 9.2 `POST /api/categories` ※家庭管理者 (admin) 限定
+- **概要**: ユーザーカスタム費目の新規追加（`isSystem: false`）。
+- **リクエストボディ**: `{ "name": string, "icon"?: string, "color"?: string }`
+- **バリデーション & ロジック**:
+  - 家庭管理者権限（`session.role === "admin"`）を検証（一般メンバーは `403 Forbidden`）。
+  - `name` の前後空白トリム・必須チェック（1〜100文字）・既存未アーカイブ費目との名称重複チェック。
+  - `sortOrder` は既存の最大値 + 1 を設定。
+  - 監査ログ（`action: "CREATE", entityType: "category"`）をトランザクション内で記録。
+
+### 9.3 `PUT /api/categories` ※家庭管理者 (admin) 限定
+- **概要**: 費目情報の編集、全費目の並び順一括更新、またはアーカイブ済み費目の復元。
+- **モード 1: 費目情報編集 (`action: "update"` または省略時)**
+  - リクエストボディ: `{ "action"?: "update", "id": string, "name": string, "icon"?: string, "color"?: string }`
+  - `isSystem === true`（標準12費目）の場合は編集不可（`403 Forbidden`）。
+  - 変更後の費目名・アイコン・カラーは、`transactions` の `categoryId` 結合により過去の明細・グラフにも即時反映される。
+  - 監査ログ（`action: "UPDATE", entityType: "category"`）に `beforeDataJson` / `afterDataJson` を記録。
+- **モード 2: 並び順一括更新 (`action: "reorder"`)**
+  - リクエストボディ: `{ "action": "reorder", "orderedIds": string[] }`
+  - 標準12費目（`isSystem === true`）を含む全費目を対象に、`orderedIds` の配列順に従って `sortOrder` を `db.transaction()` 内で一括更新。
+  - 監査ログ（`action: "UPDATE", entityType: "category"`）を記録。
+- **モード 3: アーカイブ復元 (`action: "restore"`)**
+  - リクエストボディ: `{ "action": "restore", "id": string }`
+  - `isSystem === true` は対象外（`403 Forbidden`）。対象費目の `isArchived` を `false` に更新し、監査ログ（`action: "UPDATE", entityType: "category"`）を記録。
+
+### 9.4 `DELETE /api/categories?id=...` ※家庭管理者 (admin) 限定
+- **概要**: ユーザー追加費目の論理削除（アーカイブ：`isArchived = true`）。
+- **バリデーション & ロジック**:
+  - 家庭管理者権限（`session.role === "admin"`）を検証。
+  - `isSystem === true`（標準12費目）の場合はアーカイブ不可（`403 Forbidden`）。
+  - 論理削除のため過去の `transactions` との `categoryId` 紐付けは維持され、過去の明細・集計グラフの表示はそのまま保持される。新規明細登録の選択肢からは除外される。
+  - 監査ログ（`action: "DELETE", entityType: "category"`）を記録。
+
+---
+
 ## 改訂履歴
+- **2026-11-15**: 第9章「費目マスター管理 API (`/api/categories`)」を追加（管理者限定の作成・編集・全費目並び替え・アーカイブ/復元・標準12費目保護・監査ログ記録仕様）。
 - **2026-10-18**: 第8章「API セキュリティ & バリデーション仕様」を追加（金額・残高境界値、レートリミット429応答、トランザクション原子性、CSV数式インジェクション防御、CSRF Origin検証）。
 - **2026-10-17**: `GET /api/admin/logs` の仕様を拡張（ユーザー、操作種別、期間の条件付き絞り込み、操作者メールアドレスマッピング、RFC 4180準拠UTF-8 BOM付きCSVおよびJSON形式でのエクスポートダウンロード）。
 - **2026-10-17**: `GET/PUT /api/admin/settings` の仕様を追加（通貨記号、日付表示形式、最小文字数・英数記号必須等のパスワード強度ポリシー動的設定・保存・監査ログ・認証検証連動）。

@@ -129,18 +129,18 @@ export async function POST(req: NextRequest) {
     // 8. テナント専用DBへ日本の標準費目マスターを初期シード
     const { db, schema } = getTenantDb(schemaName);
     const standardCategories = [
-      { id: `cat_food_${householdId}`, name: "食費 (食材・自炊)", icon: "🥦", color: "#2E7D32", sortOrder: 1 },
-      { id: `cat_dining_${householdId}`, name: "外食・カフェ", icon: "☕", color: "#D97706", sortOrder: 2 },
-      { id: `cat_daily_${householdId}`, name: "日用品・生活雑貨", icon: "🧻", color: "#059669", sortOrder: 3 },
-      { id: `cat_house_${householdId}`, name: "住居費 (家賃・住宅ローン)", icon: "🏠", color: "#4F46E5", sortOrder: 4 },
-      { id: `cat_util_${householdId}`, name: "水道光熱費", icon: "⚡", color: "#0284C7", sortOrder: 5 },
-      { id: `cat_comm_${householdId}`, name: "通信費 (スマホ・ネット)", icon: "📱", color: "#7C3AED", sortOrder: 6 },
-      { id: `cat_trans_${householdId}`, name: "交通費 (電車・ガソリン)", icon: "🚆", color: "#2563EB", sortOrder: 7 },
-      { id: `cat_fun_${householdId}`, name: "教養・娯楽・趣味", icon: "🎮", color: "#DB2777", sortOrder: 8 },
-      { id: `cat_med_${householdId}`, name: "医療・保険", icon: "💊", color: "#DC2626", sortOrder: 9 },
-      { id: `cat_cloth_${householdId}`, name: "衣服・美容", icon: "👕", color: "#EA580C", sortOrder: 10 },
-      { id: `cat_spec_${householdId}`, name: "特別費 (旅行・冠婚葬祭)", icon: "🎁", color: "#9333EA", sortOrder: 11 },
-      { id: `cat_invest_${householdId}`, name: "貯蓄・投資 (NISA等)", icon: "🌱", color: "#16A34A", sortOrder: 12 },
+      { id: `cat_food_${householdId}`, name: "食費 (食材・自炊)", icon: "🥦", color: "#2E7D32", sortOrder: 1, isSystem: true },
+      { id: `cat_dining_${householdId}`, name: "外食・カフェ", icon: "☕", color: "#D97706", sortOrder: 2, isSystem: true },
+      { id: `cat_daily_${householdId}`, name: "日用品・生活雑貨", icon: "🧻", color: "#059669", sortOrder: 3, isSystem: true },
+      { id: `cat_house_${householdId}`, name: "住居費 (家賃・住宅ローン)", icon: "🏠", color: "#4F46E5", sortOrder: 4, isSystem: true },
+      { id: `cat_util_${householdId}`, name: "水道光熱費", icon: "⚡", color: "#0284C7", sortOrder: 5, isSystem: true },
+      { id: `cat_comm_${householdId}`, name: "通信費 (スマホ・ネット)", icon: "📱", color: "#7C3AED", sortOrder: 6, isSystem: true },
+      { id: `cat_trans_${householdId}`, name: "交通費 (電車・ガソリン)", icon: "🚆", color: "#2563EB", sortOrder: 7, isSystem: true },
+      { id: `cat_fun_${householdId}`, name: "教養・娯楽・趣味", icon: "🎮", color: "#DB2777", sortOrder: 8, isSystem: true },
+      { id: `cat_med_${householdId}`, name: "医療・保険", icon: "💊", color: "#DC2626", sortOrder: 9, isSystem: true },
+      { id: `cat_cloth_${householdId}`, name: "衣服・美容", icon: "👕", color: "#EA580C", sortOrder: 10, isSystem: true },
+      { id: `cat_spec_${householdId}`, name: "特別費 (旅行・冠婚葬祭)", icon: "🎁", color: "#9333EA", sortOrder: 11, isSystem: true },
+      { id: `cat_invest_${householdId}`, name: "貯蓄・投資 (NISA等)", icon: "🌱", color: "#16A34A", sortOrder: 12, isSystem: true },
     ];
 
     await db.insert(schema.categories).values(standardCategories);

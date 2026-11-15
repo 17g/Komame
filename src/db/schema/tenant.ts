@@ -63,6 +63,7 @@ export function createTenantSchema(schemaName: string) {
     icon: varchar("icon", { length: 50 }),
     color: varchar("color", { length: 20 }),
     sortOrder: integer("sort_order").default(0).notNull(),
+    isSystem: boolean("is_system").default(false).notNull(), // 標準12費目保護フラグ
     isArchived: boolean("is_archived").default(false).notNull(), // 論理削除 (アーカイブ)
   });
 

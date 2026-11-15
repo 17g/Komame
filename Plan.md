@@ -14,6 +14,7 @@
 - [x] Phase 6: アプリケーション・DBのポート変更 (3080 / 5532) および README.md 作成・仕様書同期
 - [x] Phase 7: ペネトレーションテスト結果に基づく脆弱性改修・セキュリティ強化計画 (VULN-01〜VULN-12)
 - [x] Phase 8: 自宅サーバー・ミニPC向け本番環境構築手順書の整備および Docker 本番ビルド構成の不備修正
+- [x] Phase 9: 費目マスターメンテナンス機能の実装（標準12費目保護・追加・編集・並び替え・アーカイブ/復元・監査ログ）
 
 
 ---
@@ -198,5 +199,31 @@
     4. 自宅サーバー＋独自ドメイン HTTPS 化手順（パターンA: ポート開放不要の Cloudflare Tunnel 構成、パターンB: Nginx リバースプロキシ + Let's Encrypt 構成、パターンC: Tailscale Serve / Funnel による VPN 内 HTTPS 構成）※CSRF `Origin`/`Host`/`X-Forwarded-*` ヘッダーおよび `Secure` Cookie の注意点を含む
     5. DB バックアップ・リストア（`pg_dump` / `psql`）、アップデート手順、死活監視・ログ確認・トラブルシューティング
 - [x] **8.3 ビルド検証・単体テスト実行・変更履歴記録 (`AICHANGELOG.md`)**
+
+---
+
+## Phase 9: 費目マスターメンテナンス機能の実装
+
+- [x] **9.1 DBスキーマ・マイグレーション・初期シード・型定義の更新**:
+  - `src/db/schema/tenant.ts`: `categories` テーブルに `isSystem` (`BOOLEAN DEFAULT FALSE NOT NULL`) カラムを追加。
+  - `src/db/migrate.ts`: 新規作成 DDL および既存テナントへの `ADD COLUMN IF NOT EXISTS is_system` と標準12費目への `is_system = TRUE` バックフィルを追加。
+  - `src/db/seed.ts` & `src/app/api/auth/signup/route.ts`: 標準12費目の初期投入時に `isSystem: true` を設定。
+  - `src/types/index.ts`: `CategoryItem` に `isSystem?: boolean` を追加。
+- [x] **9.2 費目バリデーション・保護ロジックおよび `/api/categories` API の完全実装**:
+  - `src/lib/category-helpers.ts`: 入力検証（費目名・カラー・アイコン）および標準12費目保護判定（`isSystemProtectedCategory`）を実装。
+  - `src/app/api/categories/route.ts`:
+    - `GET`: `includeArchived=true`（管理者限定）対応、`sortOrder ASC` 順返却。
+    - `POST`: 家庭管理者（`admin`）限定、重複チェック、末尾 `sortOrder` 採番、監査ログ記録。
+    - `PUT`: 家庭管理者（`admin`）限定、編集（`update`: 標準12費目保護）、全費目並び順一括更新（`reorder`: 標準12費目含む）、アーカイブ復元（`restore`）、監査ログ記録。
+    - `DELETE`: 家庭管理者（`admin`）限定、論理削除アーカイブ（`isArchived = true`、標準12費目保護）、監査ログ記録。
+- [x] **9.3 管理タブ UI (`AdminTab.tsx` / `CategoryEditModal.tsx`) & 多言語対応 (`i18n.ts`) の実装**:
+  - `src/lib/i18n.ts`: 日英の費目マスター管理用翻訳キーを追加。
+  - `src/components/CategoryEditModal.tsx`: 新規追加・編集兼用モーダル（費目名・アイコン絵文字パレット・カラーピッカー・プレビュー）。
+  - `src/components/AdminTab.tsx` & `src/app/page.tsx`: 「費目マスター管理」セクション（標準費目保護バッジ、上下並び替え操作、追加/編集/アーカイブ/復元、アプリ全体への即時反映）。
+- [x] **9.4 単体テスト作成・総合検証・変更履歴記録**:
+  - `scripts/test-categories-unit.ts` の作成・実行。
+  - `for_agent/06_operation_and_testing_guide.md` への検証コマンド追記。
+  - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-security-unit.ts` の全パス確認。
+  - `AICHANGELOG.md` への変更履歴記録。
 
 

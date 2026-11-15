@@ -60,6 +60,9 @@ npx tsx scripts/test-auth-session-unit.ts
 # レートリミッター & CSRF Origin 検証単体テスト
 npx tsx scripts/test-rate-limit-csrf.ts
 
+# 費目マスター バリデーション & 標準12費目保護単体テスト
+npx tsx scripts/test-categories-unit.ts
+
 # セキュリティ単体テスト & 静的コード検査 (スキーマ検証、CSVインジェクション無害化、金額境界値、レートリミッター、raw.unsafeゼロ件検査)
 npx tsx scripts/test-security-unit.ts
 ```
@@ -103,6 +106,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec app np
 
 ## 4. 改訂履歴
 
+- **2026-11-15**: 単体テスト一覧に費目マスター バリデーション & 標準12費目保護単体テスト（`test-categories-unit.ts`）を追加。
 - **2026-11-14**: 本番用 Docker ビルド構成（`next.config.ts` の `output: "standalone"`、`.dockerignore`、`Dockerfile` のマイグレーション対応、`.env.production.example`）を整備し、本番環境構築手順書（`docs/environment_setup_guide.md`）との連携を更新。
 - **2026-10-18**: 単体テストに認証セッション検証（`test-auth-session-unit.ts`）、レートリミッター・CSRF検証（`test-rate-limit-csrf.ts`）、セキュリティ単体テスト & 静的コード検査（`test-security-unit.ts`）を追加。
 - **2026-10-18**: 開発・本番環境のポート番号をアプリケーション: `3080`、PostgreSQL: `5532` に統一改訂し、アクセスURLおよび検証前提条件を更新。

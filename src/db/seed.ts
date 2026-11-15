@@ -88,9 +88,9 @@ export async function seedDatabase() {
 
     for (const cat of categories) {
       await sql.unsafe(`
-        INSERT INTO "${schemaName}".categories (id, name, icon, color, sort_order, is_archived)
-        VALUES ('${cat.id}', '${cat.name}', '${cat.icon}', '${cat.color}', ${cat.sort}, FALSE)
-        ON CONFLICT (id) DO NOTHING
+        INSERT INTO "${schemaName}".categories (id, name, icon, color, sort_order, is_system, is_archived)
+        VALUES ('${cat.id}', '${cat.name}', '${cat.icon}', '${cat.color}', ${cat.sort}, TRUE, FALSE)
+        ON CONFLICT (id) DO UPDATE SET is_system = TRUE
       `);
     }
 

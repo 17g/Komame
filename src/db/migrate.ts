@@ -125,6 +125,7 @@ export async function createTenantTables(schemaName: string) {
       icon VARCHAR(50),
       color VARCHAR(20),
       sort_order INT DEFAULT 0 NOT NULL,
+      is_system BOOLEAN DEFAULT FALSE NOT NULL,
       is_archived BOOLEAN DEFAULT FALSE NOT NULL
     );
 
@@ -229,6 +230,14 @@ export async function createTenantTables(schemaName: string) {
     ALTER TABLE "${schemaName}".checkpoints ALTER COLUMN id TYPE VARCHAR(64);
     ALTER TABLE "${schemaName}".transactions ALTER COLUMN id TYPE VARCHAR(64);
     ALTER TABLE "${schemaName}".transactions ADD COLUMN IF NOT EXISTS parent_transaction_id VARCHAR(64);
+    ALTER TABLE "${schemaName}".categories ADD COLUMN IF NOT EXISTS is_system BOOLEAN DEFAULT FALSE NOT NULL;
+    UPDATE "${schemaName}".categories
+    SET is_system = TRUE
+    WHERE id IN (
+      'cat-food', 'cat-dining', 'cat-daily', 'cat-house', 'cat-util', 'cat-comm',
+      'cat-trans', 'cat-fun', 'cat-med', 'cat-cloth', 'cat-spec', 'cat-invest'
+    )
+    OR id ~ '^cat_(food|dining|daily|house|util|comm|trans|fun|med|cloth|spec|invest)_[a-zA-Z0-9_-]+$';
 
     -- インデックス作成
     CREATE INDEX IF NOT EXISTS "idx_${schemaName}_tx_date" ON "${schemaName}".transactions(date);

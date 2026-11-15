@@ -121,10 +121,11 @@ erDiagram
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | VARCHAR(64) | PK | 費目ID (`cat_xxx`) | - |
 | `name` | VARCHAR(100) | NOT NULL | 費目名 | - |
-| `parent_id` | VARCHAR(64) | | 親費目ID (階層分類用) | - |
+| `parent_id` | VARCHAR(64) | | 親費目ID (階層分類用・内部維持) | - |
 | `icon` | VARCHAR(50) | | アイコン (絵文字など) | - |
 | `color` | VARCHAR(20) | | カラーコード | - |
-| `sort_order` | INT | DEFAULT 0, NOT NULL | ソート順 | - |
+| `sort_order` | INT | DEFAULT 0, NOT NULL | ソート順 (全費目で並び替え可) | - |
+| `is_system` | BOOLEAN | DEFAULT FALSE, NOT NULL | システム標準12費目保護フラグ (`TRUE` の場合、編集・アーカイブ不可) | - |
 | `is_archived` | BOOLEAN | DEFAULT FALSE, NOT NULL | アーカイブフラグ | **論理削除 (trueで非表示)** |
 
 #### 5. `checkpoints` (24時間リバート用チェックポイント)
@@ -191,3 +192,9 @@ erDiagram
 
 #### 12. `audit_logs` (監査ログ)
 - `id`, `user_id`, `operator_user_id`, `action` (`CREATE`/`UPDATE`/`DELETE`/`REVERT`), `entity_type`, `entity_id`, `summary`, `before_data_json`, `after_data_json`, `checkpoint_id`, `created_at`
+
+---
+
+## 4. 改訂履歴
+
+- **2026-11-15**: `categories` テーブルに標準12費目保護フラグ `is_system`（`BOOLEAN DEFAULT FALSE NOT NULL`）の仕様を追加。

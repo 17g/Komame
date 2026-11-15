@@ -50,10 +50,11 @@ export interface PaymentMethodItem {
 export interface CategoryItem {
   id: string;
   name: string;
-  parentId?: string;
+  parentId?: string | null;
   icon?: string;
   color?: string;
   sortOrder: number;
+  isSystem?: boolean;
   isArchived: boolean;
 }
 
