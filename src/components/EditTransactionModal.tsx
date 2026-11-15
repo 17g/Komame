@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { TransactionItem, CategoryItem, PaymentMethodItem, TagItem } from "@/types";
 import { X, Check, Trash2, Edit3, Tag, Plus } from "lucide-react";
 import { HelpTooltip } from "./HelpTooltip";
+import { UnitPriceCalculator } from "./UnitPriceCalculator";
 
 interface EditTransactionModalProps {
   transaction: TransactionItem | null;
@@ -39,10 +40,19 @@ export function EditTransactionModal({
   const [isCreatingTag, setIsCreatingTag] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [calcUnitPrice, setCalcUnitPrice] = useState("");
+  const [calcQuantity, setCalcQuantity] = useState("");
 
   useEffect(() => {
     setAvailableTags(tags);
   }, [tags]);
+
+  useEffect(() => {
+    setCalcOpen(false);
+    setCalcUnitPrice("");
+    setCalcQuantity("");
+  }, [isOpen, transaction?.id]);
 
   useEffect(() => {
     if (transaction) {
@@ -154,12 +164,23 @@ export function EditTransactionModal({
     }
   };
 
+  const amountInput = (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={amount}
+      onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ""))}
+      className="w-full px-3.5 py-2.5 bg-app-subtle border border-border rounded-xl text-lg font-extrabold font-display text-content-main focus:border-primary outline-none"
+      required
+    />
+  );
+
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
       {/* 外部クリックで閉じる */}
       <div className="fixed inset-0" onClick={onClose} />
 
-      <div className="relative z-10 bg-app-surface border border-border rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative z-10 bg-app-surface border border-border rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-border">
           <div className="flex items-center gap-2 font-bold text-base text-content-main">
             <Edit3 className="w-5 h-5 text-primary" />
@@ -202,17 +223,28 @@ export function EditTransactionModal({
           </div>
 
           {/* 金額 */}
-          <div>
-            <label className="block text-xs font-bold text-content-muted mb-1">金額 (円)</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ""))}
-              className="w-full px-3.5 py-2.5 bg-app-subtle border border-border rounded-xl text-lg font-extrabold font-display text-content-main focus:border-primary outline-none"
-              required
-            />
-          </div>
+          {transaction?.type === "expense" ? (
+            <UnitPriceCalculator
+              onApplyAmount={setAmount}
+              isOpen={calcOpen}
+              onOpenChange={setCalcOpen}
+              unitPrice={calcUnitPrice}
+              onUnitPriceChange={setCalcUnitPrice}
+              quantity={calcQuantity}
+              onQuantityChange={setCalcQuantity}
+              resetKey={`${isOpen}-${transaction.id}`}
+              labelContent={
+                <label className="block text-xs font-bold text-content-muted">金額 (円)</label>
+              }
+            >
+              {amountInput}
+            </UnitPriceCalculator>
+          ) : (
+            <div>
+              <label className="block text-xs font-bold text-content-muted mb-1">金額 (円)</label>
+              {amountInput}
+            </div>
+          )}
 
           {/* 費目 ＆ 支払手段 */}
           <div className="grid grid-cols-2 gap-3">
