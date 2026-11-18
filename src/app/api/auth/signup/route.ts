@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { masterDb, getTenantDb } from "@/db";
-import { users, households, householdMemberships, systemSettings } from "@/db/schema/master";
+import { masterDb, assertValidSchemaName } from "@/db";
+import { users, households, householdMemberships } from "@/db/schema/master";
 import { eq } from "drizzle-orm";
-import {
-  hashPassword,
-  validatePasswordPolicy,
-  createSessionToken,
-  setSessionCookie,
-} from "@/lib/auth";
-import { createTenantTables } from "@/db/migrate";
+import { hashPassword, validatePasswordPolicy } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import {
   getClientIp,
@@ -19,7 +13,7 @@ import {
 
 export async function POST(req: NextRequest) {
   try {
-    // 0. IP 単位のレートリミット検証 (動的テナントスキーマ生成 DoS 防御)
+    // 0. IP 単位のレートリミット検証 (連続申請 DoS 防御)
     const clientIp = getClientIp(req);
     const ipRateLimit = checkRateLimit(`signup:ip:${clientIp}`, AUTH_RATE_LIMITS.signupByIp);
     if (!ipRateLimit.success) {
@@ -32,9 +26,24 @@ export async function POST(req: NextRequest) {
 
     const { email, password, householdName } = await req.json();
 
-    if (!email || !password || !householdName || typeof email !== "string") {
+    if (
+      !email ||
+      !password ||
+      !householdName ||
+      typeof email !== "string" ||
+      typeof password !== "string" ||
+      typeof householdName !== "string"
+    ) {
       return NextResponse.json(
         { error: "すべての項目（メールアドレス、パスワード、世帯名）を入力してください。" },
+        { status: 400 }
+      );
+    }
+
+    const trimmedHouseholdName = householdName.trim();
+    if (trimmedHouseholdName.length === 0 || trimmedHouseholdName.length > 100) {
+      return NextResponse.json(
+        { error: "世帯名は1文字以上100文字以内で入力してください。" },
         { status: 400 }
       );
     }
@@ -62,124 +71,57 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. ID 採番
+    // 3. ID 採番 & スキーマ名ホワイトリスト検証
     const userId = `usr_${crypto.randomUUID().replace(/-/g, "")}`;
     const householdId = `hh_${crypto.randomUUID().replace(/-/g, "")}`;
     const schemaName = `tenant_${householdId}`;
+    assertValidSchemaName(schemaName);
 
     // 4. パスワードハッシュ化 (Argon2id)
     const passwordHash = await hashPassword(password);
 
-    // 5. テナント専用スキーマとテーブルを動的自動作成
-    await createTenantTables(schemaName);
-
-    // 6. マスタDBレコード作成
-    await masterDb.insert(users).values({
-      id: userId,
-      email: normalizedEmail,
-      passwordHash,
-      themePreference: "natural_komame",
-      isSuperAdmin: false,
-      isActive: true,
-    });
-
-    await masterDb.insert(households).values({
-      id: householdId,
-      name: householdName,
-      schemaName,
-    });
-
-    await masterDb.insert(householdMemberships).values({
-      id: `mem_${crypto.randomUUID().replace(/-/g, "")}`,
-      userId,
-      householdId,
-      role: "admin", // 最初の作成者は家庭管理者
-      status: "active",
-      isDefault: true,
-    });
-
-    // 7. システム設定初期化
-    await masterDb.insert(systemSettings).values([
-      {
-        id: `sys_cur_${crypto.randomUUID().replace(/-/g, "")}`,
-        householdId,
-        key: "currency_symbol",
-        valueJson: '"¥"',
-      },
-      {
-        id: `sys_date_${crypto.randomUUID().replace(/-/g, "")}`,
-        householdId,
-        key: "date_format",
-        valueJson: '"YYYY/MM/DD"',
-      },
-      {
-        id: `sys_pwd_${crypto.randomUUID().replace(/-/g, "")}`,
-        householdId,
-        key: "password_policy",
-        valueJson: {
-          minLength: 8,
-          requireUppercase: true,
-          requireLowercase: true,
-          requireNumbers: true,
-          requireSpecialChars: false,
-        },
-      },
-    ]);
-
-    // 8. テナント専用DBへ日本の標準費目マスターを初期シード
-    const { db, schema } = getTenantDb(schemaName);
-    const standardCategories = [
-      { id: `cat_food_${householdId}`, name: "食費 (食材・自炊)", icon: "🥦", color: "#2E7D32", sortOrder: 1, isSystem: true },
-      { id: `cat_dining_${householdId}`, name: "外食・カフェ", icon: "☕", color: "#D97706", sortOrder: 2, isSystem: true },
-      { id: `cat_daily_${householdId}`, name: "日用品・生活雑貨", icon: "🧻", color: "#059669", sortOrder: 3, isSystem: true },
-      { id: `cat_house_${householdId}`, name: "住居費 (家賃・住宅ローン)", icon: "🏠", color: "#4F46E5", sortOrder: 4, isSystem: true },
-      { id: `cat_util_${householdId}`, name: "水道光熱費", icon: "⚡", color: "#0284C7", sortOrder: 5, isSystem: true },
-      { id: `cat_comm_${householdId}`, name: "通信費 (スマホ・ネット)", icon: "📱", color: "#7C3AED", sortOrder: 6, isSystem: true },
-      { id: `cat_trans_${householdId}`, name: "交通費 (電車・ガソリン)", icon: "🚆", color: "#2563EB", sortOrder: 7, isSystem: true },
-      { id: `cat_fun_${householdId}`, name: "教養・娯楽・趣味", icon: "🎮", color: "#DB2777", sortOrder: 8, isSystem: true },
-      { id: `cat_med_${householdId}`, name: "医療・保険", icon: "💊", color: "#DC2626", sortOrder: 9, isSystem: true },
-      { id: `cat_cloth_${householdId}`, name: "衣服・美容", icon: "👕", color: "#EA580C", sortOrder: 10, isSystem: true },
-      { id: `cat_spec_${householdId}`, name: "特別費 (旅行・冠婚葬祭)", icon: "🎁", color: "#9333EA", sortOrder: 11, isSystem: true },
-      { id: `cat_invest_${householdId}`, name: "貯蓄・投資 (NISA等)", icon: "🌱", color: "#16A34A", sortOrder: 12, isSystem: true },
-    ];
-
-    await db.insert(schema.categories).values(standardCategories);
-
-    // 9. デフォルト現金口座を作成
-    await db.insert(schema.accounts).values({
-      id: `acc_cash_${householdId}`,
-      name: "手元現金 (財布)",
-      type: "cash",
-      balance: 0,
-      icon: "💵",
-      color: "#E6A15C",
-      sortOrder: 1,
-      isActive: true,
-    });
-
-    // 10. セッショントークン発行 & Cookie設定
-    const token = await createSessionToken({
-      userId,
-      email: normalizedEmail,
-      activeHouseholdId: householdId,
-      schemaName,
-      role: "admin",
-    });
-
-    await setSessionCookie(token);
-
-    logger.info({ userId, email: normalizedEmail, householdId, schemaName }, "New household signup completed");
-
-    return NextResponse.json({
-      success: true,
-      user: {
+    // 5. マスタDB (public) のみに承認待ち状態で登録 (テナントスキーマ・セッションはシステム管理者承認時に作成)
+    await masterDb.transaction(async (tx) => {
+      await tx.insert(users).values({
         id: userId,
         email: normalizedEmail,
+        passwordHash,
         themePreference: "natural_komame",
-        role: "admin",
+        isSuperAdmin: false,
+        isActive: true,
+      });
+
+      await tx.insert(households).values({
+        id: householdId,
+        name: trimmedHouseholdName,
+        schemaName,
+        status: "pending",
+      });
+
+      await tx.insert(householdMemberships).values({
+        id: `mem_${crypto.randomUUID().replace(/-/g, "")}`,
+        userId,
         householdId,
-      },
+        role: "admin", // 最初の申請者は承認後に家庭管理者となる
+        status: "active",
+        isDefault: true,
+      });
     });
+
+    logger.info(
+      { userId, email: normalizedEmail, householdId, status: "pending" },
+      "New household signup application submitted"
+    );
+
+    return NextResponse.json(
+      {
+        success: true,
+        pendingApproval: true,
+        message:
+          "新規世帯登録の申請を受け付けました。システム管理者の承認後にログインできるようになります。",
+      },
+      { status: 201 }
+    );
   } catch (error) {
     logger.error({ error }, "Signup error");
     return NextResponse.json({ error: "登録処理中にエラーが発生しました。" }, { status: 500 });

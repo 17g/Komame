@@ -281,7 +281,7 @@
   - `src/db/seed.ts`: 初期デモ世帯（山田家）の投入時に `status = 'approved'` を明示設定する。
   - `src/types/index.ts`: `HouseholdStatus` 型（`"pending" | "approved" | "rejected" | "suspended"`）、`UserSession` への `isSuperAdmin?: boolean` 追加、およびシステム管理者向け世帯一覧アイテム型 `ManagedHouseholdItem` を定義する。
 
-- [ ] **12.2 認証・セッション検証ロジックおよびログイン・サインアップ申請APIの改修 (`src/lib/auth.ts`, `src/app/api/auth/signup/route.ts`, `src/app/api/auth/login/route.ts`, `src/app/api/auth/me/route.ts`)**:
+- [x] **12.2 認証・セッション検証ロジックおよびログイン・サインアップ申請APIの改修 (`src/lib/auth.ts`, `src/app/api/auth/signup/route.ts`, `src/app/api/auth/login/route.ts`, `src/app/api/auth/me/route.ts`)**:
   - `src/lib/auth.ts`:
     - `SessionPayload` に `isSuperAdmin?: boolean` を追加する。
     - `getCurrentSession()` のマスタDB照会クエリに `users.isSuperAdmin` および `households.status` を追加し、`record.householdStatus !== "approved"` の場合は `null` を返却して未承認・却下・停止世帯のセッションを即時遮断する。

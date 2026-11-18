@@ -86,9 +86,29 @@ export interface SessionPayload {
   activeHouseholdId: string;
   schemaName: string;
   role: string; // 'admin' | 'member'
+  isSuperAdmin?: boolean;
   issuedAtMs?: number;
   iat?: number;
   exp?: number;
+}
+
+/**
+ * 世帯の承認ステータスに基づくアクセス可否判定。
+ * approved 以外はログイン/アクセス拒否メッセージ（日本語）を返し、approved の場合は null を返す。
+ */
+export function getHouseholdAccessError(status: string): string | null {
+  switch (status) {
+    case "approved":
+      return null;
+    case "pending":
+      return "現在、システム管理者の承認待ちです。許可されるまでログインできません。";
+    case "rejected":
+      return "この新規世帯登録申請は承認されませんでした。";
+    case "suspended":
+      return "この世帯アカウントは現在システム管理者により停止されています。";
+    default:
+      return "所属している世帯が現在利用できない状態です。";
+  }
 }
 
 // 1. パスワードハッシュ化 (Argon2id)
@@ -174,9 +194,11 @@ export async function getCurrentSession(): Promise<SessionPayload | null> {
         userId: users.id,
         email: users.email,
         isActive: users.isActive,
+        isSuperAdmin: users.isSuperAdmin,
         userUpdatedAt: users.updatedAt,
         householdId: households.id,
         schemaName: households.schemaName,
+        householdStatus: households.status,
         role: householdMemberships.role,
         membershipStatus: householdMemberships.status,
       })
@@ -191,11 +213,12 @@ export async function getCurrentSession(): Promise<SessionPayload | null> {
       )
       .limit(1);
 
-    // ユーザーが存在しない、無効化されている、または世帯所属が無効
+    // ユーザーが存在しない、無効化されている、世帯所属が無効、または世帯が承認済みでない場合は即時遮断
     if (
       !record ||
       !record.isActive ||
-      record.membershipStatus !== "active"
+      record.membershipStatus !== "active" ||
+      record.householdStatus !== "approved"
     ) {
       return null;
     }
@@ -225,6 +248,7 @@ export async function getCurrentSession(): Promise<SessionPayload | null> {
       activeHouseholdId: record.householdId,
       schemaName: record.schemaName,
       role: record.role as "admin" | "member",
+      isSuperAdmin: Boolean(record.isSuperAdmin),
       issuedAtMs: payload.issuedAtMs,
     };
   } catch (error) {

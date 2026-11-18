@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { masterDb } from "@/db";
 import { users, households, householdMemberships } from "@/db/schema/master";
 import { eq, and } from "drizzle-orm";
-import { verifyPassword, createSessionToken, setSessionCookie } from "@/lib/auth";
+import {
+  verifyPassword,
+  createSessionToken,
+  setSessionCookie,
+  getHouseholdAccessError,
+} from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import {
   getClientIp,
@@ -71,12 +76,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 3. デフォルト所属世帯の取得
+    // 3. デフォルト所属世帯の取得および承認ステータス検証
     const [membership] = await masterDb
       .select({
         householdId: householdMemberships.householdId,
         role: householdMemberships.role,
         schemaName: households.schemaName,
+        householdStatus: households.status,
       })
       .from(householdMemberships)
       .innerJoin(households, eq(householdMemberships.householdId, households.id))
@@ -96,6 +102,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const accessError = getHouseholdAccessError(membership.householdStatus);
+    if (accessError) {
+      return NextResponse.json({ error: accessError }, { status: 403 });
+    }
+
     // 4. セッショントークン発行 & Cookie設定
     const token = await createSessionToken({
       userId: user.id,
@@ -103,6 +114,7 @@ export async function POST(req: NextRequest) {
       activeHouseholdId: membership.householdId,
       schemaName: membership.schemaName,
       role: membership.role as "admin" | "member",
+      isSuperAdmin: Boolean(user.isSuperAdmin),
     });
 
     await setSessionCookie(token);
@@ -116,6 +128,7 @@ export async function POST(req: NextRequest) {
         email: user.email,
         themePreference: user.themePreference,
         role: membership.role,
+        isSuperAdmin: Boolean(user.isSuperAdmin),
         householdId: membership.householdId,
       },
     });

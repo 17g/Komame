@@ -15,10 +15,15 @@ export async function GET() {
       id: users.id,
       email: users.email,
       themePreference: users.themePreference,
+      isSuperAdmin: users.isSuperAdmin,
     })
     .from(users)
     .where(eq(users.id, session.userId))
     .limit(1);
+
+  if (!user) {
+    return NextResponse.json({ user: null });
+  }
 
   const [household] = await masterDb
     .select({
@@ -32,6 +37,7 @@ export async function GET() {
   return NextResponse.json({
     user: {
       ...user,
+      isSuperAdmin: Boolean(user.isSuperAdmin),
       householdId: session.activeHouseholdId,
       householdName: household?.name || "我が家",
       role: session.role,

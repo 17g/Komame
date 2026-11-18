@@ -2,6 +2,37 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-18] 【Phase 12.2】認証・セッション検証ロジックおよびログイン・サインアップ申請APIの改修
+
+### 1. 概要
+要件 1-1, 1-2, 1-8 および `Plan.md` Phase 12.2 に基づき、新規世帯登録を承認申請制へ切り替え、ログインおよびセッション検証時に世帯の承認ステータス（`households.status === "approved"`）とシステム管理者フラグ（`isSuperAdmin`）をリアルタイム検証・反映するよう改修した。
+
+### 2. 変更内容 (Before / After)
+1. **認証・セッション管理 (`src/lib/auth.ts`)**:
+   - Before: `SessionPayload` に `isSuperAdmin` がなく、`getCurrentSession()` は `users.isActive` と `householdMemberships.status === "active"` のみを検証しており、未承認・却下・停止状態の世帯セッションを遮断していなかった。
+   - After: `SessionPayload` に `isSuperAdmin?: boolean` を追加し、世帯ステータス判定ヘルパー `getHouseholdAccessError(status)` を実装。`getCurrentSession()` のマスタDB照会クエリに `users.isSuperAdmin` と `households.status` を追加し、`householdStatus !== "approved"` の場合は `null` を返却して未承認・却下・停止世帯のセッションを即時遮断するよう変更。
+2. **新規世帯登録申請API (`src/app/api/auth/signup/route.ts`)**:
+   - Before: サインアップリクエスト時に即座に `createTenantTables(schemaName)` でテナントスキーマを作成し、`system_settings`・標準12費目・デフォルト現金口座をシード投入した上でセッションCookieを発行していた。
+   - After: テナント専用スキーマ作成・シード投入・Cookie発行を廃止し、`masterDb.transaction()` 内で `public.users`・`public.households`（`status: "pending"`）・`public.household_memberships` のみを登録し、`201 Created`（`{ success: true, pendingApproval: true, message: "..." }`）を返却するよう改修。
+3. **ログインAPI (`src/app/api/auth/login/route.ts`)**:
+   - Before: パスワード検証成功後に `households.status` を確認せず、そのままセッションを発行していた。
+   - After: パスワード検証成功後（アカウント列挙防止のため不一致時は従来通り `401`）に `getHouseholdAccessError(membership.householdStatus)` で世帯ステータスを検証し、`pending` / `rejected` / `suspended` 等は状態に応じた案内メッセージとともに `403 Forbidden` を返却。`approved` 時のみ `isSuperAdmin` を含めたセッション・レスポンスを発行するよう変更。
+4. **現在ユーザー取得API (`src/app/api/auth/me/route.ts`)**:
+   - Before: レスポンスの `user` に `isSuperAdmin` を含めていなかった。
+   - After: `users.isSuperAdmin` を取得し、レスポンス `user` に `isSuperAdmin: Boolean(user.isSuperAdmin)` を含めて返却するよう変更。
+
+### 3. 変更理由
+- システム管理者の承認前にテナント専用スキーマが作成されたりログイン・API操作が可能になったりすることを構造的に防止し、既存の承認済み世帯および将来の Super Admin 管理画面へ `isSuperAdmin` フラグを安全に伝播させるため。
+
+### 4. 影響範囲・検証結果
+- 変更ファイル: `src/lib/auth.ts`, `src/app/api/auth/signup/route.ts`, `src/app/api/auth/login/route.ts`, `src/app/api/auth/me/route.ts`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+  - `npx tsx scripts/test-auth-session-unit.ts`: 全テスト合格・終了コード 0
+  - `npm run build`: 終了コード 0（22ルート生成完了）
+
+
 ## [2026-11-18] 【Phase 12.1】新規世帯登録の申請・許可制向けマスタDBスキーマ・マイグレーション・シード・型定義の拡張
 
 ### 1. 概要
