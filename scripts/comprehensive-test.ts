@@ -18,10 +18,14 @@ const ctx: TestContext = {
   categories: [],
 };
 
-async function apiFetch(path: string, options: RequestInit = {}) {
+async function sessionFetch(
+  path: string,
+  options: RequestInit = {},
+  sessionState: { cookieHeader: string } = ctx
+) {
   const headers = new Headers(options.headers || {});
-  if (ctx.cookieHeader) {
-    headers.set("Cookie", ctx.cookieHeader);
+  if (sessionState.cookieHeader) {
+    headers.set("Cookie", sessionState.cookieHeader);
   }
   if (!headers.has("Content-Type") && options.body && typeof options.body === "string") {
     headers.set("Content-Type", "application/json");
@@ -34,7 +38,7 @@ async function apiFetch(path: string, options: RequestInit = {}) {
 
   const setCookie = res.headers.get("set-cookie");
   if (setCookie) {
-    ctx.cookieHeader = setCookie.split(";")[0];
+    sessionState.cookieHeader = setCookie.split(";")[0];
   }
 
   const buf = Buffer.from(await res.arrayBuffer());
@@ -46,7 +50,11 @@ async function apiFetch(path: string, options: RequestInit = {}) {
     // text
   }
 
-  return { status: res.status, ok: res.ok, json, text };
+  return { status: res.status, ok: res.ok, json, text, hasSetCookie: Boolean(setCookie) };
+}
+
+async function apiFetch(path: string, options: RequestInit = {}) {
+  return sessionFetch(path, options, ctx);
 }
 
 function assert(condition: boolean, message: string) {
@@ -74,6 +82,7 @@ async function runComprehensiveTest() {
   });
   assert(loginRes.ok, "管理者ログイン成功 (200 OK)");
   assert(loginRes.json?.user?.email === "admin@komame.local", "ユーザー情報取得成功");
+  assert(loginRes.json?.user?.isSuperAdmin === true, "デモ管理者が Super Admin 権限を持つことを確認");
   ctx.user = loginRes.json.user;
 
   const meRes = await apiFetch("/api/auth/me");
@@ -724,8 +733,245 @@ ${dupCheckDate},${dupCheckShop},${dupCheckAmount},食費,,重複検証用
   assert(logExportRes.ok, "監査ログCSVエクスポート成功 (GET /api/admin/logs?format=csv)");
   assert(logExportRes.text.includes('"ログID","日時","操作者メール","操作者ユーザーID","操作種別","対象種別"'), "監査ログCSVヘッダーの整合性確認");
 
+  // 16. 新規世帯登録申請・許可制 & Super Admin 世帯管理フロー検証
+  console.log("\n--- 16. 新規世帯登録申請・許可制 & Super Admin 世帯管理フローテスト ---");
+  const testRunSuffix = Date.now();
+  const applicantEmail1 = `applicant_${testRunSuffix}@example.com`;
+  const applicantPass = "ApplicantPass123!";
+  const applicantHouseholdName1 = `自動テスト申請世帯_${testRunSuffix}`;
+
+  // 16.1 新規世帯登録申請 (pending 作成・Cookie 未発行)
+  const applicant1Session = { cookieHeader: "" };
+  const signupRes1 = await sessionFetch(
+    "/api/auth/signup",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: applicantEmail1,
+        password: applicantPass,
+        householdName: applicantHouseholdName1,
+      }),
+    },
+    applicant1Session
+  );
+  assert(signupRes1.status === 201 && signupRes1.ok, "新規世帯登録申請受付成功 (201 Created)");
+  assert(signupRes1.json?.pendingApproval === true, "承認待ちフラグ (pendingApproval: true) が返却されることを確認");
+  assert(!signupRes1.hasSetCookie, "申請時点ではセッション Cookie が発行されないことを確認");
+
+  // 16.2 未承認状態でのログイン拒否 (403 Forbidden)
+  const pendingLoginRes = await sessionFetch(
+    "/api/auth/login",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: applicantEmail1,
+        password: applicantPass,
+      }),
+    },
+    applicant1Session
+  );
+  assert(pendingLoginRes.status === 403, `承認待ち状態でのログイン試行が 403 で拒否されることを確認 (actual: ${pendingLoginRes.status})`);
+  assert(
+    typeof pendingLoginRes.json?.error === "string" && pendingLoginRes.json.error.includes("承認待ち"),
+    "承認待ちの案内メッセージが返却されることを確認"
+  );
+
+  // 16.3 Super Admin による承認待ち世帯一覧取得 & 自世帯停止ガード確認
+  const pendingListRes = await apiFetch("/api/super-admin/households?status=pending");
+  assert(pendingListRes.ok, "Super Admin 承認待ち世帯一覧取得成功 (GET /api/super-admin/households?status=pending)");
+  const targetHousehold1 = pendingListRes.json?.households?.find(
+    (h: any) => h.applicantEmail === applicantEmail1 && h.name === applicantHouseholdName1
+  );
+  assert(!!targetHousehold1 && targetHousehold1.status === "pending", "申請した世帯が承認待ち一覧に存在することを確認");
+
+  const selfSuspendRes = await apiFetch("/api/super-admin/households", {
+    method: "PUT",
+    body: JSON.stringify({
+      householdId: ctx.user.householdId,
+      action: "suspend",
+    }),
+  });
+  assert(selfSuspendRes.status === 400, "Super Admin 自身の所属世帯停止が 400 で拒否されることを確認");
+
+  // 16.4 Super Admin による申請承認 (approve)
+  const approveRes = await apiFetch("/api/super-admin/households", {
+    method: "PUT",
+    body: JSON.stringify({
+      householdId: targetHousehold1.id,
+      action: "approve",
+    }),
+  });
+  assert(approveRes.ok && approveRes.json?.household?.status === "approved", "Super Admin による世帯申請承認成功 (approved)");
+
+  // 16.5 承認後のログイン成功 & 初期シード（標準12費目・現金口座）確認
+  const approvedLoginRes = await sessionFetch(
+    "/api/auth/login",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: applicantEmail1,
+        password: applicantPass,
+      }),
+    },
+    applicant1Session
+  );
+  assert(approvedLoginRes.ok && approvedLoginRes.status === 200, "承認後の新規世帯ユーザーログイン成功 (200 OK)");
+  assert(approvedLoginRes.json?.user?.isSuperAdmin === false, "新規世帯ユーザーは Super Admin ではないことを確認");
+
+  const applicantMeRes = await sessionFetch("/api/auth/me", {}, applicant1Session);
+  assert(
+    applicantMeRes.ok && applicantMeRes.json?.user?.householdId === targetHousehold1.id,
+    "承認後世帯のセッション検証 (/api/auth/me) 成功"
+  );
+
+  const applicantCatsRes = await sessionFetch("/api/categories", {}, applicant1Session);
+  assert(
+    applicantCatsRes.ok && applicantCatsRes.json?.categories?.length === 12,
+    `承認時に標準12費目が初期シードされていることを確認 (${applicantCatsRes.json?.categories?.length}件)`
+  );
+
+  const applicantAccsRes = await sessionFetch("/api/accounts", {}, applicant1Session);
+  assert(
+    applicantAccsRes.ok && applicantAccsRes.json?.accounts?.some((a: any) => a.type === "cash"),
+    "承認時にデフォルト現金口座が初期シードされていることを確認"
+  );
+
+  // 非 Super Admin による Super Admin API アクセス拒否 (403 Forbidden)
+  const forbiddenSuperAdminRes = await sessionFetch(
+    "/api/super-admin/households",
+    {},
+    applicant1Session
+  );
+  assert(forbiddenSuperAdminRes.status === 403, "一般家庭管理者の Super Admin API アクセスが 403 で拒否されることを確認");
+
+  // 16.6 世帯の利用停止 (suspend) & セッション即時遮断 & 利用再開 (reactivate)
+  const suspendRes = await apiFetch("/api/super-admin/households", {
+    method: "PUT",
+    body: JSON.stringify({
+      householdId: targetHousehold1.id,
+      action: "suspend",
+      reason: "自動テストによる一時停止検証",
+    }),
+  });
+  assert(suspendRes.ok && suspendRes.json?.household?.status === "suspended", "Super Admin による世帯利用停止成功 (suspended)");
+
+  const suspendedMeRes = await sessionFetch("/api/auth/me", {}, applicant1Session);
+  assert(suspendedMeRes.ok && suspendedMeRes.json?.user === null, "停止世帯の既存セッションが即座に遮断されることを確認");
+
+  const suspendedLoginRes = await sessionFetch(
+    "/api/auth/login",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: applicantEmail1,
+        password: applicantPass,
+      }),
+    },
+    { cookieHeader: "" }
+  );
+  assert(suspendedLoginRes.status === 403, "停止世帯でのログイン試行が 403 で拒否されることを確認");
+
+  const reactivateRes = await apiFetch("/api/super-admin/households", {
+    method: "PUT",
+    body: JSON.stringify({
+      householdId: targetHousehold1.id,
+      action: "reactivate",
+    }),
+  });
+  assert(reactivateRes.ok && reactivateRes.json?.household?.status === "approved", "Super Admin による世帯利用再開成功 (approved)");
+
+  const reactivatedLoginRes = await sessionFetch(
+    "/api/auth/login",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: applicantEmail1,
+        password: applicantPass,
+      }),
+    },
+    { cookieHeader: "" }
+  );
+  assert(reactivatedLoginRes.ok, "利用再開後の再ログイン成功 (200 OK)");
+
+  // 16.7 却下 (reject) -> 物理削除 (DELETE) -> 同一メール再申請テスト
+  const applicantEmail2 = `reject_test_${testRunSuffix}@example.com`;
+  const signupRes2 = await sessionFetch(
+    "/api/auth/signup",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: applicantEmail2,
+        password: applicantPass,
+        householdName: `却下テスト世帯_${testRunSuffix}`,
+      }),
+    },
+    { cookieHeader: "" }
+  );
+  assert(signupRes2.status === 201, "2件目の世帯申請受付成功 (201 Created)");
+
+  const pendingListRes2 = await apiFetch("/api/super-admin/households?status=pending");
+  const targetHousehold2 = pendingListRes2.json?.households?.find(
+    (h: any) => h.applicantEmail === applicantEmail2
+  );
+  assert(!!targetHousehold2, "2件目の申請が承認待ち一覧に存在することを確認");
+
+  const rejectRes = await apiFetch("/api/super-admin/households", {
+    method: "PUT",
+    body: JSON.stringify({
+      householdId: targetHousehold2.id,
+      action: "reject",
+      reason: "申請内容確認のため却下",
+    }),
+  });
+  assert(rejectRes.ok && rejectRes.json?.household?.status === "rejected", "Super Admin による申請却下成功 (rejected)");
+
+  const rejectedLoginRes = await sessionFetch(
+    "/api/auth/login",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: applicantEmail2,
+        password: applicantPass,
+      }),
+    },
+    { cookieHeader: "" }
+  );
+  assert(rejectedLoginRes.status === 403, "却下済み世帯のログイン試行が 403 で拒否されることを確認");
+
+  const deleteRejectedRes = await apiFetch(
+    `/api/super-admin/households?householdId=${encodeURIComponent(targetHousehold2.id)}`,
+    { method: "DELETE" }
+  );
+  assert(deleteRejectedRes.ok, "却下済み世帯申請の物理削除（抹消）成功 (DELETE)");
+
+  const reapplyRes = await sessionFetch(
+    "/api/auth/signup",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: applicantEmail2,
+        password: applicantPass,
+        householdName: `再申請世帯_${testRunSuffix}`,
+      }),
+    },
+    { cookieHeader: "" }
+  );
+  assert(reapplyRes.status === 201, "抹消後に同一メールアドレスでの再申請が可能になることを確認");
+
+  // 再申請した一時テストレコードをクリーンアップ
+  const pendingAfterReapply = await apiFetch("/api/super-admin/households?status=pending");
+  const reappliedHousehold = pendingAfterReapply.json?.households?.find(
+    (h: any) => h.applicantEmail === applicantEmail2
+  );
+  if (reappliedHousehold) {
+    await apiFetch(
+      `/api/super-admin/households?householdId=${encodeURIComponent(reappliedHousehold.id)}`,
+      { method: "DELETE" }
+    );
+  }
+
   console.log("\n==========================================================");
-  console.log("🎉 すべてのテスト（全15カテゴリ・資金移動・QR逆算・CSV・CRUD・一括登録・残高整合性・管理機能）に完全合格しました！");
+  console.log("🎉 すべてのテスト（全16カテゴリ・新規世帯申請/承認制・資金移動・QR逆算・CSV・CRUD・一括登録・残高整合性・管理機能）に完全合格しました！");
   console.log("==========================================================");
 }
 

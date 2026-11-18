@@ -17,7 +17,7 @@
 - [x] Phase 9: 費目マスターメンテナンス機能の実装（標準12費目保護・追加・編集・並び替え・アーカイブ/復元・監査ログ）
 - [x] Phase 10: 支出金額入力欄の「単価×個数」計算補助機能の実装（要件 2-7）
 - [x] Phase 11: 単価×個数 計算補助UIの個数入力セレクトボックス化（要件 2-7 改訂）
-- [ ] Phase 12: 新規世帯登録の申請・許可制およびシステム管理者（Super Admin）世帯管理機能の実装（要件 1-1, 1-2, 1-8）
+- [x] Phase 12: 新規世帯登録の申請・許可制およびシステム管理者（Super Admin）世帯管理機能の実装（要件 1-1, 1-2, 1-8）
 - [ ] Phase 13: 初期デモ管理者アカウントのテスト環境限定有効化およびログイン画面表示制御の実装（要件 1-9）
 
 
@@ -312,7 +312,7 @@
     - `isSuperAdmin === true` の場合にのみ表示される「システム管理：新規世帯登録の承認・アカウント管理」セクションを実装する。
     - ステータスフィルター（すべて / 承認待ち / 承認済み / 却下済み / 停止中）と未承認件数バッジ、各世帯の情報表示、および状態に応じた操作（「許可（承認）」「却下（理由入力対応）」「再承認」「削除（抹消）」「利用停止」「利用再開」）を実装する。
 
-- [ ] **12.5 単体テスト・E2E総合テストの更新とビルド検証・変更履歴記録 (`scripts/test-household-approval-unit.ts`, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `AICHANGELOG.md`)**:
+- [x] **12.5 単体テスト・E2E総合テストの更新とビルド検証・変更履歴記録 (`scripts/test-household-approval-unit.ts`, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `AICHANGELOG.md`)**:
   - `scripts/test-household-approval-unit.ts` を新規作成し、世帯ステータス判定・ログイン可否・Super Admin 操作バリデーション（自己世帯停止・削除ガード等）の単体テストを実行する。
   - `scripts/comprehensive-test.ts` の新規サインアップ検証フローを、申請（`pending`）→未承認時ログイン拒否（`403`）→Super Admin（`admin@komame.local`）による承認→承認後ログイン成功のフローへ更新する。
   - `for_agent/06_operation_and_testing_guide.md` の単体テスト一覧に `test-household-approval-unit.ts` を追記する。

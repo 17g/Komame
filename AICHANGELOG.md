@@ -2,6 +2,38 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-18] 【Phase 12.5】新規世帯登録申請・承認制および Super Admin 世帯管理の単体テスト作成・総合テスト更新・検証ガイド最新化
+
+### 1. 概要
+`Plan.md` Phase 12.5 に基づき、新規世帯登録の申請・許可制およびシステム管理者（Super Admin）世帯管理機能の DB 不要単体テスト（`scripts/test-household-approval-unit.ts`）を新規作成し、E2E 総合テスト（`scripts/comprehensive-test.ts`）に申請・未承認ログイン拒否・Super Admin 承認・初期シード検証・停止/再開・却下/物理削除フローを追加した。あわせて運用・検証ガイド（`for_agent/06_operation_and_testing_guide.md`）へ新規単体テストを追記し、型チェック・ビルド・単体テストのすべてが正常終了することを確認した。
+
+### 2. 変更内容 (Before / After)
+1. **世帯承認制・Super Admin 単体テストの新規作成 (`scripts/test-household-approval-unit.ts`)**:
+   - Before: `getHouseholdAccessError` や `src/lib/super-admin-helpers.ts`（状態遷移検証・自己世帯停止/削除防止ガード・却下理由正規化・件数集計・初期シード定数）、および承認制ガードレール（`signup` 時のスキーマ未作成・セッション未発行、`getCurrentSession` の `approved` 検証、Super Admin 認可）を自動検証する単体テストが存在しなかった。
+   - After: 全7カテゴリ・56項目のアサーションを含む DB 不要単体テストスクリプトを新規作成。
+2. **総合テストへの申請・承認・管理フロー追加 (`scripts/comprehensive-test.ts`)**:
+   - Before: 総合テストには既存デモ管理者でのテスト（カテゴリ 1〜15）のみが存在し、新規世帯登録申請から承認・利用停止・再開・却下・抹消に至る E2E フローが未検証だった。
+   - After:
+     - 独立した Cookie セッションで検証できる `sessionFetch()` ヘルパーを追加し、カテゴリ 1 のログイン検証に `isSuperAdmin === true` 確認を追加。
+     - カテゴリ 16「新規世帯登録申請・許可制 & Super Admin 世帯管理フローテスト」を追加し、`signup`（201 / `pendingApproval: true` / Cookie 未発行）→ 未承認時ログイン拒否（403）→ Super Admin 自世帯停止拒否（400）→ `approve`（200）→ 承認後ログイン成功 & 標準12費目・デフォルト現金口座シード確認 → 一般管理者の Super Admin API アクセス拒否（403）→ `suspend` によるセッション即時遮断 & 再開（`reactivate`）→ `reject` & `DELETE` 抹消後の同一メール再申請成功を検証するフローを実装。
+3. **検証ガイド最新化 (`for_agent/06_operation_and_testing_guide.md`)**:
+   - Before: 2.2 単体テスト一覧に `test-household-approval-unit.ts` の記載がなかった。
+   - After: 単体テスト一覧および改訂履歴に `npx tsx scripts/test-household-approval-unit.ts` を追記。
+
+### 3. 変更理由
+- 新規世帯登録の承認制、未承認・停止世帯のアクセス遮断、および Super Admin による誤操作防止ガード（自己ロックアウト・承認済み世帯の誤削除防止）のリグレッションを継続的に自動検証できるようにするため。
+
+### 4. 影響範囲・検証結果
+- 変更・新規作成ファイル: `scripts/test-household-approval-unit.ts`（新規）, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（23ルート生成完了）
+  - `npx tsx scripts/test-household-approval-unit.ts`: 全テスト合格・終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+  - `npx tsx scripts/test-auth-session-unit.ts`: 全テスト合格・終了コード 0
+  - ※ `scripts/comprehensive-test.ts` はローカル DB（5532）・アプリサーバー（3080）未起動のため実行対象外（静的型チェック・ビルドで整合性確認済み）。
+
+
 ## [2026-11-18] 【Phase 12.4】ログイン・新規世帯申請画面および管理タブ内 Super Admin 世帯管理UIの実装
 
 ### 1. 概要

@@ -29,8 +29,9 @@ npm run dev
 ```
 
 - アクセス: `http://localhost:3080`
-- デモ管理者アカウント: `admin@komame.local` / `Password123!`
+- デモ管理者アカウント（**テスト環境 `NODE_ENV !== "production"` 限定**）: `admin@komame.local` / `Password123!`
   - ※シードデータにより `is_super_admin = TRUE`（システム管理者権限）および世帯状態 `approved` が付与されており、ログイン後の管理タブから新規世帯登録申請の承認・却下・停止操作を確認・検証できる。
+  - ※**本番環境（`NODE_ENV === "production"`）では初期デモ管理者アカウントは完全に無効化**される（ログインAPI・セッション検証で拒否、本番シード実行時の作成禁止、およびログイン画面でのデモアカウント欄非表示）。
 
 ---
 
@@ -66,6 +67,9 @@ npx tsx scripts/test-categories-unit.ts
 
 # 単価×個数 計算補助ロジック単体テスト (正常系・境界値・異常系・サニタイザー)
 npx tsx scripts/test-unit-calculator.ts
+
+# 新規世帯登録申請・承認制 & Super Admin 操作バリデーション単体テスト
+npx tsx scripts/test-household-approval-unit.ts
 
 # セキュリティ単体テスト & 静的コード検査 (スキーマ検証、CSVインジェクション無害化、金額境界値、レートリミッター、raw.unsafeゼロ件検査)
 npx tsx scripts/test-security-unit.ts
@@ -110,6 +114,8 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec app np
 
 ## 4. 改訂履歴
 
+- **2026-11-18**: 単体テスト一覧に新規世帯登録申請・承認制 & Super Admin 操作バリデーション単体テスト（`test-household-approval-unit.ts`）を追加。
+- **2026-11-18**: 初期デモ管理者アカウント（`admin@komame.local`）がテスト環境（`NODE_ENV !== "production"`）限定で有効であり、本番環境（`NODE_ENV === "production"`）ではログイン・セッション・シード作成・ログイン画面表示のすべてが無効化される仕様を追記。
 - **2026-11-18**: 開発環境デモ管理者（`admin@komame.local`）が `is_super_admin = TRUE` であり、管理タブから新規世帯申請の承認・却下・停止検証が可能である旨を追記。
 - **2026-11-15**: 単体テスト一覧に単価×個数 計算補助ロジック単体テスト（`test-unit-calculator.ts`）を追加。
 - **2026-11-15**: 単体テスト一覧に費目マスター バリデーション & 標準12費目保護単体テスト（`test-categories-unit.ts`）を追加。
