@@ -2,6 +2,42 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-19] 【全体レビュー (/review)】全仕様整合性点検・エッジケース保護強化・仕様書および手順書の最新化・フルビルド検証
+
+### 1. 概要
+`/review` スキルに基づき、`for_agent/` 配下の全仕様書（00〜06 および `guardrails.md`）と実装コード全体を突き合わせ、Phase 0〜Phase 13 の全要件実装状況およびエッジケースの点検を実施した。あわせて認証・招待・メンバー追加APIにおける初期デモ管理者アカウントおよび世帯承認ステータスの多層防御強化、仕様書・構築手順書・README の最新化を行い、フルビルドおよび全8種の単体テストスイートの正常終了（Exit Code 0）を確認した。
+
+### 2. 変更内容 (Before / After)
+1. **サインアップ・招待参加・家族メンバー追加APIのエッジケース多層防御強化 (`src/app/api/auth/signup/route.ts`, `src/app/api/auth/invite/route.ts`, `src/app/api/admin/members/route.ts`)**:
+   - Before:
+     - `POST /api/auth/signup`、`POST /api/auth/invite`、`POST /api/admin/members` において、本番環境（`NODE_ENV === "production"`）で初期デモ管理者メールアドレス（`admin@komame.local`）を指定した申請・招待参加・メンバー登録の明示的拒否が未実装だった（ログイン・セッションでは遮断済み）。
+     - `GET / POST /api/auth/invite` において、招待リンク発行後に招待元世帯がシステム管理者により停止（`suspended`）された場合の `households.status` チェックが未適用だった。
+   - After:
+     - `signup` / `invite` / `members` の各エンドポイントで `isDemoAdminAllowed()` を検証し、本番環境での初期デモ管理者アカウントの登録・招待を `400 Bad Request` / `403 Forbidden` で拒否するよう強化。
+     - `GET / POST /api/auth/invite` で `getHouseholdAccessError(household.status)` を検証し、承認済み（`approved`）以外の世帯への招待参加を `403 Forbidden` で遮断するよう強化。
+2. **仕様書・手順書・README の最新化 (`for_agent/04_api_specifications.md`, `docs/environment_setup_guide.md`, `README.md`)**:
+   - `for_agent/04_api_specifications.md`: 1.4 (`signup`) および 1.5 (`invite`) に初期デモ管理者アカウント除外および招待元世帯承認ステータス検証仕様を追記し、改訂履歴を更新。
+   - `docs/environment_setup_guide.md`: 第5章「初期セットアップ」に新規世帯登録の申請・許可制フロー（Super Admin による承認手順）および初期デモ管理者アカウントのテスト環境限定有効化・本番無効化仕様を反映し、改訂履歴を更新。
+   - `README.md`: Next.js `15.5.28` / Drizzle ORM `0.45.4` のバージョン表記更新、デモ管理者アカウントのテスト環境限定注記、および全8種の単体テストコマンド一覧を最新化。
+
+### 3. 変更理由
+- 全体レビューにおいて、初期デモ管理者アカウントの本番環境完全排除（要件 1-9）および世帯承認ステータス検証（要件 1-1, 1-2, 1-8）を招待・メンバー追加を含む全経路で抜け漏れなく担保し、ドキュメントと実装を100%一致させるため。
+
+### 4. 影響範囲・検証結果
+- 変更ファイル: `src/app/api/auth/signup/route.ts`, `src/app/api/auth/invite/route.ts`, `src/app/api/admin/members/route.ts`, `for_agent/04_api_specifications.md`, `docs/environment_setup_guide.md`, `README.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0（型エラー 0件）
+  - `npm run build`: 終了コード 0（全23ルートビルド成功）
+  - `npx tsx scripts/test-csv-unit.ts`: 全テスト合格（Exit Code 0）
+  - `npx tsx scripts/test-members-unit.ts`: 全テスト合格（Exit Code 0）
+  - `npx tsx scripts/test-auth-session-unit.ts`: 全テスト合格（Exit Code 0）
+  - `npx tsx scripts/test-rate-limit-csrf.ts`: 全テスト合格（Exit Code 0）
+  - `npx tsx scripts/test-categories-unit.ts`: 全テスト合格（Exit Code 0）
+  - `npx tsx scripts/test-unit-calculator.ts`: 全テスト合格（Exit Code 0）
+  - `npx tsx scripts/test-household-approval-unit.ts`: 全テスト合格（Exit Code 0）
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格（Exit Code 0）
+
+
 ## [2026-11-18] 【Phase 13.3】初期デモ管理者アカウント限定化の単体テスト・静的検査拡充および総合ビルド検証
 
 ### 1. 概要

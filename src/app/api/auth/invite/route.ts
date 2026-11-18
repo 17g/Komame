@@ -10,6 +10,8 @@ import {
   getHouseholdPasswordPolicy,
   createSessionToken,
   setSessionCookie,
+  getHouseholdAccessError,
+  isDemoAdminAllowed,
 } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import {
@@ -53,6 +55,11 @@ export async function GET(req: NextRequest) {
 
     if (!household) {
       return NextResponse.json({ error: "招待元の世帯が見つかりません。" }, { status: 404 });
+    }
+
+    const accessError = getHouseholdAccessError(household.status);
+    if (accessError) {
+      return NextResponse.json({ error: accessError }, { status: 403 });
     }
 
     return NextResponse.json({
@@ -108,7 +115,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "招待元の世帯が見つかりません。" }, { status: 404 });
     }
 
+    const accessError = getHouseholdAccessError(household.status);
+    if (accessError) {
+      return NextResponse.json({ error: accessError }, { status: 403 });
+    }
+
     const normalizedEmail = email.trim().toLowerCase();
+
+    // 本番環境における初期デモ管理者アカウントの招待参加拒否 (要件 1-9)
+    if (!isDemoAdminAllowed(normalizedEmail)) {
+      return NextResponse.json(
+        { error: "このメールアドレスは使用できません。" },
+        { status: 400 }
+      );
+    }
 
     // 既存ユーザーの検索
     const [existingUser] = await masterDb
@@ -120,6 +140,12 @@ export async function POST(req: NextRequest) {
     let userId: string;
 
     if (existingUser) {
+      if (!existingUser.isActive || !isDemoAdminAllowed(existingUser.id) || !isDemoAdminAllowed(existingUser.email)) {
+        return NextResponse.json(
+          { error: "このアカウントは現在利用できません。" },
+          { status: 403 }
+        );
+      }
       // 既存ユーザーの場合はパスワード突合
       const isValid = await verifyPassword(existingUser.passwordHash, password);
       if (!isValid) {

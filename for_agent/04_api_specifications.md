@@ -71,7 +71,7 @@
   }
   ```
 - **処理**:
-  1. レートリミット（IP単位）、入力値、パスワードポリシー、メールアドレス重複を検証。
+  1. レートリミット（IP単位）、入力値、パスワードポリシー、本番環境における初期デモ管理者メール（`admin@komame.local`）の登録禁止（`!isDemoAdminAllowed`）、およびメールアドレス重複を検証。
   2. `public.users`（`isActive: true`, `isSuperAdmin: false`）、`public.households`（`status: "pending"`）、`public.household_memberships`（`role: "admin"`, `status: "active"`）を `masterDb.transaction()` 内で作成。
 - **レスポンス (201 Created)**:
   ```json
@@ -83,8 +83,8 @@
   ```
 
 ### 1.5 招待参加 API (`/api/auth/invite`)
-- **`GET /api/auth/invite?token=...`**: 招待リンク（JWTトークン）の有効性を検証し、世帯名と付与ロールを返却。
-- **`POST /api/auth/invite`**: 招待トークンに基づき、ユーザー登録（または既存アカウント認証）を行い、世帯メンバーシップを自動作成してログインセッションを確立。
+- **`GET /api/auth/invite?token=...`**: 招待リンク（JWTトークン）の有効性および招待元世帯の承認ステータス（`households.status === "approved"`）を検証し、世帯名と付与ロールを返却。
+- **`POST /api/auth/invite`**: 招待トークンおよび招待元世帯の有効状態（`status === "approved"`）、本番環境での初期デモ管理者アカウント除外（`isDemoAdminAllowed`）を検証し、ユーザー登録（または既存アカウント認証）を行い、世帯メンバーシップを自動作成してログインセッションを確立。
 
 ---
 
@@ -503,6 +503,7 @@
 ---
 
 ## 改訂履歴
+- **2026-11-19**: `POST /api/auth/signup`, `GET/POST /api/auth/invite`, `POST /api/admin/members` におけるエッジケース保護（本番環境での初期デモ管理者アカウント `admin@komame.local` の登録・招待拒否、および招待トークン使用時の招待元世帯承認ステータス `status === "approved"` 検証）を追記。
 - **2026-11-18**: `POST /api/auth/login` および `GET /api/auth/me`（`getCurrentSession()`）において、初期デモ管理者アカウント（`admin@komame.local` / `usr-yamada-taro-001`）をテスト環境（`NODE_ENV !== "production"`）でのみ有効とし、本番環境（`NODE_ENV === "production"`）では認証・セッションを拒否する仕様を追記。
 - **2026-11-18**: 新規世帯登録の申請・許可制導入に伴い、`POST /api/auth/signup`（`pending` 申請受付・スキーマ未作成・セッション未発行）、`POST /api/auth/login`（世帯ステータス別 `403` 応答・`isSuperAdmin` 返却）、`GET /api/auth/me`（`isSuperAdmin` 返却）を更新し、第10章「システム管理者（Super Admin）API (`/api/super-admin/households`)」を追加。
 - **2026-11-15**: 6.6 `POST /api/admin/members` の記述を Phase 7.2 (VULN-02) 実装（既存他世帯アカウントの直接追加廃止・招待リンク発行統一、複数世帯所属ユーザーの管理者パスワード上書き拒否）に合わせて最新化。

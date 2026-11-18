@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentSession, hashPassword, validatePasswordPolicy, getHouseholdPasswordPolicy, createInviteToken } from "@/lib/auth";
+import { getCurrentSession, hashPassword, validatePasswordPolicy, getHouseholdPasswordPolicy, createInviteToken, isDemoAdminAllowed } from "@/lib/auth";
 import { masterDb, getTenantDb } from "@/db";
 import { users, householdMemberships } from "@/db/schema/master";
 import { eq, and, sql } from "drizzle-orm";
@@ -169,6 +169,12 @@ export async function POST(req: NextRequest) {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+    if (!isDemoAdminAllowed(normalizedEmail)) {
+      return NextResponse.json(
+        { error: "このメールアドレスは使用できません。" },
+        { status: 400 }
+      );
+    }
     const targetRole: "admin" | "member" = role === "admin" ? "admin" : "member";
 
     // 既存ユーザーの検索

@@ -1,11 +1,11 @@
 # 『Komame』 - 家族向けマルチテナント家計簿 Web アプリケーション
 
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Next.js](https://img.shields.io/badge/Next.js-15.1.6-black)
+![Next.js](https://img.shields.io/badge/Next.js-15.5.28-black)
 ![React](https://img.shields.io/badge/React-19.0.0-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7.3-blue)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)
-![Drizzle ORM](https://img.shields.io/badge/Drizzle_ORM-0.38.4-brightgreen)
+![Drizzle ORM](https://img.shields.io/badge/Drizzle_ORM-0.45.4-brightgreen)
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4.17-38B2AC)
 
 『**Komame**』は、共働き世帯や家族での共同家計管理を強力にサポートするマルチテナント対応の家計簿 Web アプリケーションです。  
@@ -53,8 +53,8 @@
 
 ## 🛠 技術スタック
 
-- **フロントエンド**: Next.js 15.1.6 (App Router), React 19, TypeScript 5.7.3, Tailwind CSS 3.4.17, Lucide Icons
-- **バックエンド / API**: Next.js Route Handlers, Drizzle ORM 0.38.4, postgres.js 3.4.5
+- **フロントエンド**: Next.js 15.5.28 (App Router), React 19, TypeScript 5.7.3, Tailwind CSS 3.4.17, Lucide Icons
+- **バックエンド / API**: Next.js Route Handlers, Drizzle ORM 0.45.4, postgres.js 3.4.5
 - **データベース**: PostgreSQL 16 (Alpine) - Schema per Tenant
 - **認証 & セキュリティ**: Argon2id (`@node-rs/argon2`), jose (JWT), HttpOnly SameSite=Lax Cookie
 - **ロギング**: Pino 9.6.0 (開発時: `pino-pretty`, 本番: 構造化 JSON / スロークエリ 200ms 自動検知)
@@ -108,10 +108,11 @@ npm run dev
 
 ブラウザで [http://localhost:3080](http://localhost:3080) にアクセスします。
 
-#### 初期ログインアカウント (デモ用管理者)
+#### 初期ログインアカウント (デモ用管理者 / ※テスト環境 `NODE_ENV !== "production"` 限定)
 - **メールアドレス**: `admin@komame.local`
 - **パスワード**: `Password123!`
-- **所属世帯**: 山田家 (Household Admin)
+- **所属世帯 / 権限**: 山田家 (Household Admin / Super Admin)
+- ※ **本番環境（`NODE_ENV === "production"`）では初期デモ管理者アカウントは完全に無効化**（ログイン・セッション・シード作成の拒否およびログイン画面のデモアカウント欄非表示）されます。
 
 ---
 
@@ -149,8 +150,14 @@ npx tsc --noEmit
 npm run build
 
 # 3. 単体テスト (DB接続不要・高速実行)
-npx tsx scripts/test-csv-unit.ts      # CSV パース・エスケープ・BOM検証
-npx tsx scripts/test-members-unit.ts  # 家族メンバー招待・Argon2idハッシュ検証
+npx tsx scripts/test-csv-unit.ts                 # CSV パース・エスケープ・BOM検証
+npx tsx scripts/test-members-unit.ts             # 家族メンバー招待・Argon2idハッシュ検証
+npx tsx scripts/test-auth-session-unit.ts        # 認証・JWT・Fail-Fast・デモ管理者テスト環境限定検証
+npx tsx scripts/test-rate-limit-csrf.ts          # レートリミッター & CSRF Origin 検証
+npx tsx scripts/test-categories-unit.ts          # 費目マスター & 標準12費目保護検証
+npx tsx scripts/test-unit-calculator.ts          # 単価×個数 計算補助ロジック検証
+npx tsx scripts/test-household-approval-unit.ts  # 新規世帯登録申請・承認制 & Super Admin 検証
+npx tsx scripts/test-security-unit.ts            # セキュリティ単体テスト & 静的コード検査
 
 # 4. 総合ビジネスロジック自動テスト (開発サーバー & DB 起動時)
 npx tsx scripts/comprehensive-test.ts

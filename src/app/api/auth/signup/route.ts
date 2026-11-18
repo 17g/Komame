@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { masterDb, assertValidSchemaName } from "@/db";
 import { users, households, householdMemberships } from "@/db/schema/master";
 import { eq } from "drizzle-orm";
-import { hashPassword, validatePasswordPolicy } from "@/lib/auth";
+import { hashPassword, validatePasswordPolicy, isDemoAdminAllowed } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import {
   getClientIp,
@@ -52,6 +52,14 @@ export async function POST(req: NextRequest) {
     if (!normalizedEmail.includes("@")) {
       return NextResponse.json(
         { error: "有効なメールアドレスを入力してください。" },
+        { status: 400 }
+      );
+    }
+
+    // 本番環境における初期デモ管理者メールアドレスでの登録申請禁止 (要件 1-9)
+    if (!isDemoAdminAllowed(normalizedEmail)) {
+      return NextResponse.json(
+        { error: "このメールアドレスは使用できません。" },
         { status: 400 }
       );
     }
