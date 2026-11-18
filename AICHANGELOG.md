@@ -2,6 +2,27 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-18] 【Phase 13.2】ログイン画面における初期デモ管理者アカウント欄のテスト環境限定出力
+
+### 1. 概要
+要件 1-9 および `Plan.md` Phase 13.2 に基づき、ログイン画面（`src/app/page.tsx`）の初期デモ管理者アカウント案内・クイック入力欄およびメールアドレス入力欄の `placeholder` をテスト環境（`NODE_ENV !== "production"`）限定出力に統一し、本番ビルド出力からデモ資格情報が完全に除外されることを確認した。
+
+### 2. 変更内容 (Before / After)
+1. **テスト環境フラグの定義とログイン画面デモ案内・プレースホルダーの環境別制御 (`src/app/page.tsx`)**:
+   - Before: メールアドレス入力欄の `placeholder` が常に `"user@example.com"` 固定であり、初期デモ管理者アカウント欄の表示条件がインラインの `process.env.NODE_ENV !== "production"` 記述となっていた。
+   - After: 未ログイン画面ブロック内に `const isTestEnv = process.env.NODE_ENV !== "production";` を定義し、初期デモ管理者アカウント欄（`admin@komame.local` / `Password123!` および「クイック入力」ボタン）を `authMode === "login" && isTestEnv` で制御するとともに、メールアドレス入力欄の `placeholder` を `isTestEnv ? "admin@komame.local" : "user@example.com"` に変更した。
+
+### 3. 変更理由
+- 本番環境（`NODE_ENV === "production"`）のブラウザ DOM およびビルド済みアセットに初期デモ管理者アカウントの資格情報が出力・混入することを防止し、テスト環境でのみ利便性を維持するため。
+
+### 4. 影響範囲・検証結果
+- 変更ファイル: `src/app/page.tsx`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（23ルート生成完了、`.next/static` および `.next/server/app` に `admin@komame.local` / `Password123!` / `初期デモ管理者アカウント` が出力されないことを確認）
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+
+
 ## [2026-11-18] 【Phase 13.1】初期デモ管理者アカウントの認証・セッション・シードにおけるテスト環境限定化
 
 ### 1. 概要

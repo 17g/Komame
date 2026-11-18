@@ -271,6 +271,8 @@ export default function Home() {
 
   // 未ログイン時: 認証画面
   if (!user) {
+    const isTestEnv = process.env.NODE_ENV !== "production";
+
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-app-bg text-content-main">
         <div className="max-w-md w-full p-8 bg-app-surface border border-border rounded-3xl shadow-xl flex flex-col gap-5">
@@ -378,7 +380,7 @@ export default function Home() {
               </label>
               <input
                 type="email"
-                placeholder="user@example.com"
+                placeholder={isTestEnv ? "admin@komame.local" : "user@example.com"}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-app-subtle border border-border rounded-xl text-xs font-medium focus:border-primary outline-none text-content-main"
@@ -409,7 +411,7 @@ export default function Home() {
             </button>
           </form>
 
-          {authMode === "login" && process.env.NODE_ENV !== "production" && (
+          {authMode === "login" && isTestEnv && (
             <div className="p-3 bg-app-subtle rounded-xl text-[11px] text-content-muted border border-border leading-relaxed flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <span>💡 <b>初期デモ管理者アカウント:</b></span>

@@ -333,7 +333,7 @@
     - `src/db/seed.ts`: 本番環境（`NODE_ENV === "production"`）でシードを実行した際、初期デモ管理者アカウント（`admin@komame.local` / `Password123!`）の作成を禁止する検証関数 `assertDemoSeedAllowed(nodeEnv, adminEmail, adminPass)` を実装・適用し、本番環境でのデモアカウント作成をエラーで防止する。
     - `docker-compose.prod.yml`: `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD` / `DEFAULT_HOUSEHOLD_NAME` からデモ資格情報（`admin@komame.local`, `Password123!`, `山田家`）のデフォルトフォールバックを除去する。
 
-- [ ] **13.2 ログイン画面 (`src/app/page.tsx`) における初期デモ管理者アカウント欄のテスト環境限定出力**:
+- [x] **13.2 ログイン画面 (`src/app/page.tsx`) における初期デモ管理者アカウント欄のテスト環境限定出力**:
   - `src/app/page.tsx`:
     - テスト環境フラグ（`const isTestEnv = process.env.NODE_ENV !== "production"`）を定義し、ログイン画面下部の「💡 初期デモ管理者アカウント（`admin@komame.local` / `Password123!` および『クイック入力』ボタン）」欄を `authMode === "login" && isTestEnv` の場合のみレンダリングし、本番環境（`NODE_ENV === "production"`）では DOM に一切出力しないよう改修する。
     - メールアドレス入力欄の `placeholder` もテスト環境時のみ `"admin@komame.local"`、本番環境時は `"user@example.com"` とする。
