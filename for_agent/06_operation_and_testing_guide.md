@@ -30,6 +30,7 @@ npm run dev
 
 - アクセス: `http://localhost:3080`
 - デモ管理者アカウント: `admin@komame.local` / `Password123!`
+  - ※シードデータにより `is_super_admin = TRUE`（システム管理者権限）および世帯状態 `approved` が付与されており、ログイン後の管理タブから新規世帯登録申請の承認・却下・停止操作を確認・検証できる。
 
 ---
 
@@ -109,6 +110,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec app np
 
 ## 4. 改訂履歴
 
+- **2026-11-18**: 開発環境デモ管理者（`admin@komame.local`）が `is_super_admin = TRUE` であり、管理タブから新規世帯申請の承認・却下・停止検証が可能である旨を追記。
 - **2026-11-15**: 単体テスト一覧に単価×個数 計算補助ロジック単体テスト（`test-unit-calculator.ts`）を追加。
 - **2026-11-15**: 単体テスト一覧に費目マスター バリデーション & 標準12費目保護単体テスト（`test-categories-unit.ts`）を追加。
 - **2026-11-14**: 本番用 Docker ビルド構成（`next.config.ts` の `output: "standalone"`、`.dockerignore`、`Dockerfile` のマイグレーション対応、`.env.production.example`）を整備し、本番環境構築手順書（`docs/environment_setup_guide.md`）との連携を更新。

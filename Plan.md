@@ -17,6 +17,7 @@
 - [x] Phase 9: 費目マスターメンテナンス機能の実装（標準12費目保護・追加・編集・並び替え・アーカイブ/復元・監査ログ）
 - [x] Phase 10: 支出金額入力欄の「単価×個数」計算補助機能の実装（要件 2-7）
 - [x] Phase 11: 単価×個数 計算補助UIの個数入力セレクトボックス化（要件 2-7 改訂）
+- [ ] Phase 12: 新規世帯登録の申請・許可制およびシステム管理者（Super Admin）世帯管理機能の実装（要件 1-1, 1-2, 1-8）
 
 
 ---
@@ -267,5 +268,55 @@
   - `scripts/test-unit-calculator.ts`: `calculateUnitTotal` が引き続き `1` 以上の正の整数（31以上含む）を受け付ける汎用仕様のテストを維持しつつ、UI用個数オプション範囲（`1`〜`30`）および初期値 `"1"` に関する検証を追加・実行する。
   - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-unit-calculator.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。
   - `AICHANGELOG.md` に変更内容を記録し、Git コミットを行う。
+
+---
+
+## Phase 12: 新規世帯登録の申請・許可制およびシステム管理者（Super Admin）世帯管理機能の実装（要件 1-1, 1-2, 1-8）
+
+- [x] **12.1 マスタDBスキーマ拡張・マイグレーション・シード・型定義の更新 (`src/db/schema/master.ts`, `src/db/migrate.ts`, `src/db/seed.ts`, `src/types/index.ts`)**:
+  - `src/db/schema/master.ts`: `households` テーブルに `status`（`varchar("status", { length: 20 }).default("approved").notNull()`）、`reviewedBy`（`varchar("reviewed_by", { length: 64 })`）、`reviewedAt`（`timestamp("reviewed_at", { withTimezone: true })`）、`rejectionReason`（`text("rejection_reason")`）を追加し、IDカラム長整合性を確認する。
+  - `src/db/migrate.ts`:
+    - `createMasterTables()` に `public.households` の新規カラム定義および既存環境向け `ALTER TABLE public.households ADD COLUMN IF NOT EXISTS ...` を追加する。
+    - `runMigrations()` におけるテナントスキーマ作成対象を `WHERE status IN ('approved', 'suspended')` に限定し、未承認（`pending`）・却下（`rejected`）世帯に対してスキーマが作成されないよう保護する。
+  - `src/db/seed.ts`: 初期デモ世帯（山田家）の投入時に `status = 'approved'` を明示設定する。
+  - `src/types/index.ts`: `HouseholdStatus` 型（`"pending" | "approved" | "rejected" | "suspended"`）、`UserSession` への `isSuperAdmin?: boolean` 追加、およびシステム管理者向け世帯一覧アイテム型 `ManagedHouseholdItem` を定義する。
+
+- [ ] **12.2 認証・セッション検証ロジックおよびログイン・サインアップ申請APIの改修 (`src/lib/auth.ts`, `src/app/api/auth/signup/route.ts`, `src/app/api/auth/login/route.ts`, `src/app/api/auth/me/route.ts`)**:
+  - `src/lib/auth.ts`:
+    - `SessionPayload` に `isSuperAdmin?: boolean` を追加する。
+    - `getCurrentSession()` のマスタDB照会クエリに `users.isSuperAdmin` および `households.status` を追加し、`record.householdStatus !== "approved"` の場合は `null` を返却して未承認・却下・停止世帯のセッションを即時遮断する。
+  - `src/app/api/auth/signup/route.ts`:
+    - 申請時点でのテナント専用スキーマ作成・初期費目/口座シード・セッションCookie発行を廃止し、`public.users` / `public.households`（`status: "pending"`） / `public.household_memberships` のみをマスタDBへ登録して `{ success: true, pendingApproval: true, message: "..." }`（`201 Created`）を返却するよう改修する。
+  - `src/app/api/auth/login/route.ts` & `src/app/api/auth/me/route.ts`:
+    - `login`: パスワード検証成功後に所属世帯の `households.status` を確認し、`pending` / `rejected` / `suspended` の場合はそれぞれの状態を明示したメッセージとともに `403 Forbidden` を返却する（パスワード不一致・未存在時は従来通り `401` でアカウント列挙を防止）。`approved` 時は `isSuperAdmin` を含めてセッション・レスポンスを発行する。
+    - `me`: レスポンスの `user` に `isSuperAdmin` を含めて返却する。
+
+- [ ] **12.3 システム管理者（Super Admin）世帯承認・管理APIの新規実装 (`src/app/api/super-admin/households/route.ts`)**:
+  - `getCurrentSession()` に加え、DB上の `users.isSuperAdmin === true` を検証する認可ガード（非Super Adminは `403 Forbidden`）を実装する。
+  - `GET /api/super-admin/households`: 登録申請中および登録済みの世帯一覧（世帯名、申請者メールアドレス、ステータス、申請日時、審査日時、却下理由）およびステータス別件数集計（`counts`）を返却する（`status` クエリフィルタ対応）。
+  - `PUT /api/super-admin/households`:
+    - `action: "approve"`（承認・再承認）: `pending` または `rejected` の世帯を対象に、`assertValidSchemaName` 検証のうえ `createTenantTables(schemaName)` を実行し、`system_settings`・標準12費目・デフォルト現金口座を冪等に初期シード投入した上で、`status = "approved"`, `reviewedBy`, `reviewedAt`, `rejectionReason = null` に更新する。
+    - `action: "reject"`（却下）: `pending` 世帯を `status = "rejected"`, `reviewedBy`, `reviewedAt`, `rejectionReason` に更新する。
+    - `action: "suspend"` / `"reactivate"`（停止・再開）: 承認済み世帯の `status` を `"suspended"` / `"approved"` に切り替える（現在操作中のSuper Admin自身の所属世帯の停止は `400 Bad Request` で拒否し自己ロックアウトを防止）。
+  - `DELETE /api/super-admin/households?householdId=...`: `rejected` または `pending` の世帯申請レコードを物理削除し、他世帯に所属していない申請ユーザーもあわせて物理削除することで、同一メールアドレスでの再申請を可能にする（`approved` / `suspended` や自世帯の削除は拒否）。
+
+- [ ] **12.4 ログイン・新規世帯申請画面 (`src/app/page.tsx`) および管理タブ内 Super Admin 世帯管理UI (`src/components/AdminTab.tsx`, `src/lib/i18n.ts`) の実装**:
+  - `src/lib/i18n.ts`: 新規世帯登録申請・承認待ち案内、およびシステム管理者向け世帯承認・アカウント管理セクションの日英翻訳キーを追加する。
+  - `src/app/page.tsx`:
+    - 新規世帯登録タブのボタン文言を申請制表記（「新規世帯の登録を申請する」等）に変更し、「※システム管理者の承認後にログイン可能となります」の案内を表示する。
+    - 申請完了時（`pendingApproval: true`）にログイン画面へ切り替え、申請受付完了バナーを表示する。
+    - 承認待ち・却下・停止状態でのログイン試行時に返却される `403` メッセージを分かりやすく表示する。
+    - `AdminTab` に `isSuperAdmin={Boolean(user.isSuperAdmin)}` および `currentHouseholdId={user.householdId}` を渡す。
+  - `src/components/AdminTab.tsx`:
+    - `isSuperAdmin === true` の場合にのみ表示される「システム管理：新規世帯登録の承認・アカウント管理」セクションを実装する。
+    - ステータスフィルター（すべて / 承認待ち / 承認済み / 却下済み / 停止中）と未承認件数バッジ、各世帯の情報表示、および状態に応じた操作（「許可（承認）」「却下（理由入力対応）」「再承認」「削除（抹消）」「利用停止」「利用再開」）を実装する。
+
+- [ ] **12.5 単体テスト・E2E総合テストの更新とビルド検証・変更履歴記録 (`scripts/test-household-approval-unit.ts`, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `AICHANGELOG.md`)**:
+  - `scripts/test-household-approval-unit.ts` を新規作成し、世帯ステータス判定・ログイン可否・Super Admin 操作バリデーション（自己世帯停止・削除ガード等）の単体テストを実行する。
+  - `scripts/comprehensive-test.ts` の新規サインアップ検証フローを、申請（`pending`）→未承認時ログイン拒否（`403`）→Super Admin（`admin@komame.local`）による承認→承認後ログイン成功のフローへ更新する。
+  - `for_agent/06_operation_and_testing_guide.md` の単体テスト一覧に `test-household-approval-unit.ts` を追記する。
+  - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-household-approval-unit.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。
+  - `AICHANGELOG.md` に作業内容を記録し、Git コミットを行う。
+
 
 

@@ -7,7 +7,7 @@
 ## 1. 認証 API (`/api/auth`)
 
 ### 1.1 `POST /api/auth/login`
-- **概要**: メールアドレス・パスワードによる認証とセッションCookie発行。
+- **概要**: メールアドレス・パスワードによる認証、所属世帯の承認ステータス検証、およびセッションCookie発行。
 - **リクエストボディ**:
   ```json
   {
@@ -15,6 +15,13 @@
     "password": "Password123!"
   }
   ```
+- **ビジネスロジック（世帯ステータス検証）**:
+  1. メールアドレスおよびパスワードを検証（不一致・未登録・無効ユーザーは `401 Unauthorized`「メールアドレスまたはパスワードが正しくありません。」を返却しアカウント列挙を防止）。
+  2. パスワード検証成功後、所属世帯（`households.status`）を確認：
+     - `pending`: `403 Forbidden`（`{ "error": "現在、システム管理者の承認待ちです。許可されるまでログインできません。" }`）
+     - `rejected`: `403 Forbidden`（`{ "error": "この新規世帯登録申請は承認されませんでした。" }`）
+     - `suspended`: `403 Forbidden`（`{ "error": "この世帯アカウントは現在システム管理者により停止されています。" }`）
+     - `approved`: セッションCookie発行。
 - **レスポンス (200 OK)**:
   ```json
   {
@@ -24,6 +31,7 @@
       "email": "admin@komame.local",
       "themePreference": "natural_komame",
       "role": "admin",
+      "isSuperAdmin": true,
       "householdId": "hh_xxx"
     }
   }
@@ -34,7 +42,7 @@
 - **レスポンス**: `{ "success": true }`
 
 ### 1.3 `GET /api/auth/me`
-- **概要**: 現在ログイン中のユーザーおよび世帯情報の取得。
+- **概要**: 現在ログイン中のユーザーおよび世帯情報の取得（`getCurrentSession()` にて `households.status === "approved"` を含むリアルタイム検証を実施）。
 - **レスポンス (200 OK)**:
   ```json
   {
@@ -45,19 +53,31 @@
       "householdId": "hh_xxx",
       "householdName": "山田家",
       "role": "admin",
+      "isSuperAdmin": true,
       "schemaName": "tenant_xxx"
     }
   }
   ```
 
 ### 1.4 `POST /api/auth/signup`
-- **概要**: 新規世帯開設および管理者ユーザー作成。テナントスキーマ・標準費目の自動投入。
+- **概要**: 新規世帯登録の**申請**受付（許可制）。マスタスキーマ（`public`）のみに承認待ち状態でユーザー・世帯・世帯所属レコードを作成し、**この時点ではテナント専用スキーマの作成およびセッションCookieの発行を行わない**。
 - **リクエストボディ**:
   ```json
   {
     "email": "user@example.com",
     "password": "SecurePassword123!",
     "householdName": "新規世帯名"
+  }
+  ```
+- **処理**:
+  1. レートリミット（IP単位）、入力値、パスワードポリシー、メールアドレス重複を検証。
+  2. `public.users`（`isActive: true`, `isSuperAdmin: false`）、`public.households`（`status: "pending"`）、`public.household_memberships`（`role: "admin"`, `status: "active"`）を `masterDb.transaction()` 内で作成。
+- **レスポンス (201 Created)**:
+  ```json
+  {
+    "success": true,
+    "pendingApproval": true,
+    "message": "新規世帯登録の申請を受け付けました。システム管理者の承認後にログインできるようになります。"
   }
   ```
 
@@ -415,7 +435,74 @@
 
 ---
 
+## 10. システム管理者（Super Admin）API (`/api/super-admin/households`)
+
+本エンドポイント群は、`getCurrentSession()` による認証に加え、マスタDB上の `users.isSuperAdmin === true` を満たす最上位管理者のみアクセス可能（それ以外は `403 Forbidden`）。
+
+### 10.1 `GET /api/super-admin/households`
+- **概要**: 新規世帯登録申請および登録済み世帯アカウントの一覧取得。
+- **クエリパラメータ**:
+  - `status?: "all" | "pending" | "approved" | "rejected" | "suspended"`（省略時は `"all"`）
+- **レスポンス (200 OK)**:
+  ```json
+  {
+    "households": [
+      {
+        "id": "hh_xxx",
+        "name": "鈴木家",
+        "schemaName": "tenant_hh_xxx",
+        "status": "pending",
+        "applicantEmail": "suzuki@example.com",
+        "applicantUserId": "usr_xxx",
+        "createdAt": "2026-11-18T11:30:00.000Z",
+        "reviewedAt": null,
+        "reviewedBy": null,
+        "rejectionReason": null
+      }
+    ],
+    "counts": {
+      "all": 2,
+      "pending": 1,
+      "approved": 1,
+      "rejected": 0,
+      "suspended": 0
+    }
+  }
+  ```
+
+### 10.2 `PUT /api/super-admin/households`
+- **概要**: 世帯申請の承認・再承認、却下、または承認済み世帯の停止・再有効化。
+- **リクエストボディ**:
+  ```json
+  {
+    "householdId": "hh_xxx",
+    "action": "approve" | "reject" | "suspend" | "reactivate",
+    "reason": "任意の却下理由またはメモ"
+  }
+  ```
+- **処理詳細**:
+  - `action === "approve"`（`pending` または `rejected` から承認）:
+    1. `assertValidSchemaName(household.schemaName)` 検証のうえ、`createTenantTables(household.schemaName)` でテナント専用スキーマ・テーブルを作成。
+    2. `masterDb` 上の `public.system_settings`（通貨・日付形式・パスワードポリシー）およびテナントDB上の標準12費目マスター・デフォルト現金口座を冪等に初期シード投入。
+    3. `public.households` の `status` を `"approved"`、`reviewedBy` を実行管理者ID、`reviewedAt` を現在時刻、`rejectionReason` を `null` に更新。
+  - `action === "reject"`（`pending` から却下）:
+    - `public.households` の `status` を `"rejected"`、`reviewedBy`、`reviewedAt`、`rejectionReason` を更新（履歴保持・ログイン不可）。
+  - `action === "suspend"`（`approved` から利用停止）:
+    - 現在操作中のシステム管理者自身の所属世帯（`householdId === session.activeHouseholdId`）の停止は `400 Bad Request` で拒否（自己ロックアウト防止）。
+    - `public.households` の `status` を `"suspended"` に更新（`getCurrentSession()` により即座に全セッション遮断）。
+  - `action === "reactivate"`（`suspended` から利用再開）:
+    - `public.households` の `status` を `"approved"` に更新。
+
+### 10.3 `DELETE /api/super-admin/households?householdId=...`
+- **概要**: 却下済み（`rejected`）または承認待ち（`pending`）世帯申請の物理削除（抹消）。
+- **バリデーション & ロジック**:
+  - 対象世帯が `rejected` または `pending` であることを検証（`approved` / `suspended` 世帯や自世帯は `400 Bad Request` で拒否）。
+  - トランザクション内で `household_memberships`・`households` を物理削除し、申請ユーザーに他の世帯所属および Super Admin 権限がない場合は `users` レコードも物理削除する（同一メールアドレスでの再申請を可能化）。
+
+---
+
 ## 改訂履歴
+- **2026-11-18**: 新規世帯登録の申請・許可制導入に伴い、`POST /api/auth/signup`（`pending` 申請受付・スキーマ未作成・セッション未発行）、`POST /api/auth/login`（世帯ステータス別 `403` 応答・`isSuperAdmin` 返却）、`GET /api/auth/me`（`isSuperAdmin` 返却）を更新し、第10章「システム管理者（Super Admin）API (`/api/super-admin/households`)」を追加。
 - **2026-11-15**: 6.6 `POST /api/admin/members` の記述を Phase 7.2 (VULN-02) 実装（既存他世帯アカウントの直接追加廃止・招待リンク発行統一、複数世帯所属ユーザーの管理者パスワード上書き拒否）に合わせて最新化。
 - **2026-11-15**: 第9章「費目マスター管理 API (`/api/categories`)」を追加（管理者限定の作成・編集・全費目並び替え・アーカイブ/復元・標準12費目保護・監査ログ記録仕様）。
 - **2026-10-18**: 第8章「API セキュリティ & バリデーション仕様」を追加（金額・残高境界値、レートリミット429応答、トランザクション原子性、CSV数式インジェクション防御、CSRF Origin検証）。

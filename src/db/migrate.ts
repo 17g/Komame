@@ -26,6 +26,10 @@ export async function createMasterTables(sqlClient: typeof sql) {
       id VARCHAR(64) PRIMARY KEY,
       name VARCHAR(100) NOT NULL,
       schema_name VARCHAR(63) UNIQUE NOT NULL,
+      status VARCHAR(20) DEFAULT 'approved' NOT NULL,
+      reviewed_by VARCHAR(64),
+      reviewed_at TIMESTAMP WITH TIME ZONE,
+      rejection_reason TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
     );
 
@@ -46,6 +50,12 @@ export async function createMasterTables(sqlClient: typeof sql) {
       value_json JSONB NOT NULL,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
     );
+
+    -- 既存環境向け households 承認制カラム追加
+    ALTER TABLE public.households ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'approved' NOT NULL;
+    ALTER TABLE public.households ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(64);
+    ALTER TABLE public.households ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE public.households ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
   `);
 }
 
@@ -57,9 +67,10 @@ export async function runMigrations() {
     await createMasterTables(sql);
     logger.info("✅ Master schema tables verified.");
 
-    // 2. 既存の全世帯スキーマのテーブルを作成 / 更新
+    // 2. 承認済み・停止中の既存世帯スキーマのテーブルを作成 / 更新 (未承認・却下世帯には作成しない)
     const existingHouseholds = await sql<{ schema_name: string }[]>`
       SELECT schema_name FROM public.households
+      WHERE status IN ('approved', 'suspended')
     `;
 
     for (const { schema_name } of existingHouseholds) {

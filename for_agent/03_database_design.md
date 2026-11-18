@@ -52,7 +52,13 @@ erDiagram
 | `id` | VARCHAR(64) | PK | 世帯ID (`hh_xxx`) |
 | `name` | VARCHAR(100) | NOT NULL | 世帯名 (例: 「山田家」) |
 | `schema_name` | VARCHAR(63) | UNIQUE, NOT NULL | PostgreSQL専用スキーマ名 (`tenant_xxx`) |
-| `created_at` | TIMESTAMPTZ | DEFAULT NOW(), NOT NULL | 開設日時 |
+| `status` | VARCHAR(20) | DEFAULT 'approved', NOT NULL | 世帯アカウント状態 (`pending`: 承認待ち / `approved`: 承認済み / `rejected`: 却下 / `suspended`: 停止中)<br>※新規登録申請時はアプリ側で明示的に `'pending'` を設定し、既存データ互換のためDBデフォルトは `'approved'` とする |
+| `reviewed_by` | VARCHAR(64) | | 承認・却下・停止を実行した最上位管理者ユーザーID |
+| `reviewed_at` | TIMESTAMPTZ | | 審査・状態変更日時 |
+| `rejection_reason` | TEXT | | 却下理由または管理者メモ |
+| `created_at` | TIMESTAMPTZ | DEFAULT NOW(), NOT NULL | 申請・開設日時 |
+
+> **テナントスキーマ作成タイミング**: `status = 'pending'` の申請時点では `public` スキーマ（`users`, `households`, `household_memberships`）のみにレコードを保持し、テナント専用スキーマ（`tenant_xxx`）は作成しない。システム管理者が `approved` に承認したタイミングで初めて専用スキーマと初期データを生成する。
 
 #### 3. `public.household_memberships` (世帯所属・先行N:M互換)
 | カラム名 | 型 | 制約 | 説明 |
@@ -197,4 +203,5 @@ erDiagram
 
 ## 4. 改訂履歴
 
+- **2026-11-18**: `public.households` テーブルに新規世帯登録の申請・許可制用カラム（`status`, `reviewed_by`, `reviewed_at`, `rejection_reason`）および申請時テナントスキーマ未作成方針を追記。
 - **2026-11-15**: `categories` テーブルに標準12費目保護フラグ `is_system`（`BOOLEAN DEFAULT FALSE NOT NULL`）の仕様を追加。

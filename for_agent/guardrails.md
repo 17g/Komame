@@ -33,6 +33,9 @@
 - `public` スキーマにはシステム全体で共有するデータ（`users`, `households`, `household_memberships`, `system_settings`）のみを配置すること。
 - 家計簿の実データ（口座、決済手段、費目、明細、下書き、目標、監査ログ）は**必ず世帯専用スキーマ（`tenant_{household_id}`）内に配置・アクセス**すること。
 - テナントDBへのアクセスは `getTenantDb(session.schemaName)` を経由し、直接 `public` にクエリを発行しないこと。
+- **新規世帯登録申請時のスキーマ未作成と世帯承認検証**:
+  - `POST /api/auth/signup` では `households.status = 'pending'` として `public` スキーマのみに保存し、テナント専用スキーマ（`tenant_xxx`）を作成しないこと。スキーマおよび初期シードはシステム管理者（`is_super_admin === true`）の承認時にのみ生成すること。
+  - `POST /api/auth/login` および `getCurrentSession()` では必ず `households.status === 'approved'` を検証し、未承認・却下・停止世帯のログインおよび API アクセスを遮断すること。
 
 ### 2.2 ID の採番規則
 - ランダムIDは重複を防ぐため `crypto.randomUUID().replace(/-/g, "")` を用い、プレフィックスを付与すること：
@@ -124,6 +127,7 @@
 
 ## 6. 改訂履歴
 
+- **2026-11-18**: 第2章2.1に新規世帯登録申請時のテナントスキーマ未作成ルールおよび `login` / `getCurrentSession` での `households.status === 'approved'` 必須検証ガードレールを追記。
 - **2026-11-14**: Docker 本番ビルド時の `next/font/google` ビルドエラー再発防止のため、フォントの `@fontsource` セルフホスト必須化ガードレールを追記。
 - **2026-10-18**: セキュリティ強化ガードレール（金額境界値検証、CSV数式インジェクション防止、DBトランザクション原子性、`raw.unsafe` ゼロ件検査）を追記。
 - **2026-10-18**: SQLインジェクション防止ガイドライン（`raw.unsafe` 排除・スキーマ名ホワイトリスト検証）および Scratch スクリプトのパス解決注意事項を追記。

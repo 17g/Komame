@@ -2,6 +2,36 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-18] 【Phase 12.1】新規世帯登録の申請・許可制向けマスタDBスキーマ・マイグレーション・シード・型定義の拡張
+
+### 1. 概要
+要件 1-1, 1-2, 1-8 および `Plan.md` Phase 12.1 に基づき、新規世帯登録の申請・許可制およびシステム管理者（Super Admin）による世帯管理機能の基盤となるマスタDBスキーマ、マイグレーション、初期シード、および TypeScript 型定義を拡張した。
+
+### 2. 変更内容 (Before / After)
+1. **マスタDBスキーマ拡張 (`src/db/schema/master.ts`)**:
+   - Before: `public.households` には状態管理用カラムがなく、各マスタテーブルの ID 系カラム長が `VARCHAR(36)` であり `migrate.ts`（`VARCHAR(64)`）と不整合があった。
+   - After: `households` に `status`（`VARCHAR(20) DEFAULT 'approved' NOT NULL`）、`reviewedBy`（`VARCHAR(64)`）、`reviewedAt`（`TIMESTAMPTZ`）、`rejectionReason`（`TEXT`）を追加し、マスタテーブル群（`users`, `households`, `householdMemberships`, `systemSettings`）の ID・外部キー長を `VARCHAR(64)` に統一。
+2. **マイグレーション保護 (`src/db/migrate.ts`)**:
+   - Before: `createMasterTables()` の `public.households` に承認管理カラムが存在せず、`runMigrations()` はすべての `public.households` に対してテナントスキーマを作成していた。
+   - After: `CREATE TABLE IF NOT EXISTS public.households` に新規カラムを定義するとともに既存環境向けに `ALTER TABLE public.households ADD COLUMN IF NOT EXISTS ...` を追加。さらに `runMigrations()` のテナントスキーマ作成対象を `WHERE status IN ('approved', 'suspended')` に限定し、未承認（`pending`）・却下（`rejected`）世帯に対してスキーマが作成されないよう保護。
+3. **初期シード明示化 (`src/db/seed.ts`)**:
+   - Before: 初期デモ世帯（山田家）の投入時に `status` を明示指定していなかった。
+   - After: `INSERT INTO public.households` に `status = 'approved'` を明示指定するよう更新。
+4. **型定義拡張 (`src/types/index.ts`)**:
+   - Before: `HouseholdStatus`、Super Admin 向け世帯一覧型、`UserSession.isSuperAdmin` が未定義だった。
+   - After: `HouseholdStatus`（`"pending" | "approved" | "rejected" | "suspended"`）、`UserSession.isSuperAdmin?: boolean`、`ManagedHouseholdItem`、および `ManagedHouseholdCounts` を追加。
+
+### 3. 変更理由
+- 新規世帯登録を即時利用ではなく申請・承認制へ移行するにあたり、承認前のテナントスキーマ生成を防止しつつ既存の承認済み世帯との後方互換性を維持し、Super Admin による承認・却下・停止・削除APIおよびUIを型安全に実装できるようにするため。
+
+### 4. 影響範囲・検証結果
+- 変更ファイル: `src/db/schema/master.ts`, `src/db/migrate.ts`, `src/db/seed.ts`, `src/types/index.ts`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+  - `npm run build`: 終了コード 0（22ルート生成完了）
+
+
 ## [2026-11-15] 【Review】全体コード・仕様整合性レビューとエッジケース・API不整合修正
 
 - **変更理由:** `/review` スキルに基づく全仕様書（`for_agent/`）と実装コード（`src/`, `scripts/`）の照合、エッジケース点検、および全検証テストの実行により発見された不整合・不具合を解消するため。

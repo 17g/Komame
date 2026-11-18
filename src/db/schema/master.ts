@@ -9,7 +9,7 @@ import {
 
 // 1. グローバル認証ユーザー
 export const users = pgTable("users", {
-  id: varchar("id", { length: 36 }).primaryKey(),
+  id: varchar("id", { length: 64 }).primaryKey(),
   email: varchar("email", { length: 255 }).notNull().unique(),
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   themePreference: varchar("theme_preference", { length: 50 }).default("natural_komame"),
@@ -21,19 +21,23 @@ export const users = pgTable("users", {
 
 // 2. システムアカウント (世帯マスター)
 export const households = pgTable("households", {
-  id: varchar("id", { length: 36 }).primaryKey(),
+  id: varchar("id", { length: 64 }).primaryKey(),
   name: varchar("name", { length: 100 }).notNull(),
   schemaName: varchar("schema_name", { length: 63 }).notNull().unique(),
+  status: varchar("status", { length: 20 }).default("approved").notNull(), // 'pending' | 'approved' | 'rejected' | 'suspended'
+  reviewedBy: varchar("reviewed_by", { length: 64 }),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // 3. 世帯所属 (先行N:M互換設計)
 export const householdMemberships = pgTable("household_memberships", {
-  id: varchar("id", { length: 36 }).primaryKey(),
-  userId: varchar("user_id", { length: 36 })
+  id: varchar("id", { length: 64 }).primaryKey(),
+  userId: varchar("user_id", { length: 64 })
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  householdId: varchar("household_id", { length: 36 })
+  householdId: varchar("household_id", { length: 64 })
     .notNull()
     .references(() => households.id, { onDelete: "cascade" }),
   role: varchar("role", { length: 20 }).notNull(), // 'admin' | 'member'
@@ -44,8 +48,8 @@ export const householdMemberships = pgTable("household_memberships", {
 
 // 4. システム / 世帯全体設定
 export const systemSettings = pgTable("system_settings", {
-  id: varchar("id", { length: 36 }).primaryKey(),
-  householdId: varchar("household_id", { length: 36 }).references(() => households.id, {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  householdId: varchar("household_id", { length: 64 }).references(() => households.id, {
     onDelete: "cascade",
   }),
   key: varchar("key", { length: 50 }).notNull(),

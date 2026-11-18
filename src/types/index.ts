@@ -5,12 +5,36 @@ export type ThemeName =
   | "forest_mint"
   | "slate_dark";
 
+export type HouseholdStatus = "pending" | "approved" | "rejected" | "suspended";
+
 export interface UserSession {
   userId: string;
   email: string;
   activeHouseholdId: string;
   schemaName: string;
   role: "admin" | "member";
+  isSuperAdmin?: boolean;
+}
+
+export interface ManagedHouseholdItem {
+  id: string;
+  name: string;
+  schemaName: string;
+  status: HouseholdStatus;
+  applicantEmail: string | null;
+  applicantUserId: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
+  rejectionReason: string | null;
+}
+
+export interface ManagedHouseholdCounts {
+  all: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+  suspended: number;
 }
 
 export interface AccountItem {

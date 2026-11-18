@@ -40,8 +40,8 @@ export async function seedDatabase() {
 
     // 3. 世帯マスター作成
     await sql`
-      INSERT INTO public.households (id, name, schema_name)
-      VALUES (${householdId}, ${householdName}, ${schemaName})
+      INSERT INTO public.households (id, name, schema_name, status)
+      VALUES (${householdId}, ${householdName}, ${schemaName}, 'approved')
       ON CONFLICT (id) DO NOTHING
     `;
 
