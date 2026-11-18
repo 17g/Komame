@@ -7,6 +7,7 @@ import {
   createSessionToken,
   setSessionCookie,
   getHouseholdAccessError,
+  isDemoAdminAllowed,
 } from "@/lib/auth";
 import { logger } from "@/lib/logger";
 import {
@@ -53,6 +54,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // 0.2 本番環境における初期デモ管理者アカウント（メールアドレス）のログイン無条件拒否 (要件 1-9)
+    if (!isDemoAdminAllowed(normalizedEmail)) {
+      logger.warn({ ip: clientIp, email: normalizedEmail }, "Blocked demo admin login attempt in production");
+      return NextResponse.json(
+        { error: "メールアドレスまたはパスワードが正しくありません。" },
+        { status: 401 }
+      );
+    }
+
     // 1. ユーザー検索
     const [user] = await masterDb
       .select()
@@ -60,7 +70,10 @@ export async function POST(req: NextRequest) {
       .where(and(eq(users.email, normalizedEmail), eq(users.isActive, true)))
       .limit(1);
 
-    if (!user) {
+    if (!user || !isDemoAdminAllowed(user.id) || !isDemoAdminAllowed(user.email)) {
+      if (user) {
+        logger.warn({ ip: clientIp, userId: user.id }, "Blocked demo admin login attempt by user ID in production");
+      }
       return NextResponse.json(
         { error: "メールアドレスまたはパスワードが正しくありません。" },
         { status: 401 }

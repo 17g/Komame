@@ -14,9 +14,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-komame_prod_user}:${POSTGRES_PASSWORD}@postgres:5532/${POSTGRES_DB:-komame_prod_db}
       JWT_SECRET: ${JWT_SECRET}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-      DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL:-admin@komame.local}
-      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-Password123!}
-      DEFAULT_HOUSEHOLD_NAME: ${DEFAULT_HOUSEHOLD_NAME:-山田家}
+      DEFAULT_ADMIN_EMAIL: ${DEFAULT_ADMIN_EMAIL:-}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:-}
+      DEFAULT_HOUSEHOLD_NAME: ${DEFAULT_HOUSEHOLD_NAME:-}
     depends_on:
       postgres:
         condition: service_healthy

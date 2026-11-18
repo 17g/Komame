@@ -1,6 +1,11 @@
 import "dotenv/config";
 import postgres from "postgres";
-import { hashPassword } from "../lib/auth";
+import {
+  hashPassword,
+  DEMO_ADMIN_EMAIL,
+  DEMO_ADMIN_USER_ID,
+  isTestEnvironment,
+} from "../lib/auth";
 import { createMasterTables, createTenantTables } from "./migrate";
 import { logger } from "../lib/logger";
 
@@ -10,17 +15,56 @@ const connectionString =
 
 const sql = postgres(connectionString, { max: 1 });
 
+/**
+ * 本番環境（NODE_ENV === "production"）での初期デモ管理者アカウントシード禁止検証 (要件 1-9)
+ */
+export function assertDemoSeedAllowed(
+  nodeEnv: string | undefined = process.env.NODE_ENV,
+  adminEmail?: string,
+  adminPass?: string
+): void {
+  if (isTestEnvironment(nodeEnv)) {
+    return;
+  }
+
+  const normalizedEmail = (adminEmail ?? "").trim().toLowerCase();
+  if (!normalizedEmail || normalizedEmail === DEMO_ADMIN_EMAIL) {
+    throw new Error(
+      `【セキュリティ違反】本番環境（NODE_ENV=production）では初期デモ管理者アカウント（${DEMO_ADMIN_EMAIL}）または未設定のままシードを実行することは禁止されています。DEFAULT_ADMIN_EMAIL に本番用メールアドレスを設定してください。`
+    );
+  }
+
+  if (!adminPass || adminPass.trim().length === 0 || adminPass === "Password123!") {
+    throw new Error(
+      "【セキュリティ違反】本番環境（NODE_ENV=production）では初期デモパスワード（Password123!）または未設定のままシードを実行することは禁止されています。DEFAULT_ADMIN_PASSWORD に強力な本番用パスワードを設定してください。"
+    );
+  }
+}
+
 export async function seedDatabase() {
   logger.info("🌱 Starting database seeding...");
 
   try {
-    const adminEmail = process.env.DEFAULT_ADMIN_EMAIL || "admin@komame.local";
-    const adminPass = process.env.DEFAULT_ADMIN_PASSWORD || "Password123!";
-    const householdName = process.env.DEFAULT_HOUSEHOLD_NAME || "山田家";
+    const nodeEnv = process.env.NODE_ENV;
+    const isTestEnv = isTestEnvironment(nodeEnv);
 
-    const userId = "usr-yamada-taro-001";
-    const householdId = "hh-yamada-household-001";
-    const schemaName = "tenant_yamada_001";
+    const adminEmail = (
+      process.env.DEFAULT_ADMIN_EMAIL || (isTestEnv ? DEMO_ADMIN_EMAIL : "")
+    )
+      .trim()
+      .toLowerCase();
+    const adminPass =
+      process.env.DEFAULT_ADMIN_PASSWORD || (isTestEnv ? "Password123!" : "");
+    const householdName =
+      process.env.DEFAULT_HOUSEHOLD_NAME || (isTestEnv ? "山田家" : "わが家の家計簿");
+
+    // 本番環境ではデモ資格情報・未設定でのシード作成を禁止
+    assertDemoSeedAllowed(nodeEnv, adminEmail, adminPass);
+
+    const userId = isTestEnv ? DEMO_ADMIN_USER_ID : "usr-prod-admin-001";
+    const householdId = isTestEnv ? "hh-yamada-household-001" : "hh-prod-household-001";
+    const schemaName = isTestEnv ? "tenant_yamada_001" : "tenant_prod_001";
+    const membershipId = isTestEnv ? "mem-yamada-001" : "mem-prod-001";
 
     // 1. マスタスキーマ (public) のテーブルを確実に作成
     await createMasterTables(sql);
@@ -48,7 +92,7 @@ export async function seedDatabase() {
     // 4. 世帯所属作成
     await sql`
       INSERT INTO public.household_memberships (id, user_id, household_id, role, status, is_default)
-      VALUES ('mem-yamada-001', ${userId}, ${householdId}, 'admin', 'active', TRUE)
+      VALUES (${membershipId}, ${userId}, ${householdId}, 'admin', 'active', TRUE)
       ON CONFLICT (id) DO NOTHING
     `;
 
@@ -164,7 +208,11 @@ export async function seedDatabase() {
     `);
 
     logger.info("🎉 Database seeding completed successfully!");
-    logger.info(`🔑 Demo Admin Login: ${adminEmail} / ${adminPass}`);
+    if (isTestEnv) {
+      logger.info(`🔑 Demo Admin Login: ${adminEmail} / ${adminPass}`);
+    } else {
+      logger.info(`🔑 Initial Admin Seeded: ${adminEmail}`);
+    }
   } catch (error) {
     logger.error({ error }, "❌ Seeding failed");
     throw error;

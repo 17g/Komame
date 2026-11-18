@@ -47,6 +47,42 @@ export function getJwtSecretKey(): Uint8Array {
 
 const COOKIE_NAME = "komame_session";
 
+// 初期デモ管理者アカウント定数（テスト環境限定: 要件 1-9）
+export const DEMO_ADMIN_EMAIL = "admin@komame.local";
+export const DEMO_ADMIN_USER_ID = "usr-yamada-taro-001";
+
+/**
+ * テスト環境判定（NODE_ENV !== "production" をテスト環境とみなす）
+ */
+export function isTestEnvironment(nodeEnv: string | undefined = process.env.NODE_ENV): boolean {
+  return nodeEnv !== "production";
+}
+
+/**
+ * 初期デモ管理者アカウント判定（メールアドレスまたは固定ユーザーID）
+ */
+export function isDemoAdminAccount(identifier?: string | null): boolean {
+  if (!identifier || typeof identifier !== "string") {
+    return false;
+  }
+  const normalized = identifier.trim().toLowerCase();
+  return normalized === DEMO_ADMIN_EMAIL || normalized === DEMO_ADMIN_USER_ID;
+}
+
+/**
+ * 環境に応じた初期デモ管理者アカウント利用可否判定。
+ * デモ管理者アカウント以外は常に許可し、デモ管理者アカウントはテスト環境でのみ許可する。
+ */
+export function isDemoAdminAllowed(
+  identifier?: string | null,
+  nodeEnv: string | undefined = process.env.NODE_ENV
+): boolean {
+  if (!isDemoAdminAccount(identifier)) {
+    return true;
+  }
+  return isTestEnvironment(nodeEnv);
+}
+
 // 失効トークン管理 (メモリ上ブラックリスト: VULN-06)
 const revokedTokens = new Set<string>();
 const MAX_REVOKED_TOKENS = 10000;
@@ -187,6 +223,12 @@ export async function getCurrentSession(): Promise<SessionPayload | null> {
   const payload = await verifySessionToken(token);
   if (!payload || !payload.userId || !payload.activeHouseholdId) return null;
 
+  // 1.5 本番環境における初期デモ管理者アカウントのセッション遮断 (要件 1-9)
+  if (!isDemoAdminAllowed(payload.userId) || !isDemoAdminAllowed(payload.email)) {
+    logger.warn({ userId: payload.userId }, "Blocked demo admin session in production environment");
+    return null;
+  }
+
   // 2. DB リアルタイム突合検証 (VULN-04 & VULN-06)
   try {
     const [record] = await masterDb
@@ -214,11 +256,14 @@ export async function getCurrentSession(): Promise<SessionPayload | null> {
       .limit(1);
 
     // ユーザーが存在しない、無効化されている、世帯所属が無効、または世帯が承認済みでない場合は即時遮断
+    // また本番環境における初期デモ管理者アカウントもDB照合値で二重遮断 (要件 1-9)
     if (
       !record ||
       !record.isActive ||
       record.membershipStatus !== "active" ||
-      record.householdStatus !== "approved"
+      record.householdStatus !== "approved" ||
+      !isDemoAdminAllowed(record.userId) ||
+      !isDemoAdminAllowed(record.email)
     ) {
       return null;
     }

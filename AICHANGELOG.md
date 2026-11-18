@@ -2,6 +2,37 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-18] 【Phase 13.1】初期デモ管理者アカウントの認証・セッション・シードにおけるテスト環境限定化
+
+### 1. 概要
+要件 1-9 および `Plan.md` Phase 13.1 に基づき、初期デモ管理者アカウント（`admin@komame.local` / `usr-yamada-taro-001`）をテスト環境（`NODE_ENV !== "production"`）限定で有効化し、本番環境（`NODE_ENV === "production"`）でのログイン・セッション検証・シード作成を遮断するとともに、`docker-compose.prod.yml` からデモ資格情報のデフォルトフォールバックを除去した。
+
+### 2. 変更内容 (Before / After)
+1. **認証・セッション検証への環境別デモ管理者制御の追加 (`src/lib/auth.ts`)**:
+   - Before: `getCurrentSession()` に本番環境での初期デモ管理者アカウント遮断ロジックが存在しなかった。
+   - After: `DEMO_ADMIN_EMAIL`、`DEMO_ADMIN_USER_ID`、`isTestEnvironment()`、`isDemoAdminAccount()`、`isDemoAdminAllowed()` を実装・エクスポートし、`getCurrentSession()` の JWT 検証後および DB リアルタイム突合後の双方で本番環境のデモ管理者セッションを `null` として即時遮断するよう改修。
+2. **ログイン API の本番環境デモ管理者拒否 (`src/app/api/auth/login/route.ts`)**:
+   - Before: `POST /api/auth/login` は本番環境でも DB に存在する初期デモ管理者アカウントのログインを許可していた。
+   - After: `normalizedEmail` および DB 取得後の `user.id` / `user.email` に対して `isDemoAdminAllowed()` を検証し、本番環境での初期デモ管理者アカウントによるログイン試行を無条件で `401 Unauthorized`（「メールアドレスまたはパスワードが正しくありません。」）で拒否するよう改修。
+3. **シード処理の本番デモアカウント作成禁止 (`src/db/seed.ts`)**:
+   - Before: `seedDatabase()` は環境を問わず `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD` 未設定時に `admin@komame.local` / `Password123!` へフォールバックし、固定ユーザーID `usr-yamada-taro-001` でシードを実行していた。
+   - After: `assertDemoSeedAllowed(nodeEnv, adminEmail, adminPass)` を実装・適用し、`NODE_ENV === "production"` 時にデモ資格情報または未設定での実行をエラーで拒否。また本番用カスタム管理者作成時は `usr-prod-admin-001` / `hh-prod-household-001` / `tenant_prod_001` を使用し、パスワード平文をログ出力しないよう改修。
+4. **本番 Docker Compose のデモ資格情報フォールバック除去 (`docker-compose.prod.yml`)**:
+   - Before: `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD` / `DEFAULT_HOUSEHOLD_NAME` に `admin@komame.local` / `Password123!` / `山田家` のデフォルト値が設定されていた。
+   - After: デモ資格情報のデフォルトフォールバックをすべて除去し空フォールバック（`:-`）へ変更。
+
+### 3. 変更理由
+- 本番運用環境において既知の初期デモ管理者アカウント（`admin@komame.local` / `Password123!`）が残存・悪用されるセキュリティリスクを構造的に排除するため。
+
+### 4. 影響範囲・検証結果
+- 変更ファイル: `src/lib/auth.ts`, `src/app/api/auth/login/route.ts`, `src/db/seed.ts`, `docker-compose.prod.yml`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（23ルート生成完了）
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+  - `npx tsx scripts/test-auth-session-unit.ts`: 全テスト合格・終了コード 0
+
+
 ## [2026-11-18] 【Phase 12.5】新規世帯登録申請・承認制および Super Admin 世帯管理の単体テスト作成・総合テスト更新・検証ガイド最新化
 
 ### 1. 概要

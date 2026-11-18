@@ -323,7 +323,7 @@
 
 ## Phase 13: 初期デモ管理者アカウントのテスト環境限定有効化およびログイン画面表示制御の実装（要件 1-9）
 
-- [ ] **13.1 認証・セッション検証・ログインAPIおよびシード処理における初期デモ管理者アカウントのテスト環境限定化 (`src/lib/auth.ts`, `src/app/api/auth/login/route.ts`, `src/db/seed.ts`, `docker-compose.prod.yml`)**:
+- [x] **13.1 認証・セッション検証・ログインAPIおよびシード処理における初期デモ管理者アカウントのテスト環境限定化 (`src/lib/auth.ts`, `src/app/api/auth/login/route.ts`, `src/db/seed.ts`, `docker-compose.prod.yml`)**:
   - `src/lib/auth.ts`:
     - テスト環境判定関数 `isTestEnvironment(nodeEnv = process.env.NODE_ENV): boolean`（`nodeEnv !== "production"`）および初期デモ管理者アカウント判定関数 `isDemoAdminAccount(identifier?: string | null): boolean`（メールアドレス `admin@komame.local` またはユーザーID `usr-yamada-taro-001`）、環境別デモ管理者許可判定関数 `isDemoAdminAllowed(identifier?: string | null, nodeEnv = process.env.NODE_ENV): boolean` を実装する。
     - `getCurrentSession()` において、本番環境（`NODE_ENV === "production"`）かつ対象ユーザーが初期デモ管理者アカウント（`admin@komame.local` または `usr-yamada-taro-001`）である場合は無条件で `null` を返却しセッションを遮断する。
