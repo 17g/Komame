@@ -11,6 +11,7 @@ export interface UserSession {
   userId: string;
   email: string;
   activeHouseholdId: string;
+  householdId?: string;
   schemaName: string;
   role: "admin" | "member";
   isSuperAdmin?: boolean;

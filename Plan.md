@@ -18,6 +18,7 @@
 - [x] Phase 10: 支出金額入力欄の「単価×個数」計算補助機能の実装（要件 2-7）
 - [x] Phase 11: 単価×個数 計算補助UIの個数入力セレクトボックス化（要件 2-7 改訂）
 - [ ] Phase 12: 新規世帯登録の申請・許可制およびシステム管理者（Super Admin）世帯管理機能の実装（要件 1-1, 1-2, 1-8）
+- [ ] Phase 13: 初期デモ管理者アカウントのテスト環境限定有効化およびログイン画面表示制御の実装（要件 1-9）
 
 
 ---
@@ -300,7 +301,7 @@
     - `action: "suspend"` / `"reactivate"`（停止・再開）: 承認済み世帯の `status` を `"suspended"` / `"approved"` に切り替える（現在操作中のSuper Admin自身の所属世帯の停止は `400 Bad Request` で拒否し自己ロックアウトを防止）。
   - `DELETE /api/super-admin/households?householdId=...`: `rejected` または `pending` の世帯申請レコードを物理削除し、他世帯に所属していない申請ユーザーもあわせて物理削除することで、同一メールアドレスでの再申請を可能にする（`approved` / `suspended` や自世帯の削除は拒否）。
 
-- [ ] **12.4 ログイン・新規世帯申請画面 (`src/app/page.tsx`) および管理タブ内 Super Admin 世帯管理UI (`src/components/AdminTab.tsx`, `src/lib/i18n.ts`) の実装**:
+- [x] **12.4 ログイン・新規世帯申請画面 (`src/app/page.tsx`) および管理タブ内 Super Admin 世帯管理UI (`src/components/AdminTab.tsx`, `src/lib/i18n.ts`) の実装**:
   - `src/lib/i18n.ts`: 新規世帯登録申請・承認待ち案内、およびシステム管理者向け世帯承認・アカウント管理セクションの日英翻訳キーを追加する。
   - `src/app/page.tsx`:
     - 新規世帯登録タブのボタン文言を申請制表記（「新規世帯の登録を申請する」等）に変更し、「※システム管理者の承認後にログイン可能となります」の案内を表示する。
@@ -316,6 +317,30 @@
   - `scripts/comprehensive-test.ts` の新規サインアップ検証フローを、申請（`pending`）→未承認時ログイン拒否（`403`）→Super Admin（`admin@komame.local`）による承認→承認後ログイン成功のフローへ更新する。
   - `for_agent/06_operation_and_testing_guide.md` の単体テスト一覧に `test-household-approval-unit.ts` を追記する。
   - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-household-approval-unit.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。
+  - `AICHANGELOG.md` に作業内容を記録し、Git コミットを行う。
+
+---
+
+## Phase 13: 初期デモ管理者アカウントのテスト環境限定有効化およびログイン画面表示制御の実装（要件 1-9）
+
+- [ ] **13.1 認証・セッション検証・ログインAPIおよびシード処理における初期デモ管理者アカウントのテスト環境限定化 (`src/lib/auth.ts`, `src/app/api/auth/login/route.ts`, `src/db/seed.ts`, `docker-compose.prod.yml`)**:
+  - `src/lib/auth.ts`:
+    - テスト環境判定関数 `isTestEnvironment(nodeEnv = process.env.NODE_ENV): boolean`（`nodeEnv !== "production"`）および初期デモ管理者アカウント判定関数 `isDemoAdminAccount(identifier?: string | null): boolean`（メールアドレス `admin@komame.local` またはユーザーID `usr-yamada-taro-001`）、環境別デモ管理者許可判定関数 `isDemoAdminAllowed(identifier?: string | null, nodeEnv = process.env.NODE_ENV): boolean` を実装する。
+    - `getCurrentSession()` において、本番環境（`NODE_ENV === "production"`）かつ対象ユーザーが初期デモ管理者アカウント（`admin@komame.local` または `usr-yamada-taro-001`）である場合は無条件で `null` を返却しセッションを遮断する。
+  - `src/app/api/auth/login/route.ts`:
+    - 本番環境（`NODE_ENV === "production"`）において `normalizedEmail === "admin@komame.local"` または検索された `user.id === "usr-yamada-taro-001"` の場合、認証を拒否し `401 Unauthorized`（「メールアドレスまたはパスワードが正しくありません。」）を返却する。
+  - `src/db/seed.ts` & `docker-compose.prod.yml`:
+    - `src/db/seed.ts`: 本番環境（`NODE_ENV === "production"`）でシードを実行した際、初期デモ管理者アカウント（`admin@komame.local` / `Password123!`）の作成を禁止する検証関数 `assertDemoSeedAllowed(nodeEnv, adminEmail, adminPass)` を実装・適用し、本番環境でのデモアカウント作成をエラーで防止する。
+    - `docker-compose.prod.yml`: `DEFAULT_ADMIN_EMAIL` / `DEFAULT_ADMIN_PASSWORD` / `DEFAULT_HOUSEHOLD_NAME` からデモ資格情報（`admin@komame.local`, `Password123!`, `山田家`）のデフォルトフォールバックを除去する。
+
+- [ ] **13.2 ログイン画面 (`src/app/page.tsx`) における初期デモ管理者アカウント欄のテスト環境限定出力**:
+  - `src/app/page.tsx`:
+    - テスト環境フラグ（`const isTestEnv = process.env.NODE_ENV !== "production"`）を定義し、ログイン画面下部の「💡 初期デモ管理者アカウント（`admin@komame.local` / `Password123!` および『クイック入力』ボタン）」欄を `authMode === "login" && isTestEnv` の場合のみレンダリングし、本番環境（`NODE_ENV === "production"`）では DOM に一切出力しないよう改修する。
+    - メールアドレス入力欄の `placeholder` もテスト環境時のみ `"admin@komame.local"`、本番環境時は `"user@example.com"` とする。
+
+- [ ] **13.3 単体テスト・静的検査の拡充と総合ビルド検証・変更履歴記録 (`scripts/test-auth-session-unit.ts`, `scripts/test-security-unit.ts`, `AICHANGELOG.md`)**:
+  - `scripts/test-auth-session-unit.ts` および `scripts/test-security-unit.ts` に、初期デモ管理者アカウント（`admin@komame.local` / `usr-yamada-taro-001`）がテスト環境（`development` / `test`）でのみ有効であり本番環境（`production`）ではログイン・セッション・シードのすべてで拒否されること、および `src/app/page.tsx` で初期デモ管理者アカウント欄がテスト環境限定で出力されていることの検証テストを追加・実行する。
+  - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-auth-session-unit.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。
   - `AICHANGELOG.md` に作業内容を記録し、Git コミットを行う。
 
 

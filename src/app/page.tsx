@@ -23,9 +23,11 @@ import {
   SavingsGoalItem,
   TagItem,
 } from "@/types";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock, ShieldAlert } from "lucide-react";
+import { useTranslation } from "@/lib/i18n";
 
 export default function Home() {
+  const { t } = useTranslation();
   const [user, setUser] = useState<(UserSession & { householdName: string }) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("dashboard");
@@ -111,6 +113,8 @@ export default function Home() {
   const [password, setPassword] = useState("");
   const [householdName, setHouseholdName] = useState("");
   const [authError, setAuthError] = useState("");
+  const [authErrorStatus, setAuthErrorStatus] = useState<number | null>(null);
+  const [authInfoMessage, setAuthInfoMessage] = useState("");
 
   const triggerToast = (msg: string) => {
     setToastMsg(msg);
@@ -181,6 +185,8 @@ export default function Home() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError("");
+    setAuthErrorStatus(null);
+    setAuthInfoMessage("");
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
@@ -193,17 +199,21 @@ export default function Home() {
         triggerToast("ログインしました！");
         checkSession();
       } else {
+        setAuthErrorStatus(res.status);
         setAuthError(data.error || "ログインに失敗しました。");
       }
     } catch {
+      setAuthErrorStatus(null);
       setAuthError("通信エラーが発生しました。");
     }
   };
 
-  // サインアップ実行
+  // サインアップ（新規世帯登録申請）実行
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError("");
+    setAuthErrorStatus(null);
+    setAuthInfoMessage("");
     try {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
@@ -213,12 +223,23 @@ export default function Home() {
 
       const data = await res.json();
       if (res.ok) {
-        triggerToast("新規世帯アカウントを作成しました！");
-        checkSession();
+        if (data.pendingApproval) {
+          const msg = data.message || t.auth.applicationSubmittedDefaultMsg;
+          setAuthMode("login");
+          setHouseholdName("");
+          setPassword("");
+          setAuthInfoMessage(msg);
+          triggerToast("✓ 新規世帯登録の申請を受け付けました");
+        } else {
+          triggerToast("新規世帯アカウントを作成しました！");
+          checkSession();
+        }
       } else {
-        setAuthError(data.error || "登録に失敗しました。");
+        setAuthErrorStatus(res.status);
+        setAuthError(data.error || "登録申請に失敗しました。");
       }
     } catch {
+      setAuthErrorStatus(null);
       setAuthError("通信エラーが発生しました。");
     }
   };
@@ -272,6 +293,7 @@ export default function Home() {
               onClick={() => {
                 setAuthMode("login");
                 setAuthError("");
+                setAuthErrorStatus(null);
               }}
               className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
                 authMode === "login"
@@ -279,12 +301,14 @@ export default function Home() {
                   : "text-content-muted hover:text-content-main"
               }`}
             >
-              ログイン
+              {t.auth.loginTab}
             </button>
             <button
               onClick={() => {
                 setAuthMode("signup");
                 setAuthError("");
+                setAuthErrorStatus(null);
+                setAuthInfoMessage("");
               }}
               className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
                 authMode === "signup"
@@ -292,40 +316,69 @@ export default function Home() {
                   : "text-content-muted hover:text-content-main"
               }`}
             >
-              新規世帯登録
+              {t.auth.signupTab}
             </button>
           </div>
 
+          {authInfoMessage && (
+            <div className="p-3.5 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 rounded-xl text-xs space-y-1">
+              <div className="font-bold flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{t.auth.applicationSubmittedTitle}</span>
+              </div>
+              <p className="text-[11px] leading-relaxed">{authInfoMessage}</p>
+            </div>
+          )}
+
           {authError && (
-            <div className="p-3 bg-danger-light text-danger border border-danger/20 rounded-xl text-xs font-medium">
-              {authError}
+            <div
+              className={`p-3.5 rounded-xl text-xs space-y-1 border ${
+                authErrorStatus === 403
+                  ? "bg-amber-500/10 text-amber-800 dark:text-amber-300 border-amber-500/30"
+                  : "bg-danger-light text-danger border-danger/20"
+              }`}
+            >
+              {authErrorStatus === 403 && (
+                <div className="font-bold flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4 shrink-0" />
+                  <span>{t.auth.accessDeniedStatusTitle}</span>
+                </div>
+              )}
+              <p className="font-medium leading-relaxed">{authError}</p>
             </div>
           )}
 
           <form onSubmit={authMode === "login" ? handleLogin : handleSignup} className="space-y-3.5">
             {authMode === "signup" && (
-              <div>
-                <label className="block text-xs font-bold text-content-muted mb-1">
-                  世帯名 (家計簿の名前)
-                </label>
-                <input
-                  type="text"
-                  placeholder="例: 山田家, マイホーム"
-                  value={householdName}
-                  onChange={(e) => setHouseholdName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-app-subtle border border-border rounded-xl text-xs font-medium focus:border-primary outline-none text-content-main"
-                  required
-                />
-              </div>
+              <>
+                <div className="p-2.5 bg-app-subtle border border-border rounded-xl text-[11px] text-content-muted leading-relaxed flex items-start gap-2">
+                  <Clock className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                  <span>{t.auth.approvalRequiredNotice}</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-content-muted mb-1">
+                    {t.auth.householdNameLabel}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={t.auth.householdNamePlaceholder}
+                    value={householdName}
+                    onChange={(e) => setHouseholdName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-app-subtle border border-border rounded-xl text-xs font-medium focus:border-primary outline-none text-content-main"
+                    required
+                  />
+                </div>
+              </>
             )}
 
             <div>
               <label className="block text-xs font-bold text-content-muted mb-1">
-                メールアドレス
+                {t.auth.emailLabel}
               </label>
               <input
                 type="email"
-                placeholder="admin@komame.local"
+                placeholder="user@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-app-subtle border border-border rounded-xl text-xs font-medium focus:border-primary outline-none text-content-main"
@@ -335,7 +388,7 @@ export default function Home() {
 
             <div>
               <label className="block text-xs font-bold text-content-muted mb-1">
-                パスワード (8文字以上・英大小数字)
+                {t.auth.passwordLabel}
               </label>
               <input
                 type="password"
@@ -351,12 +404,12 @@ export default function Home() {
               type="submit"
               className="w-full py-3 bg-primary text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm hover:bg-primary-hover active:scale-98 transition-all"
             >
-              <span>{authMode === "login" ? "ログインする" : "世帯を開設して始める"}</span>
+              <span>{authMode === "login" ? t.auth.loginSubmit : t.auth.signupSubmit}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </form>
 
-          {authMode === "login" && (
+          {authMode === "login" && process.env.NODE_ENV !== "production" && (
             <div className="p-3 bg-app-subtle rounded-xl text-[11px] text-content-muted border border-border leading-relaxed flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <span>💡 <b>初期デモ管理者アカウント:</b></span>
@@ -472,6 +525,8 @@ export default function Home() {
           {activeTab === "admin" && (
             <AdminTab
               userRole={user.role}
+              isSuperAdmin={Boolean(user.isSuperAdmin)}
+              currentHouseholdId={user.householdId || user.activeHouseholdId}
               onTriggerToast={triggerToast}
               onRefreshAll={fetchAllData}
             />

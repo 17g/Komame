@@ -1,12 +1,28 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { AuditLogItem, CategoryItem, CheckpointItem, MemberItem, SystemSettingsConfig } from "@/types";
+import {
+  AuditLogItem,
+  CategoryItem,
+  CheckpointItem,
+  HouseholdStatus,
+  ManagedHouseholdCounts,
+  ManagedHouseholdItem,
+  MemberItem,
+  SystemSettingsConfig,
+} from "@/types";
 import {
   History,
   Download,
   RotateCcw,
   Shield,
+  ShieldCheck,
+  Building2,
+  CheckCircle2,
+  XCircle,
+  Ban,
+  Trash2,
+  RefreshCw,
   Upload,
   Users,
   UserPlus,
@@ -37,13 +53,38 @@ import { useTranslation } from "@/lib/i18n";
 
 interface AdminTabProps {
   userRole?: "admin" | "member";
+  isSuperAdmin?: boolean;
+  currentHouseholdId?: string;
   onTriggerToast: (msg: string) => void;
   onRefreshAll: () => void;
 }
 
-export function AdminTab({ userRole = "admin", onTriggerToast, onRefreshAll }: AdminTabProps) {
+export function AdminTab({
+  userRole = "admin",
+  isSuperAdmin = false,
+  currentHouseholdId,
+  onTriggerToast,
+  onRefreshAll,
+}: AdminTabProps) {
   const { t } = useTranslation();
   const isAdmin = userRole === "admin";
+
+  // Super Admin 用：世帯登録申請・アカウント管理ステート
+  const [managedHouseholds, setManagedHouseholds] = useState<ManagedHouseholdItem[]>([]);
+  const [householdCounts, setHouseholdCounts] = useState<ManagedHouseholdCounts>({
+    all: 0,
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    suspended: 0,
+  });
+  const [householdStatusFilter, setHouseholdStatusFilter] = useState<
+    "all" | HouseholdStatus
+  >("all");
+  const [isLoadingHouseholds, setIsLoadingHouseholds] = useState(false);
+  const [processingHouseholdId, setProcessingHouseholdId] = useState<string | null>(null);
+  const [rejectingHouseholdId, setRejectingHouseholdId] = useState<string | null>(null);
+  const [rejectionReasonInput, setRejectionReasonInput] = useState<string>("");
 
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [categoriesList, setCategoriesList] = useState<CategoryItem[]>([]);
@@ -171,9 +212,125 @@ export function AdminTab({ userRole = "admin", onTriggerToast, onRefreshAll }: A
     onTriggerToast(`✓ 監査ログ (${format.toUpperCase()}) のダウンロードを開始しました`);
   };
 
+  const fetchSuperAdminHouseholds = async (
+    filter: "all" | HouseholdStatus = householdStatusFilter
+  ) => {
+    if (!isSuperAdmin) return;
+    setIsLoadingHouseholds(true);
+    try {
+      const res = await fetch(
+        `/api/super-admin/households?status=${encodeURIComponent(filter)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setManagedHouseholds(data.households || []);
+        if (data.counts) {
+          setHouseholdCounts(data.counts);
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsLoadingHouseholds(false);
+    }
+  };
+
   useEffect(() => {
     fetchAdminData();
-  }, []);
+    if (isSuperAdmin) {
+      fetchSuperAdminHouseholds("all");
+    }
+  }, [isSuperAdmin]);
+
+  const handleSuperAdminHouseholdAction = async (
+    household: ManagedHouseholdItem,
+    action: "approve" | "reject" | "suspend" | "reactivate",
+    reason?: string
+  ) => {
+    if (processingHouseholdId) return;
+
+    if (action === "approve" && household.status === "rejected") {
+      if (
+        !window.confirm(
+          `却下済みの世帯「${household.name}」を再承認しますか？\n（専用スキーマと初期設定・標準12費目・現金口座が作成され、ログイン可能になります）`
+        )
+      ) {
+        return;
+      }
+    } else if (action === "suspend") {
+      if (
+        !window.confirm(
+          `世帯「${household.name}」の利用を停止しますか？\n（当該世帯の全メンバーは即座にログインおよび操作ができなくなります）`
+        )
+      ) {
+        return;
+      }
+    }
+
+    setProcessingHouseholdId(household.id);
+    try {
+      const res = await fetch("/api/super-admin/households", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          householdId: household.id,
+          action,
+          reason: reason !== undefined ? reason : undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        onTriggerToast(`✓ ${data.message}`);
+        setRejectingHouseholdId(null);
+        setRejectionReasonInput("");
+        await fetchSuperAdminHouseholds(householdStatusFilter);
+      } else {
+        onTriggerToast(data.error || "世帯ステータスの変更に失敗しました");
+      }
+    } catch {
+      onTriggerToast("通信エラーが発生しました");
+    } finally {
+      setProcessingHouseholdId(null);
+    }
+  };
+
+  const handleDeleteHouseholdApplication = async (household: ManagedHouseholdItem) => {
+    if (processingHouseholdId) return;
+    if (
+      !window.confirm(
+        `世帯申請「${household.name}」（申請者: ${household.applicantEmail || "不明"}）を完全に削除（抹消）しますか？\n※申請レコードおよび他世帯に所属していない申請ユーザーアカウントが物理削除され、同じメールアドレスでの再申請が可能になります。`
+      )
+    ) {
+      return;
+    }
+
+    setProcessingHouseholdId(household.id);
+    try {
+      const res = await fetch(
+        `/api/super-admin/households?householdId=${encodeURIComponent(household.id)}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const data = await res.json();
+      if (res.ok) {
+        onTriggerToast(`✓ ${data.message}`);
+        if (rejectingHouseholdId === household.id) {
+          setRejectingHouseholdId(null);
+          setRejectionReasonInput("");
+        }
+        await fetchSuperAdminHouseholds(householdStatusFilter);
+      } else {
+        onTriggerToast(data.error || "世帯申請の削除に失敗しました");
+      }
+    } catch {
+      onTriggerToast("通信エラーが発生しました");
+    } finally {
+      setProcessingHouseholdId(null);
+    }
+  };
 
 
   const handleToggleRole = async (member: MemberItem) => {
@@ -389,6 +546,366 @@ export function AdminTab({ userRole = "admin", onTriggerToast, onRefreshAll }: A
 
   return (
     <div className="flex flex-col gap-4 pb-20">
+      {/* システム管理者（Super Admin）限定：新規世帯登録の承認・アカウント管理 セクション */}
+      {isSuperAdmin && (
+        <div className="p-4 bg-app-surface border-2 border-primary/40 rounded-xl shadow-sm space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-content-main">
+                <ShieldCheck className="w-4 h-4 text-primary" />
+                <span>{t.admin.superAdminSectionTitle}</span>
+              </div>
+              <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-primary/15 text-primary border border-primary/30">
+                {t.admin.superAdminSectionBadge}
+              </span>
+              {householdCounts.pending > 0 && (
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40">
+                  {householdCounts.pending} {t.admin.superAdminPendingAlert}
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => fetchSuperAdminHouseholds(householdStatusFilter)}
+              disabled={isLoadingHouseholds}
+              className="self-end sm:self-center py-1 px-2.5 bg-app-subtle hover:bg-border/60 border border-border text-content-main text-xs font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isLoadingHouseholds ? "animate-spin" : ""}`}
+              />
+              <span>{t.admin.superAdminRefreshBtn}</span>
+            </button>
+          </div>
+
+          <p className="text-[11px] text-content-muted leading-relaxed">
+            {t.admin.superAdminSectionDesc}
+          </p>
+
+          {/* ステータスフィルタータブ */}
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {(
+              [
+                {
+                  key: "all",
+                  label: t.admin.superAdminFilterAll,
+                  count: householdCounts.all,
+                },
+                {
+                  key: "pending",
+                  label: t.admin.superAdminFilterPending,
+                  count: householdCounts.pending,
+                },
+                {
+                  key: "approved",
+                  label: t.admin.superAdminFilterApproved,
+                  count: householdCounts.approved,
+                },
+                {
+                  key: "rejected",
+                  label: t.admin.superAdminFilterRejected,
+                  count: householdCounts.rejected,
+                },
+                {
+                  key: "suspended",
+                  label: t.admin.superAdminFilterSuspended,
+                  count: householdCounts.suspended,
+                },
+              ] as const
+            ).map((tab) => {
+              const isSelected = householdStatusFilter === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => {
+                    setHouseholdStatusFilter(tab.key);
+                    fetchSuperAdminHouseholds(tab.key);
+                  }}
+                  className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer ${
+                    isSelected
+                      ? "bg-primary text-white border-primary shadow-xs"
+                      : "bg-app-subtle text-content-muted border-border hover:text-content-main"
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                      isSelected
+                        ? "bg-white/20 text-white"
+                        : tab.key === "pending" && tab.count > 0
+                        ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                        : "bg-app-surface text-content-muted"
+                    }`}
+                  >
+                    {tab.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 世帯一覧 */}
+          <div className="space-y-2 pt-1">
+            {isLoadingHouseholds && managedHouseholds.length === 0 ? (
+              <div className="p-4 bg-app-subtle rounded-xl text-center text-xs text-content-muted">
+                {t.common.loading}
+              </div>
+            ) : managedHouseholds.length === 0 ? (
+              <div className="p-4 bg-app-subtle rounded-xl text-center text-xs text-content-muted">
+                {t.admin.superAdminNoHouseholds}
+              </div>
+            ) : (
+              managedHouseholds.map((hh) => {
+                const isCurrentHousehold =
+                  Boolean(currentHouseholdId) && hh.id === currentHouseholdId;
+                const isProcessing = processingHouseholdId === hh.id;
+                const isRejecting = rejectingHouseholdId === hh.id;
+
+                const statusBadgeConfig: Record<
+                  HouseholdStatus,
+                  { label: string; className: string }
+                > = {
+                  pending: {
+                    label: t.admin.superAdminStatusPending,
+                    className:
+                      "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30",
+                  },
+                  approved: {
+                    label: t.admin.superAdminStatusApproved,
+                    className:
+                      "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+                  },
+                  rejected: {
+                    label: t.admin.superAdminStatusRejected,
+                    className: "bg-danger-light text-danger border-danger/30",
+                  },
+                  suspended: {
+                    label: t.admin.superAdminStatusSuspended,
+                    className:
+                      "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30",
+                  },
+                };
+
+                const badge =
+                  statusBadgeConfig[hh.status] || statusBadgeConfig.pending;
+
+                return (
+                  <div
+                    key={hh.id}
+                    className="p-3 bg-app-subtle border border-border rounded-xl space-y-2.5"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-primary-light/60 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                          <Building2 className="w-4 h-4" />
+                        </div>
+
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-content-main">
+                              {hh.name}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badge.className}`}
+                            >
+                              {badge.label}
+                            </span>
+                            {isCurrentHousehold && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                                {t.admin.superAdminCurrentHouseholdBadge}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-content-muted">
+                            <span>
+                              <b>{t.admin.superAdminApplicantLabel}</b>{" "}
+                              {hh.applicantEmail || "未設定"}
+                            </span>
+                            <span>
+                              <b>{t.admin.superAdminAppliedAtLabel}</b>{" "}
+                              {new Date(hh.createdAt).toLocaleString()}
+                            </span>
+                            {hh.reviewedAt && (
+                              <span>
+                                <b>{t.admin.superAdminReviewedAtLabel}</b>{" "}
+                                {new Date(hh.reviewedAt).toLocaleString()}
+                              </span>
+                            )}
+                            <span className="font-mono text-content-subtle">
+                              <b>{t.admin.superAdminSchemaLabel}</b> {hh.schemaName}
+                            </span>
+                          </div>
+
+                          {hh.rejectionReason && (
+                            <div className="text-[11px] text-danger bg-danger-light/60 border border-danger/20 rounded-lg px-2.5 py-1">
+                              <b>{t.admin.superAdminRejectionReasonLabel}</b>{" "}
+                              {hh.rejectionReason}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ステータスに応じた操作ボタン群 */}
+                      <div className="flex flex-wrap items-center gap-1.5 self-end sm:self-center shrink-0">
+                        {hh.status === "pending" && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={isProcessing}
+                              onClick={() =>
+                                handleSuperAdminHouseholdAction(hh, "approve")
+                              }
+                              className="px-2.5 py-1.5 bg-primary hover:bg-primary-hover text-white text-[11px] font-bold rounded-lg shadow-2xs transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>{t.admin.superAdminApproveBtn}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={isProcessing || isCurrentHousehold}
+                              onClick={() => {
+                                if (isRejecting) {
+                                  setRejectingHouseholdId(null);
+                                  setRejectionReasonInput("");
+                                } else {
+                                  setRejectingHouseholdId(hh.id);
+                                  setRejectionReasonInput("");
+                                }
+                              }}
+                              className="px-2.5 py-1.5 bg-app-surface hover:bg-danger-light border border-danger/30 text-danger text-[11px] font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>{t.admin.superAdminRejectBtn}</span>
+                            </button>
+
+                            {!isCurrentHousehold && (
+                              <button
+                                type="button"
+                                disabled={isProcessing}
+                                onClick={() => handleDeleteHouseholdApplication(hh)}
+                                className="px-2 py-1.5 bg-app-surface hover:bg-danger-light border border-border text-content-muted hover:text-danger text-[11px] font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                title={t.admin.superAdminDeleteBtn}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>{t.admin.superAdminDeleteBtn}</span>
+                              </button>
+                            )}
+                          </>
+                        )}
+
+                        {hh.status === "rejected" && (
+                          <>
+                            <button
+                              type="button"
+                              disabled={isProcessing}
+                              onClick={() =>
+                                handleSuperAdminHouseholdAction(hh, "approve")
+                              }
+                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg shadow-2xs transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>{t.admin.superAdminReapproveBtn}</span>
+                            </button>
+
+                            {!isCurrentHousehold && (
+                              <button
+                                type="button"
+                                disabled={isProcessing}
+                                onClick={() => handleDeleteHouseholdApplication(hh)}
+                                className="px-2.5 py-1.5 bg-app-surface hover:bg-danger-light border border-danger/30 text-danger text-[11px] font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>{t.admin.superAdminDeleteBtn}</span>
+                              </button>
+                            )}
+                          </>
+                        )}
+
+                        {hh.status === "approved" && !isCurrentHousehold && (
+                          <button
+                            type="button"
+                            disabled={isProcessing}
+                            onClick={() =>
+                              handleSuperAdminHouseholdAction(hh, "suspend")
+                            }
+                            className="px-2.5 py-1.5 bg-app-surface hover:bg-danger-light border border-danger/30 text-danger text-[11px] font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            <span>{t.admin.superAdminSuspendBtn}</span>
+                          </button>
+                        )}
+
+                        {hh.status === "suspended" && (
+                          <button
+                            type="button"
+                            disabled={isProcessing}
+                            onClick={() =>
+                              handleSuperAdminHouseholdAction(hh, "reactivate")
+                            }
+                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg shadow-2xs transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>{t.admin.superAdminReactivateBtn}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 却下理由のインライン入力パネル */}
+                    {isRejecting && (
+                      <div className="p-2.5 bg-app-surface border border-danger/30 rounded-xl space-y-2">
+                        <label className="block text-[11px] font-bold text-content-main">
+                          {t.admin.superAdminRejectPromptTitle}
+                        </label>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="text"
+                            maxLength={1000}
+                            value={rejectionReasonInput}
+                            onChange={(e) => setRejectionReasonInput(e.target.value)}
+                            placeholder={t.admin.superAdminRejectPromptPlaceholder}
+                            className="flex-1 px-3 py-1.5 text-xs bg-app-subtle border border-border rounded-lg text-content-main focus:outline-none focus:border-danger"
+                          />
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRejectingHouseholdId(null);
+                                setRejectionReasonInput("");
+                              }}
+                              className="px-2.5 py-1.5 text-[11px] font-bold rounded-lg border border-border bg-app-subtle text-content-muted hover:text-content-main cursor-pointer"
+                            >
+                              {t.common.cancel}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isProcessing}
+                              onClick={() =>
+                                handleSuperAdminHouseholdAction(
+                                  hh,
+                                  "reject",
+                                  rejectionReasonInput
+                                )
+                              }
+                              className="px-3 py-1.5 text-[11px] font-bold rounded-lg bg-danger text-white hover:opacity-90 cursor-pointer disabled:opacity-50"
+                            >
+                              {t.admin.superAdminConfirmRejectBtn}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 家族メンバー管理 セクション */}
       <div className="p-4 bg-app-surface border border-border rounded-xl shadow-sm">
         <div className="flex items-center justify-between mb-2">

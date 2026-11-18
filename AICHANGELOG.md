@@ -2,6 +2,41 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-18] 【Phase 12.4】ログイン・新規世帯申請画面および管理タブ内 Super Admin 世帯管理UIの実装
+
+### 1. 概要
+要件 1-1, 1-2, 1-8, 1-9 および `Plan.md` Phase 12.4 に基づき、ログイン・新規世帯登録画面（`src/app/page.tsx`）を承認申請制の案内・申請受付完了バナー・`403` 審査状態表示へ改修するとともに、管理タブ（`src/components/AdminTab.tsx`）にシステム管理者（`isSuperAdmin === true`）限定の「システム管理：新規世帯登録の承認・アカウント管理」セクションおよび日英翻訳キー（`src/lib/i18n.ts`）を実装した。
+
+### 2. 変更内容 (Before / After)
+1. **多言語翻訳リソースの拡張 (`src/lib/i18n.ts`)**:
+   - Before: 新規世帯登録の申請制案内、申請受付バナー、および Super Admin 向け世帯承認・アカウント管理セクションの翻訳キーが存在しなかった。
+   - After: `auth` セクション（申請タブ名、申請ボタン、承認制案内、申請完了バナー、利用制限タイトル）および `admin` セクション（Super Admin セクションタイトル、ステータスフィルター、承認/却下/再承認/削除/停止/再開ボタン、却下理由入力欄等）の日英翻訳キーを追加。
+2. **ログイン・新規世帯登録申請画面の改修 (`src/app/page.tsx`, `src/types/index.ts`)**:
+   - Before: 新規世帯登録の送信ボタンが「世帯を開設して始める」となっており、申請完了時は即座に `checkSession()` を呼び出していた。また `AdminTab` に `isSuperAdmin` や `currentHouseholdId` が渡されていなかった。
+   - After:
+     - 新規世帯登録タブに承認制案内（「※システム管理者の承認後にログイン可能となります...」）を表示し、送信ボタンを「新規世帯の登録を申請する」に変更。
+     - 申請完了時（`pendingApproval: true`）にログイン画面へ自動切り替えし、申請受付完了バナー（`authInfoMessage`）を表示。
+     - 未承認・却下・停止状態の世帯でログインを試行した際の `403 Forbidden` 応答メッセージを視覚的に分かりやすいステータス案内バナーとして表示。
+     - 初期デモ管理者アカウント欄を `process.env.NODE_ENV !== "production"` 時のみ出力するよう保護。
+     - `AdminTab` に `isSuperAdmin={Boolean(user.isSuperAdmin)}` および `currentHouseholdId={user.householdId || user.activeHouseholdId}` を伝播。
+3. **管理タブ内 Super Admin 世帯管理UIの実装 (`src/components/AdminTab.tsx`)**:
+   - Before: `AdminTab.tsx` には世帯内の家族メンバー管理や費目管理等は存在したが、システム全体の世帯登録申請を審査・管理する Super Admin 用 UI が存在しなかった。
+   - After: `isSuperAdmin === true` の場合にのみ最上部に表示される「システム管理：新規世帯登録の承認・アカウント管理」セクションを実装。
+     - ステータス別件数集計バッジ付きのフィルタータブ（すべて / 承認待ち / 承認済み / 却下済み / 停止中）および未承認申請アラートバッジを表示。
+     - 各世帯の世帯名、ステータスバッジ、現在の所属世帯バッジ、申請者メールアドレス、申請日時、審査日時、スキーマ名、却下・停止理由を表示。
+     - 状態に応じた操作ボタン（「許可 (承認)」「却下（インライン理由入力パネル付き）」「再承認」「削除 (抹消)」「利用停止（自世帯は誤操作防止のため非表示）」「利用再開」）を実装し、`/api/super-admin/households` (GET / PUT / DELETE) と連携。
+
+### 3. 変更理由
+- 新規世帯登録の申請者が承認制であることを明確に把握でき、かつシステム管理者が管理タブから直感的に申請の許可・却下・再承認・抹消や世帯アカウントの停止・再開を行えるようにするため。
+
+### 4. 影響範囲・検証結果
+- 変更ファイル: `src/types/index.ts`, `src/lib/i18n.ts`, `src/app/page.tsx`, `src/components/AdminTab.tsx`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+
+
 ## [2026-11-18] 【Phase 12.3】システム管理者（Super Admin）世帯承認・管理APIの新規実装
 
 ### 1. 概要
