@@ -4,9 +4,15 @@ import {
   verifySessionToken,
   revokeToken,
   isTokenRevoked,
+  DEMO_ADMIN_EMAIL,
+  DEMO_ADMIN_USER_ID,
+  isTestEnvironment,
+  isDemoAdminAccount,
+  isDemoAdminAllowed,
   SessionPayload,
 } from "../src/lib/auth";
 import { assertValidDatabaseUrl } from "../src/db/index";
+import { assertDemoSeedAllowed } from "../src/db/seed";
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -140,6 +146,67 @@ async function runTests() {
   const newTokenIssuedAt = now; // now
   const isNewTokenValid = newTokenIssuedAt >= passwordResetAt.getTime();
   assert(isNewTokenValid, "Token issued after password reset (updatedAt) is valid");
+
+  // Test 6: Demo Admin Account Test-Environment Restriction (Requirement 1-9)
+  console.log("\n--- Test 6: Demo Admin Account Environment Restriction (Req 1-9) ---");
+
+  // 6.1 isTestEnvironment
+  assert(isTestEnvironment("development") === true, "development is treated as test environment");
+  assert(isTestEnvironment("test") === true, "test is treated as test environment");
+  assert(isTestEnvironment(undefined) === true, "undefined NODE_ENV is treated as test environment");
+  assert(isTestEnvironment("production") === false, "production is NOT treated as test environment");
+
+  // 6.2 isDemoAdminAccount
+  assert(isDemoAdminAccount(DEMO_ADMIN_EMAIL) === true, "Recognizes DEMO_ADMIN_EMAIL");
+  assert(isDemoAdminAccount("  ADMIN@KOMAME.LOCAL  ") === true, "Recognizes uppercase/padded DEMO_ADMIN_EMAIL");
+  assert(isDemoAdminAccount(DEMO_ADMIN_USER_ID) === true, "Recognizes DEMO_ADMIN_USER_ID");
+  assert(isDemoAdminAccount("USR-YAMADA-TARO-001") === true, "Recognizes uppercase DEMO_ADMIN_USER_ID");
+  assert(isDemoAdminAccount("user@example.com") === false, "Regular email is not demo admin");
+  assert(isDemoAdminAccount("usr-prod-admin-001") === false, "Production admin ID is not demo admin");
+  assert(isDemoAdminAccount("") === false, "Empty string is not demo admin");
+  assert(isDemoAdminAccount(null) === false, "Null is not demo admin");
+
+  // 6.3 isDemoAdminAllowed (Login & Session restriction)
+  assert(isDemoAdminAllowed(DEMO_ADMIN_EMAIL, "development") === true, "Demo admin email allowed in development");
+  assert(isDemoAdminAllowed(DEMO_ADMIN_EMAIL, "test") === true, "Demo admin email allowed in test");
+  assert(isDemoAdminAllowed(DEMO_ADMIN_USER_ID, "development") === true, "Demo admin userId allowed in development");
+  assert(isDemoAdminAllowed(DEMO_ADMIN_USER_ID, "test") === true, "Demo admin userId allowed in test");
+  assert(isDemoAdminAllowed(DEMO_ADMIN_EMAIL, "production") === false, "Demo admin email BLOCKED in production");
+  assert(isDemoAdminAllowed("  ADMIN@KOMAME.LOCAL ", "production") === false, "Normalized demo admin email BLOCKED in production");
+  assert(isDemoAdminAllowed(DEMO_ADMIN_USER_ID, "production") === false, "Demo admin userId BLOCKED in production");
+  assert(isDemoAdminAllowed("user@example.com", "production") === true, "Regular user email allowed in production");
+  assert(isDemoAdminAllowed("usr-prod-admin-001", "production") === true, "Regular userId allowed in production");
+
+  // 6.4 assertDemoSeedAllowed (Seed restriction in production)
+  try {
+    assertDemoSeedAllowed("development", DEMO_ADMIN_EMAIL, "Password123!");
+    assertDemoSeedAllowed("test", DEMO_ADMIN_EMAIL, "Password123!");
+    assert(true, "Demo admin seeding allowed in development and test environments");
+  } catch (err: unknown) {
+    assert(false, `Demo seeding should be allowed in test env: ${(err as Error).message}`);
+  }
+
+  for (const [label, emailArg, passArg] of [
+    ["demo email", DEMO_ADMIN_EMAIL, "StrongProdPass!99"],
+    ["empty email", "", "StrongProdPass!99"],
+    ["demo password", "prod-admin@example.com", "Password123!"],
+    ["empty password", "prod-admin@example.com", ""],
+  ] as const) {
+    let threw = false;
+    try {
+      assertDemoSeedAllowed("production", emailArg, passArg);
+    } catch {
+      threw = true;
+    }
+    assert(threw, `assertDemoSeedAllowed throws in production when ${label} is used`);
+  }
+
+  try {
+    assertDemoSeedAllowed("production", "prod-admin@example.com", "StrongProdPass!99");
+    assert(true, "Custom admin seeding allowed in production");
+  } catch (err: unknown) {
+    assert(false, `Custom admin seeding failed in production: ${(err as Error).message}`);
+  }
 
   console.log("=========================================");
   console.log("🎉 All Auth & Session Security tests passed successfully!");

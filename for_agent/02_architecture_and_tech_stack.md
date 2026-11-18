@@ -106,8 +106,11 @@ flowchart TB
   - `Content-Security-Policy: default-src 'self'; ...`
 - 状態変更リクエスト（POST/PUT/DELETE）における `Origin` / `Host` ヘッダー検証による CSRF 多層防御。
 
-### 2.7 Fail-Fast シークレット環境変数検証 (VULN-04)
+### 2.7 Fail-Fast シークレット環境変数検証 & 本番環境での初期デモ管理者アカウント無効化 (VULN-04)
 - 本番環境（`NODE_ENV=production` かつ非ビルド時）において、`DATABASE_URL` または `JWT_SECRET`（32文字以上かつ安全な文字列）が未設定の場合、起動時に即座に例外をスローして安全性を保証。
+- **初期デモ管理者アカウントのテスト環境限定有効化**:
+  - 初期デモ管理者アカウント（`admin@komame.local` / `usr-yamada-taro-001`）はテスト環境（`NODE_ENV !== "production"`）でのみ有効とする。
+  - 本番環境（`NODE_ENV === "production"`）では、`POST /api/auth/login` および `getCurrentSession()` で初期デモ管理者アカウントを無条件に拒否し、さらに `src/db/seed.ts` のシード実行時にもデモ管理者アカウント（`admin@komame.local` / `Password123!`）の作成を禁止する。
 
 ---
 
@@ -146,6 +149,7 @@ flowchart TB
 
 ## 5. 改訂履歴
 
+- **2026-11-18**: 第2章2.7に初期デモ管理者アカウント（`admin@komame.local`）のテスト環境（`NODE_ENV !== "production"`）限定有効化および本番環境でのログイン・セッション拒否・シード作成禁止仕様を追記。
 - **2026-11-18**: 新規世帯登録の申請・許可制導入に伴い、2.4（`households.status === "approved"` のリアルタイム検証および `isSuperAdmin` DB照合）および 2.5（申請時テナントスキーマ未作成によるDoS多層防御）を更新。
 - **2026-10-18**: ペネトレーションテスト結果（VULN-01〜VULN-12）に基づく包括的セキュリティ強化仕様（スキーマ名ホワイトリスト検証、DB突合リアルタイム権限検証・セッション失効、スライディングウィンドウレートリミッター、セキュリティヘッダー・CSRF多層防御、Fail-Fast環境変数検証）を第2章に追記。
 - **2026-10-18**: アプリケーション（3080）およびデータベース（5532）の稼働ポート変更に伴うインフラ・ネットワークポート仕様を反映。

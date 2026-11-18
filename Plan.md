@@ -18,7 +18,7 @@
 - [x] Phase 10: 支出金額入力欄の「単価×個数」計算補助機能の実装（要件 2-7）
 - [x] Phase 11: 単価×個数 計算補助UIの個数入力セレクトボックス化（要件 2-7 改訂）
 - [x] Phase 12: 新規世帯登録の申請・許可制およびシステム管理者（Super Admin）世帯管理機能の実装（要件 1-1, 1-2, 1-8）
-- [ ] Phase 13: 初期デモ管理者アカウントのテスト環境限定有効化およびログイン画面表示制御の実装（要件 1-9）
+- [x] Phase 13: 初期デモ管理者アカウントのテスト環境限定有効化およびログイン画面表示制御の実装（要件 1-9）
 
 
 ---
@@ -338,7 +338,7 @@
     - テスト環境フラグ（`const isTestEnv = process.env.NODE_ENV !== "production"`）を定義し、ログイン画面下部の「💡 初期デモ管理者アカウント（`admin@komame.local` / `Password123!` および『クイック入力』ボタン）」欄を `authMode === "login" && isTestEnv` の場合のみレンダリングし、本番環境（`NODE_ENV === "production"`）では DOM に一切出力しないよう改修する。
     - メールアドレス入力欄の `placeholder` もテスト環境時のみ `"admin@komame.local"`、本番環境時は `"user@example.com"` とする。
 
-- [ ] **13.3 単体テスト・静的検査の拡充と総合ビルド検証・変更履歴記録 (`scripts/test-auth-session-unit.ts`, `scripts/test-security-unit.ts`, `AICHANGELOG.md`)**:
+- [x] **13.3 単体テスト・静的検査の拡充と総合ビルド検証・変更履歴記録 (`scripts/test-auth-session-unit.ts`, `scripts/test-security-unit.ts`, `AICHANGELOG.md`)**:
   - `scripts/test-auth-session-unit.ts` および `scripts/test-security-unit.ts` に、初期デモ管理者アカウント（`admin@komame.local` / `usr-yamada-taro-001`）がテスト環境（`development` / `test`）でのみ有効であり本番環境（`production`）ではログイン・セッション・シードのすべてで拒否されること、および `src/app/page.tsx` で初期デモ管理者アカウント欄がテスト環境限定で出力されていることの検証テストを追加・実行する。
   - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-auth-session-unit.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。
   - `AICHANGELOG.md` に作業内容を記録し、Git コミットを行う。

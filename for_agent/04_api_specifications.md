@@ -15,7 +15,8 @@
     "password": "Password123!"
   }
   ```
-- **ビジネスロジック（世帯ステータス検証）**:
+- **ビジネスロジック（デモアカウント制限・世帯ステータス検証）**:
+  0. 本番環境（`NODE_ENV === "production"`）において、初期デモ管理者アカウント（`email === "admin@komame.local"` または `user.id === "usr-yamada-taro-001"`）でのログイン試行は、DB上の存在有無にかかわらず無条件で拒否し、`401 Unauthorized`（「メールアドレスまたはパスワードが正しくありません。」）を返却する（テスト環境 `NODE_ENV !== "production"` でのみ有効）。
   1. メールアドレスおよびパスワードを検証（不一致・未登録・無効ユーザーは `401 Unauthorized`「メールアドレスまたはパスワードが正しくありません。」を返却しアカウント列挙を防止）。
   2. パスワード検証成功後、所属世帯（`households.status`）を確認：
      - `pending`: `403 Forbidden`（`{ "error": "現在、システム管理者の承認待ちです。許可されるまでログインできません。" }`）
@@ -42,7 +43,7 @@
 - **レスポンス**: `{ "success": true }`
 
 ### 1.3 `GET /api/auth/me`
-- **概要**: 現在ログイン中のユーザーおよび世帯情報の取得（`getCurrentSession()` にて `households.status === "approved"` を含むリアルタイム検証を実施）。
+- **概要**: 現在ログイン中のユーザーおよび世帯情報の取得（`getCurrentSession()` にて `households.status === "approved"` および本番環境時の初期デモ管理者アカウント遮断を含むリアルタイム検証を実施）。
 - **レスポンス (200 OK)**:
   ```json
   {
@@ -502,6 +503,7 @@
 ---
 
 ## 改訂履歴
+- **2026-11-18**: `POST /api/auth/login` および `GET /api/auth/me`（`getCurrentSession()`）において、初期デモ管理者アカウント（`admin@komame.local` / `usr-yamada-taro-001`）をテスト環境（`NODE_ENV !== "production"`）でのみ有効とし、本番環境（`NODE_ENV === "production"`）では認証・セッションを拒否する仕様を追記。
 - **2026-11-18**: 新規世帯登録の申請・許可制導入に伴い、`POST /api/auth/signup`（`pending` 申請受付・スキーマ未作成・セッション未発行）、`POST /api/auth/login`（世帯ステータス別 `403` 応答・`isSuperAdmin` 返却）、`GET /api/auth/me`（`isSuperAdmin` 返却）を更新し、第10章「システム管理者（Super Admin）API (`/api/super-admin/households`)」を追加。
 - **2026-11-15**: 6.6 `POST /api/admin/members` の記述を Phase 7.2 (VULN-02) 実装（既存他世帯アカウントの直接追加廃止・招待リンク発行統一、複数世帯所属ユーザーの管理者パスワード上書き拒否）に合わせて最新化。
 - **2026-11-15**: 第9章「費目マスター管理 API (`/api/categories`)」を追加（管理者限定の作成・編集・全費目並び替え・アーカイブ/復元・標準12費目保護・監査ログ記録仕様）。

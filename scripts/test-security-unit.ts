@@ -8,6 +8,7 @@
  *   3. 金額・残高の境界値バリデーション (isValidAmount, isValidBalance, parseValidAmount, parseValidBalance)
  *   4. スライディングウィンドウ方式レートリミッター動作 (checkRateLimit, resetRateLimitStore)
  *   5. raw.unsafe 不使用の静的コード走査検査 (SQLインジェクション脆弱性の再発防止)
+ *   6. 初期デモ管理者アカウントのテスト環境限定有効化・本番遮断の静的検査 (要件 1-9)
  */
 
 import fs from "fs";
@@ -241,6 +242,53 @@ if (violations.length > 0) {
 assert(
   violations.length === 0,
   `Zero occurrences of raw.unsafe in production source code (Found: ${violations.length})`
+);
+
+// =========================================================
+// 6. 初期デモ管理者アカウントのテスト環境限定有効化・本番遮断の静的検査 (要件 1-9)
+// =========================================================
+console.log("\n--- 6. Static Code Analysis: Demo Admin Test-Env-Only Enforcement (Req 1-9) ---");
+
+const readNormalized = (relPath: string): string =>
+  fs.readFileSync(path.resolve(process.cwd(), relPath), "utf-8").replace(/\r\n/g, "\n");
+
+const authSource = readNormalized("src/lib/auth.ts");
+assert(
+  authSource.includes("isDemoAdminAllowed(record.userId)") &&
+    authSource.includes("isDemoAdminAllowed(record.email)"),
+  "src/lib/auth.ts getCurrentSession() enforces isDemoAdminAllowed for both userId and email"
+);
+
+const loginRouteSource = readNormalized("src/app/api/auth/login/route.ts");
+assert(
+  loginRouteSource.includes("isDemoAdminAllowed(normalizedEmail)") &&
+    loginRouteSource.includes("isDemoAdminAllowed(user.id)") &&
+    loginRouteSource.includes("isDemoAdminAllowed(user.email)"),
+  "src/app/api/auth/login/route.ts enforces isDemoAdminAllowed on request email and DB user"
+);
+
+const seedSource = readNormalized("src/db/seed.ts");
+assert(
+  seedSource.includes("export function assertDemoSeedAllowed") &&
+    seedSource.includes("assertDemoSeedAllowed(nodeEnv, adminEmail, adminPass)"),
+  "src/db/seed.ts enforces assertDemoSeedAllowed in seedDatabase()"
+);
+
+const dockerComposeProd = readNormalized("docker-compose.prod.yml");
+assert(
+  !dockerComposeProd.includes("admin@komame.local") &&
+    !dockerComposeProd.includes("Password123!") &&
+    !dockerComposeProd.includes("山田家"),
+  "docker-compose.prod.yml contains no fallback demo credentials"
+);
+
+const loginPageSource = readNormalized("src/app/page.tsx");
+assert(
+  loginPageSource.includes('const isTestEnv = process.env.NODE_ENV !== "production"') &&
+    loginPageSource.includes('authMode === "login" && isTestEnv') &&
+    loginPageSource.includes('isTestEnv ? "admin@komame.local" : "user@example.com"') &&
+    loginPageSource.includes("初期デモ管理者アカウント"),
+  "src/app/page.tsx gates demo admin box and placeholder strictly behind isTestEnv"
 );
 
 console.log("\n=================================================");

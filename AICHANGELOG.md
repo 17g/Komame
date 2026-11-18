@@ -2,6 +2,31 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-18] 【Phase 13.3】初期デモ管理者アカウント限定化の単体テスト・静的検査拡充および総合ビルド検証
+
+### 1. 概要
+要件 1-9 および `Plan.md` Phase 13.3 に基づき、認証・セッション単体テスト（`scripts/test-auth-session-unit.ts`）およびセキュリティ単体テスト・静的検査（`scripts/test-security-unit.ts`）へ初期デモ管理者アカウントのテスト環境限定有効化・本番遮断検証を追加し、TypeScript 型チェック・本番ビルド・全検証テストの正常終了を確認した。
+
+### 2. 変更内容 (Before / After)
+1. **認証・セッション・シード環境制限の単体テスト追加 (`scripts/test-auth-session-unit.ts`)**:
+   - Before: `isTestEnvironment`、`isDemoAdminAccount`、`isDemoAdminAllowed`、`assertDemoSeedAllowed` を検証する単体テストが存在しなかった。
+   - After: 「Test 6: Demo Admin Account Environment Restriction (Req 1-9)」を追加し、`development` / `test` / `production` における `isTestEnvironment`、`admin@komame.local` / `usr-yamada-taro-001`（大文字・空白含む）に対する `isDemoAdminAccount` および `isDemoAdminAllowed` の本番遮断、ならびに `assertDemoSeedAllowed` による本番シード禁止検証を網羅した。
+2. **本番環境デモアカウント遮断・UI出力制御の静的コード検査追加 (`scripts/test-security-unit.ts`)**:
+   - Before: セキュリティ静的検査は `raw.unsafe` 不使用チェックのみであった。
+   - After: セクション 6「Static Code Analysis: Demo Admin Test-Env-Only Enforcement (Req 1-9)」を追加し、`src/lib/auth.ts`（`getCurrentSession`）、`src/app/api/auth/login/route.ts`、`src/db/seed.ts`、`docker-compose.prod.yml`（フォールバック排除）、`src/app/page.tsx`（`isTestEnv` によるデモアカウント欄とプレースホルダーの出力制御）を静的検証するよう拡充した。
+
+### 3. 変更理由
+- 初期デモ管理者アカウントのテスト環境限定有効化および本番環境でのログイン・セッション・シード・UI出力の全面遮断について、リグレッションを自動検出できるようにするため。
+
+### 4. 影響範囲・検証結果
+- 変更ファイル: `scripts/test-auth-session-unit.ts`, `scripts/test-security-unit.ts`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（23ルート生成完了）
+  - `npx tsx scripts/test-auth-session-unit.ts`: 全テスト合格・終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+
+
 ## [2026-11-18] 【Phase 13.2】ログイン画面における初期デモ管理者アカウント欄のテスト環境限定出力
 
 ### 1. 概要
