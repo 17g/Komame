@@ -291,7 +291,7 @@
     - `login`: パスワード検証成功後に所属世帯の `households.status` を確認し、`pending` / `rejected` / `suspended` の場合はそれぞれの状態を明示したメッセージとともに `403 Forbidden` を返却する（パスワード不一致・未存在時は従来通り `401` でアカウント列挙を防止）。`approved` 時は `isSuperAdmin` を含めてセッション・レスポンスを発行する。
     - `me`: レスポンスの `user` に `isSuperAdmin` を含めて返却する。
 
-- [ ] **12.3 システム管理者（Super Admin）世帯承認・管理APIの新規実装 (`src/app/api/super-admin/households/route.ts`)**:
+- [x] **12.3 システム管理者（Super Admin）世帯承認・管理APIの新規実装 (`src/app/api/super-admin/households/route.ts`)**:
   - `getCurrentSession()` に加え、DB上の `users.isSuperAdmin === true` を検証する認可ガード（非Super Adminは `403 Forbidden`）を実装する。
   - `GET /api/super-admin/households`: 登録申請中および登録済みの世帯一覧（世帯名、申請者メールアドレス、ステータス、申請日時、審査日時、却下理由）およびステータス別件数集計（`counts`）を返却する（`status` クエリフィルタ対応）。
   - `PUT /api/super-admin/households`:

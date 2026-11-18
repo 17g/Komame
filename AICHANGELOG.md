@@ -2,6 +2,37 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-18] 【Phase 12.3】システム管理者（Super Admin）世帯承認・管理APIの新規実装
+
+### 1. 概要
+要件 1-1, 1-2, 1-8 および `Plan.md` Phase 12.3（`for_agent/04_api_specifications.md` 第10章）に基づき、システム管理者（`isSuperAdmin === true`）が新規世帯登録申請の承認・却下・再承認・抹消、および承認済み世帯の利用停止・利用再開を行えるバックエンド API `/api/super-admin/households` とバリデーション・初期化ヘルパーを新規実装した。
+
+### 2. 変更内容 (Before / After)
+1. **Super Admin 世帯管理バリデーション・初期プリセット定数 (`src/lib/super-admin-helpers.ts`)**:
+   - Before: Super Admin の世帯ステータス遷移検証、削除可否検証、ステータス件数集計、および承認時の標準12費目・初期システム設定テンプレートを集約したヘルパーが存在しなかった。
+   - After: `STANDARD_CATEGORY_TEMPLATES`（標準12費目）、`DEFAULT_HOUSEHOLD_SETTINGS`（通貨記号・日付形式・パスワードポリシー）、`validateSuperAdminHouseholdTransition`（自己世帯停止・却下防止および許可遷移チェック）、`validateSuperAdminHouseholdDeletion`（`pending`/`rejected` 限定かつ自世帯削除防止）、`buildHouseholdCounts` 等を純粋関数・定数として新設。
+2. **Super Admin 世帯承認・管理 API (`src/app/api/super-admin/households/route.ts`)**:
+   - Before: システム管理者が承認待ち・承認済み・却下済み・停止中世帯を一元管理するエンドポイントが存在しなかった。
+   - After: `getCurrentSession()` に加え、DB上の `users.isSuperAdmin === true && users.isActive === true` を検証する認可ガード（非 Super Admin は `403 Forbidden`）を実装した上で以下を提供：
+     - `GET /api/super-admin/households`: ステータスフィルター（`all` / `pending` / `approved` / `rejected` / `suspended`）対応の世帯一覧（申請者メール・ID含む）および全件のステータス別集計 `counts` を返却。
+     - `PUT /api/super-admin/households`:
+       - `approve`: `pending` / `rejected` 世帯に対し、`assertValidSchemaName` 検証のもと `createTenantTables(schemaName)` を実行し、`public.system_settings`・標準12費目マスター（`isSystem: true`）・デフォルト現金口座を冪等にシード投入した上で `status = "approved"` へ更新。
+       - `reject`: `pending` 世帯を `status = "rejected"` に更新し、審査者・審査日時・却下理由を記録。
+       - `suspend` / `reactivate`: 承認済み世帯の停止・再開（操作中 Super Admin 自身の所属世帯停止は `400 Bad Request` で拒否）。
+     - `DELETE /api/super-admin/households?householdId=...`: `pending` または `rejected` の世帯申請およびメンバーシップをトランザクション内で物理削除し、他世帯所属および Super Admin 権限を持たない申請ユーザーも物理削除して同一メールアドレスでの再申請を可能化。
+
+### 3. 変更理由
+- 承認申請制において、システム管理者が管理画面から安全かつ冪等に世帯環境を初期化（承認）・却下・停止・再有効化・抹消できるようにし、誤操作による自己ロックアウトや未承認状態での不正アクセスを防止するため。
+
+### 4. 影響範囲・検証結果
+- 変更・新規作成ファイル: `src/lib/super-admin-helpers.ts`, `src/app/api/super-admin/households/route.ts`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+  - `npx tsx scripts/test-auth-session-unit.ts`: 全テスト合格・終了コード 0
+  - `npm run build`: 終了コード 0（`/api/super-admin/households` を含む23ルート生成完了）
+
+
 ## [2026-11-18] 【Phase 12.2】認証・セッション検証ロジックおよびログイン・サインアップ申請APIの改修
 
 ### 1. 概要
