@@ -355,7 +355,7 @@
   - `src/types/index.ts`: `SavingsGoalItem` に `isArchived?: boolean` および `createdAt?: string` を追加する。
   - `src/lib/goal-helpers.ts`（新規）: 貯蓄目標の入力バリデーション（タイトル、目標金額 `1 <= targetAmount <= 9,999,999,999`、予定日、対象口座配列、カラー）、達成状態判定（`isGoalAchieved(currentAmount, targetAmount, isCompleted)`）、削除可否判定（未達成かつ未アーカイブのみ削除可、達成済み・アーカイブ済みは削除不可）、アーカイブ可否判定（達成済みのみアーカイブ可）、および進行中（未アーカイブ）目標のみの合算進捗算出関数（`calculateActiveGoalsSummary`）を純粋関数として実装する。
 
-- [ ] **14.2 貯蓄目標 API (`src/app/api/goals/route.ts`) の拡張（編集・アーカイブ・復元・未達成削除・監査ログ連携）**:
+- [x] **14.2 貯蓄目標 API (`src/app/api/goals/route.ts`) の拡張（編集・アーカイブ・復元・未達成削除・監査ログ連携）**:
   - `GET /api/goals`: 進行中・アーカイブ済みを含む目標一覧を取得し、対象口座合算残高（`currentAmount`）、達成率（`progressRate`）、`isArchived` を付与して返却する。
   - `POST /api/goals`: 入力値・金額境界値を検証し、`isCompleted: false`, `isArchived: false` で登録するとともに監査ログ（`action: "CREATE", entityType: "savings_goal"`）を記録する。
   - `PUT /api/goals`:

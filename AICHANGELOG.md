@@ -2,6 +2,39 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-20] 【Phase 14.2】貯蓄目標 API (`/api/goals`) の拡張（編集・アーカイブ・復元・未達成削除・監査ログ連携）
+
+### 1. 概要
+要件 17-2 および `Plan.md` Phase 14.2 に基づき、`src/app/api/goals/route.ts` の貯蓄目標 API を拡張し、`GET` の作成順ソート・アーカイブ/達成状態返却、`POST` のヘルパー統一検証・監査ログ記録、`PUT` の目標編集（`update`）・達成済み目標アーカイブ（`archive`）・復元（`restore`）、および `DELETE` の達成済み/アーカイブ済み削除保護付き物理削除・監査ログ記録をトランザクション内で実装した。
+
+### 2. 変更内容 (Before / After)
+1. **`GET /api/goals` の拡張 (`src/app/api/goals/route.ts`)**:
+   - Before: `savingsGoals` をソートなしで取得し、`currentAmount` と `progressRate` のみを単純付与して返却していた。
+   - After: `createdAt ASC, id ASC` 順で進行中・アーカイブ済みの全件を取得し、`goal-helpers.ts` の `calculateGoalCurrentAmount` / `calculateGoalProgressRate` / `isGoalAchieved` を用いて `accountIdsJson`（正規化配列）・`isArchived`・`currentAmount`・`progressRate`・`isAchieved` を付与して返却するよう改修した。
+2. **`POST /api/goals` のバリデーション統一・トランザクション・監査ログ連携**:
+   - Before: タイトル・金額の基本検証のみで直接 INSERT しており、`isArchived` の明示指定や監査ログ記録がなかった。
+   - After: `validateGoalInput` で全項目（タイトル 1〜100文字、金額 1〜9,999,999,999円整数、暦日 YYYY-MM-DD、口座ID配列重複排除、カラー `#RRGGBB`）を検証し、`db.transaction()` 内で `isCompleted: false, isArchived: false` として登録するとともに、`audit_logs`（`action: "CREATE", entityType: "savings_goal"`）を記録して返却するよう改修した。
+3. **`PUT /api/goals` の新規実装（編集・アーカイブ・復元）**:
+   - Before: `PUT` ハンドラが存在しなかった。
+   - After: 以下の3モードを `db.transaction()` および監査ログ（`action: "UPDATE", entityType: "savings_goal"`, `beforeDataJson` / `afterDataJson`）付きで実装した：
+     - `action: "update"`（省略時デフォルト）: `validateGoalInput` で検証後、タイトル・目標金額・達成予定日・対象口座ID配列・カラーを更新。
+     - `action: "archive"`: 対象口座合算残高から `canArchiveGoal` で達成状態を検証し、達成済み（`currentAmount >= targetAmount || isCompleted`）かつ未アーカイブの場合のみ `isArchived = true, isCompleted = true` に更新（未達成や既アーカイブ時は `400 Bad Request` で拒否）。
+     - `action: "restore"`: `canRestoreGoal` でアーカイブ済みであることを検証し、`isArchived = false` へ復元（未アーカイブ時は `400 Bad Request` で拒否）。
+4. **`DELETE /api/goals?id=...` の新規実装（未達成削除・達成済み保護）**:
+   - Before: `DELETE` ハンドラが存在しなかった。
+   - After: 対象目標の対象口座合算残高から `canDeleteGoal` で削除可否を判定し、達成済みまたはアーカイブ済みの目標は `400 Bad Request` で削除を拒否。未達成かつ未アーカイブの目標のみ `db.transaction()` 内で物理削除し、`audit_logs`（`action: "DELETE", entityType: "savings_goal"`）を記録するよう実装した。
+
+### 3. 変更理由
+- 要件 17-2 に準拠し、世帯メンバー全員が貯蓄目標の編集・未達成目標の削除・達成済み目標のアーカイブ/復元を安全かつ監査可能な形で実行できるようにするため。
+
+### 4. 影響範囲・検証結果
+- 変更ファイル: `src/app/api/goals/route.ts`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（23ルートビルド成功）
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+
+
 ## [2026-11-20] 【Phase 14.1】貯蓄目標のテナントDBスキーマ拡張・マイグレーション・型定義・バリデーションヘルパーの追加
 
 ### 1. 概要
