@@ -19,7 +19,7 @@
 - [x] Phase 11: 単価×個数 計算補助UIの個数入力セレクトボックス化（要件 2-7 改訂）
 - [x] Phase 12: 新規世帯登録の申請・許可制およびシステム管理者（Super Admin）世帯管理機能の実装（要件 1-1, 1-2, 1-8）
 - [x] Phase 13: 初期デモ管理者アカウントのテスト環境限定有効化およびログイン画面表示制御の実装（要件 1-9）
-- [ ] Phase 14: 貯蓄目標の編集・未達成目標削除・達成済み目標アーカイブ/復元機能の実装（要件 17-2）
+- [x] Phase 14: 貯蓄目標の編集・未達成目標削除・達成済み目標アーカイブ/復元機能の実装（要件 17-2）
 - [ ] Phase 15: 定例支払い（月次固定費・振替）テンプレート管理 & 自動支払い予定明細追加機能の実装（要件 2-8）
 
 
@@ -370,7 +370,7 @@
   - 未達成目標カードには「削除」ボタン（誤操作防止の確認UI付き）を配置し、達成済み目標カードには削除ボタンを表示せず「アーカイブ」ボタンを配置する。
   - 進捗一覧内に「アーカイブ済みを表示（N件）」トグルを設け、展開時にアーカイブ済み達成目標カードを一覧表示し、「復元（進行中に戻す）」ボタン（削除ボタンは非表示で保護）を実装する。
 
-- [ ] **14.4 単体テスト・E2E総合テストの追加とビルド検証・変更履歴記録 (`scripts/test-goals-unit.ts`, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `AICHANGELOG.md`)**:
+- [x] **14.4 単体テスト・E2E総合テストの追加とビルド検証・変更履歴記録 (`scripts/test-goals-unit.ts`, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `AICHANGELOG.md`)**:
   - `scripts/test-goals-unit.ts` を新規作成し、目標入力バリデーション、達成判定、未達成のみ削除可・達成済み削除拒否ガード、達成済みのみアーカイブ可・復元、および合算進捗集計からのアーカイブ除外ロジックの単体テストを実行する。
   - `scripts/comprehensive-test.ts` および `for_agent/06_operation_and_testing_guide.md` に貯蓄目標の編集・削除・アーカイブ/復元のテスト項目を追記する。
   - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-goals-unit.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。

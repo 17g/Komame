@@ -970,8 +970,158 @@ ${dupCheckDate},${dupCheckShop},${dupCheckAmount},食費,,重複検証用
     );
   }
 
+  // 17. 貯蓄目標の編集・未達成削除・達成済み削除保護・アーカイブ/復元フロー検証
+  console.log("\n--- 17. 貯蓄目標 CRUD・削除保護・アーカイブ/復元テスト ---");
+  const goalTestAccRes = await apiFetch("/api/accounts", {
+    method: "POST",
+    body: JSON.stringify({
+      actionType: "account",
+      name: "目標テスト専用口座",
+      type: "bank",
+      balance: 100000,
+      icon: "🎯",
+    }),
+  });
+  assert(goalTestAccRes.ok, "目標テスト用口座作成成功 (POST /api/accounts)");
+  const goalTestAccId = goalTestAccRes.json.id;
+
+  // 17.1 未達成目標の作成・編集・アーカイブ拒否・物理削除
+  const createUnachievedGoalRes = await apiFetch("/api/goals", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "自動テスト未達成目標",
+      targetAmount: 250000,
+      targetDate: "2027-12-31",
+      accountIds: [goalTestAccId],
+      color: "#2E7D32",
+    }),
+  });
+  assert(createUnachievedGoalRes.ok, "未達成目標の作成成功 (POST /api/goals)");
+  const unachievedGoalId = createUnachievedGoalRes.json.id;
+  assert(
+    createUnachievedGoalRes.json?.goal?.currentAmount === 100000 &&
+      createUnachievedGoalRes.json?.goal?.isAchieved === false,
+    "未達成目標の現在額 (100,000円) と未達成状態を確認"
+  );
+
+  const updateUnachievedGoalRes = await apiFetch("/api/goals", {
+    method: "PUT",
+    body: JSON.stringify({
+      action: "update",
+      id: unachievedGoalId,
+      title: "自動テスト未達成目標（編集後）",
+      targetAmount: 200000,
+      targetDate: "2028-03-31",
+      accountIds: [goalTestAccId],
+      color: "#2563EB",
+    }),
+  });
+  assert(
+    updateUnachievedGoalRes.ok &&
+      updateUnachievedGoalRes.json?.goal?.title === "自動テスト未達成目標（編集後）" &&
+      updateUnachievedGoalRes.json?.goal?.targetAmount === 200000,
+    "未達成目標の編集成功 (PUT action=update)"
+  );
+
+  const archiveUnachievedRes = await apiFetch("/api/goals", {
+    method: "PUT",
+    body: JSON.stringify({
+      action: "archive",
+      id: unachievedGoalId,
+    }),
+  });
+  assert(
+    archiveUnachievedRes.status === 400,
+    "未達成目標のアーカイブ試行が 400 で拒否されることを確認"
+  );
+
+  const deleteUnachievedRes = await apiFetch(
+    `/api/goals?id=${encodeURIComponent(unachievedGoalId)}`,
+    { method: "DELETE" }
+  );
+  assert(deleteUnachievedRes.ok, "未達成目標の物理削除成功 (DELETE /api/goals)");
+
+  // 17.2 達成済み目標の削除保護・アーカイブ・アーカイブ削除保護・復元
+  const createAchievedGoalRes = await apiFetch("/api/goals", {
+    method: "POST",
+    body: JSON.stringify({
+      title: "自動テスト達成済み目標",
+      targetAmount: 50000,
+      targetDate: "2026-12-31",
+      accountIds: [goalTestAccId],
+      color: "#0D9488",
+    }),
+  });
+  assert(createAchievedGoalRes.ok, "達成済み目標の作成成功 (POST /api/goals)");
+  const achievedGoalId = createAchievedGoalRes.json.id;
+  assert(
+    createAchievedGoalRes.json?.goal?.isAchieved === true &&
+      createAchievedGoalRes.json?.goal?.progressRate === 100,
+    "対象口座残高が目標額以上のため達成済み判定 (100%) となることを確認"
+  );
+
+  const deleteAchievedRes = await apiFetch(
+    `/api/goals?id=${encodeURIComponent(achievedGoalId)}`,
+    { method: "DELETE" }
+  );
+  assert(
+    deleteAchievedRes.status === 400,
+    "達成済み目標の削除試行が 400 で拒否保護されることを確認"
+  );
+
+  const archiveAchievedRes = await apiFetch("/api/goals", {
+    method: "PUT",
+    body: JSON.stringify({
+      action: "archive",
+      id: achievedGoalId,
+    }),
+  });
+  assert(
+    archiveAchievedRes.ok && archiveAchievedRes.json?.goal?.isArchived === true,
+    "達成済み目標のアーカイブ成功 (PUT action=archive)"
+  );
+
+  const deleteArchivedRes = await apiFetch(
+    `/api/goals?id=${encodeURIComponent(achievedGoalId)}`,
+    { method: "DELETE" }
+  );
+  assert(
+    deleteArchivedRes.status === 400,
+    "アーカイブ済み目標の削除試行が 400 で拒否保護されることを確認"
+  );
+
+  const restoreGoalRes = await apiFetch("/api/goals", {
+    method: "PUT",
+    body: JSON.stringify({
+      action: "restore",
+      id: achievedGoalId,
+    }),
+  });
+  assert(
+    restoreGoalRes.ok && restoreGoalRes.json?.goal?.isArchived === false,
+    "アーカイブ済み目標の進行中一覧への復元成功 (PUT action=restore)"
+  );
+
+  // テスト用達成目標・口座のクリーンアップ（目標額を上げて未達成化して削除）
+  await apiFetch("/api/goals", {
+    method: "PUT",
+    body: JSON.stringify({
+      action: "update",
+      id: achievedGoalId,
+      title: "自動テスト目標クリーンアップ",
+      targetAmount: 500000,
+      targetDate: null,
+      accountIds: [goalTestAccId],
+      color: "#2E7D32",
+    }),
+  });
+  await apiFetch(`/api/goals?id=${encodeURIComponent(achievedGoalId)}`, { method: "DELETE" });
+  await apiFetch(`/api/accounts?id=${encodeURIComponent(goalTestAccId)}&actionType=account`, {
+    method: "DELETE",
+  });
+
   console.log("\n==========================================================");
-  console.log("🎉 すべてのテスト（全16カテゴリ・新規世帯申請/承認制・資金移動・QR逆算・CSV・CRUD・一括登録・残高整合性・管理機能）に完全合格しました！");
+  console.log("🎉 すべてのテスト（全17カテゴリ・貯蓄目標CRUD/アーカイブ・新規世帯申請/承認制・資金移動・QR逆算・CSV・CRUD・一括登録・残高整合性・管理機能）に完全合格しました！");
   console.log("==========================================================");
 }
 

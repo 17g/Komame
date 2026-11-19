@@ -71,6 +71,9 @@ npx tsx scripts/test-unit-calculator.ts
 # 新規世帯登録申請・承認制 & Super Admin 操作バリデーション単体テスト
 npx tsx scripts/test-household-approval-unit.ts
 
+# 貯蓄目標管理 (編集・未達成削除・達成済みアーカイブ/復元・合算進捗集計) 単体テスト
+npx tsx scripts/test-goals-unit.ts
+
 # セキュリティ単体テスト & 静的コード検査 (スキーマ検証、CSVインジェクション無害化、金額境界値、レートリミッター、raw.unsafeゼロ件検査)
 npx tsx scripts/test-security-unit.ts
 ```
@@ -114,6 +117,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec app np
 
 ## 4. 改訂履歴
 
+- **2026-11-20**: 単体テスト一覧に貯蓄目標管理（編集・未達成削除・達成済みアーカイブ/復元・合算進捗集計）単体テスト（`test-goals-unit.ts`）を追加。
 - **2026-11-18**: 単体テスト一覧に新規世帯登録申請・承認制 & Super Admin 操作バリデーション単体テスト（`test-household-approval-unit.ts`）を追加。
 - **2026-11-18**: 初期デモ管理者アカウント（`admin@komame.local`）がテスト環境（`NODE_ENV !== "production"`）限定で有効であり、本番環境（`NODE_ENV === "production"`）ではログイン・セッション・シード作成・ログイン画面表示のすべてが無効化される仕様を追記。
 - **2026-11-18**: 開発環境デモ管理者（`admin@komame.local`）が `is_super_admin = TRUE` であり、管理タブから新規世帯申請の承認・却下・停止検証が可能である旨を追記。

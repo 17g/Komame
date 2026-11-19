@@ -157,6 +157,7 @@ npx tsx scripts/test-rate-limit-csrf.ts          # レートリミッター & CS
 npx tsx scripts/test-categories-unit.ts          # 費目マスター & 標準12費目保護検証
 npx tsx scripts/test-unit-calculator.ts          # 単価×個数 計算補助ロジック検証
 npx tsx scripts/test-household-approval-unit.ts  # 新規世帯登録申請・承認制 & Super Admin 検証
+npx tsx scripts/test-goals-unit.ts               # 貯蓄目標 (編集・削除保護・アーカイブ/復元・集計) 検証
 npx tsx scripts/test-security-unit.ts            # セキュリティ単体テスト & 静的コード検査
 
 # 4. 総合ビジネスロジック自動テスト (開発サーバー & DB 起動時)

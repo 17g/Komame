@@ -2,6 +2,35 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-20] 【Phase 14.4】貯蓄目標の単体テスト・E2E総合テスト追加・仕様書同期およびビルド検証
+
+### 1. 概要
+要件 17-2 および `Plan.md` Phase 14.4 に基づき、貯蓄目標管理（入力バリデーション・達成判定・未達成のみ削除可/達成済み削除保護・達成済みアーカイブ/復元・アーカイブ除外合算進捗集計）の単体テスト（`scripts/test-goals-unit.ts`）を新規作成し、E2E総合テスト（`scripts/comprehensive-test.ts`）および検証ガイド（`for_agent/06_operation_and_testing_guide.md`, `README.md`）へテスト項目を反映した上で、型チェック・本番ビルド・単体テストによる検証を実施した。
+
+### 2. 変更内容 (Before / After)
+1. **貯蓄目標単体テストの新規作成 (`scripts/test-goals-unit.ts`)**:
+   - Before: `src/lib/goal-helpers.ts` および `/api/goals`・`GoalsTab.tsx` の貯蓄目標保護・集計ロジックを検証する単体テストが存在しなかった。
+   - After: 日付妥当性（閏年・非閏年・存在しない日付）、`validateGoalInput` の正常系/境界値（1円〜9,999,999,999円、100文字）/異常系、口座残高合算・達成率・`isGoalAchieved`、`canDeleteGoal`（未達成のみ許可・達成済み/アーカイブ済み拒否）、`canArchiveGoal` / `canRestoreGoal`、`calculateActiveGoalsSummary`（アーカイブ済み除外合算）、および API/UI ソースに対する静的ガードレール検査を網羅する単体テストを実装した。
+2. **E2E 総合テストへの貯蓄目標検証フロー追記 (`scripts/comprehensive-test.ts`)**:
+   - Before: `scripts/comprehensive-test.ts` に貯蓄目標（`/api/goals`）の編集・削除保護・アーカイブ/復元の検証シナリオが存在しなかった。
+   - After: セクション 17（貯蓄目標 CRUD・削除保護・アーカイブ/復元テスト）を追記し、未達成目標の作成・編集・アーカイブ拒否（400）・物理削除、ならびに達成済み目標の削除拒否（400）・アーカイブ・アーカイブ状態での削除拒否（400）・復元およびテストデータクリーンアップの一連の検証を追加した。
+3. **検証ドキュメントの同期 (`for_agent/06_operation_and_testing_guide.md`, `README.md`)**:
+   - Before: 単体テストコマンド一覧に `scripts/test-goals-unit.ts` の記載がなかった。
+   - After: 単体テストコマンド一覧および `06_operation_and_testing_guide.md` の改訂履歴に `test-goals-unit.ts` を追記した。
+
+### 3. 変更理由
+- 要件 17-2 で導入した達成済み・アーカイブ済み貯蓄目標の削除保護および進行中合算進捗集計の整合性を自動テストによって継続的に担保し、開発・検証手順書とテスト資産の同期を完了するため。
+
+### 4. 影響範囲・検証結果
+- 変更・新規作成ファイル: `scripts/test-goals-unit.ts`, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `README.md`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（23ルートビルド成功）
+  - `npx tsx scripts/test-goals-unit.ts`: 全テスト合格・終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+  - ※ ローカル DB (ポート 5532) および開発サーバー (ポート 3080) は未起動のため、`scripts/comprehensive-test.ts` の実行は `tsc --noEmit` による静的型検証までを実施。
+
+
 ## [2026-11-20] 【Phase 14.3】目標・成長タブ UI (`GoalsTab.tsx`) における目標編集・削除・アーカイブ/復元UIの実装
 
 ### 1. 概要
