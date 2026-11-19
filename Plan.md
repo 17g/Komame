@@ -19,6 +19,8 @@
 - [x] Phase 11: 単価×個数 計算補助UIの個数入力セレクトボックス化（要件 2-7 改訂）
 - [x] Phase 12: 新規世帯登録の申請・許可制およびシステム管理者（Super Admin）世帯管理機能の実装（要件 1-1, 1-2, 1-8）
 - [x] Phase 13: 初期デモ管理者アカウントのテスト環境限定有効化およびログイン画面表示制御の実装（要件 1-9）
+- [ ] Phase 14: 貯蓄目標の編集・未達成目標削除・達成済み目標アーカイブ/復元機能の実装（要件 17-2）
+- [ ] Phase 15: 定例支払い（月次固定費・振替）テンプレート管理 & 自動支払い予定明細追加機能の実装（要件 2-8）
 
 
 ---
@@ -341,6 +343,75 @@
 - [x] **13.3 単体テスト・静的検査の拡充と総合ビルド検証・変更履歴記録 (`scripts/test-auth-session-unit.ts`, `scripts/test-security-unit.ts`, `AICHANGELOG.md`)**:
   - `scripts/test-auth-session-unit.ts` および `scripts/test-security-unit.ts` に、初期デモ管理者アカウント（`admin@komame.local` / `usr-yamada-taro-001`）がテスト環境（`development` / `test`）でのみ有効であり本番環境（`production`）ではログイン・セッション・シードのすべてで拒否されること、および `src/app/page.tsx` で初期デモ管理者アカウント欄がテスト環境限定で出力されていることの検証テストを追加・実行する。
   - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-auth-session-unit.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。
+  - `AICHANGELOG.md` に作業内容を記録し、Git コミットを行う。
+
+---
+
+## Phase 14: 貯蓄目標の編集・未達成目標削除・達成済み目標アーカイブ/復元機能の実装（要件 17-2）
+
+- [x] **14.1 テナントDBスキーマ・マイグレーション・型定義・バリデーションヘルパーの追加 (`src/db/schema/tenant.ts`, `src/db/migrate.ts`, `src/types/index.ts`, `src/lib/goal-helpers.ts`)**:
+  - `src/db/schema/tenant.ts`: `savingsGoals` テーブルに `isArchived: boolean("is_archived").default(false).notNull()` カラムを追加する。
+  - `src/db/migrate.ts`: `createTenantTables()` の `savings_goals` テーブル作成 DDL に `is_archived BOOLEAN DEFAULT FALSE NOT NULL` を追加し、既存テナントスキーマ向けに `ALTER TABLE "${schemaName}".savings_goals ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT FALSE NOT NULL;` を追加する。
+  - `src/types/index.ts`: `SavingsGoalItem` に `isArchived?: boolean` および `createdAt?: string` を追加する。
+  - `src/lib/goal-helpers.ts`（新規）: 貯蓄目標の入力バリデーション（タイトル、目標金額 `1 <= targetAmount <= 9,999,999,999`、予定日、対象口座配列、カラー）、達成状態判定（`isGoalAchieved(currentAmount, targetAmount, isCompleted)`）、削除可否判定（未達成かつ未アーカイブのみ削除可、達成済み・アーカイブ済みは削除不可）、アーカイブ可否判定（達成済みのみアーカイブ可）、および進行中（未アーカイブ）目標のみの合算進捗算出関数（`calculateActiveGoalsSummary`）を純粋関数として実装する。
+
+- [ ] **14.2 貯蓄目標 API (`src/app/api/goals/route.ts`) の拡張（編集・アーカイブ・復元・未達成削除・監査ログ連携）**:
+  - `GET /api/goals`: 進行中・アーカイブ済みを含む目標一覧を取得し、対象口座合算残高（`currentAmount`）、達成率（`progressRate`）、`isArchived` を付与して返却する。
+  - `POST /api/goals`: 入力値・金額境界値を検証し、`isCompleted: false`, `isArchived: false` で登録するとともに監査ログ（`action: "CREATE", entityType: "savings_goal"`）を記録する。
+  - `PUT /api/goals`:
+    - `action: "update"`（または省略時）: 目標情報の編集（タイトル、目標金額、達成予定日、対象口座ID配列、カラー）を行い、監査ログ（`action: "UPDATE", entityType: "savings_goal"`）に `beforeDataJson` / `afterDataJson` を記録する。
+    - `action: "archive"`: 対象目標の現在残高合算による達成状態を検証し、達成済み（`currentAmount >= targetAmount || isCompleted`）の場合のみ `isArchived = true`, `isCompleted = true` に更新して監査ログを記録する（未達成の場合は `400 Bad Request` で拒否）。
+    - `action: "restore"`: アーカイブ済み目標の `isArchived` を `false` に更新して進行中一覧へ復元し、監査ログを記録する。
+  - `DELETE /api/goals?id=...`: 対象目標が達成済み（`currentAmount >= targetAmount || isCompleted`）またはアーカイブ済み（`isArchived === true`）の場合は `400 Bad Request` で削除を拒否し、未達成目標のみ物理削除して監査ログ（`action: "DELETE", entityType: "savings_goal"`）を記録する。
+
+- [ ] **14.3 目標・成長タブ UI (`src/components/GoalsTab.tsx`) における目標編集・削除・アーカイブ/復元UIの実装**:
+  - 進行中目標（`!g.isArchived`）とアーカイブ済み目標（`Boolean(g.isArchived)`）を分離し、「全目標の合算進捗（全体達成率）」「まめの樹育成システム」「やさしいアドバイス」の集計対象を進行中（未アーカイブ）目標のみに限定する（`calculateActiveGoalsSummary` 連動）。
+  - 各進行中目標カードに「編集」ボタンを配置し、新規作成と共通化されたモーダル（または編集モード）でタイトル・目標金額・達成予定日・対象口座・テーマカラーを編集・保存できるようにする。
+  - 未達成目標カードには「削除」ボタン（誤操作防止の確認UI付き）を配置し、達成済み目標カードには削除ボタンを表示せず「アーカイブ」ボタンを配置する。
+  - 進捗一覧内に「アーカイブ済みを表示（N件）」トグルを設け、展開時にアーカイブ済み達成目標カードを一覧表示し、「復元（進行中に戻す）」ボタン（削除ボタンは非表示で保護）を実装する。
+
+- [ ] **14.4 単体テスト・E2E総合テストの追加とビルド検証・変更履歴記録 (`scripts/test-goals-unit.ts`, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `AICHANGELOG.md`)**:
+  - `scripts/test-goals-unit.ts` を新規作成し、目標入力バリデーション、達成判定、未達成のみ削除可・達成済み削除拒否ガード、達成済みのみアーカイブ可・復元、および合算進捗集計からのアーカイブ除外ロジックの単体テストを実行する。
+  - `scripts/comprehensive-test.ts` および `for_agent/06_operation_and_testing_guide.md` に貯蓄目標の編集・削除・アーカイブ/復元のテスト項目を追記する。
+  - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-goals-unit.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。
+  - `AICHANGELOG.md` に作業内容を記録し、Git コミットを行う。
+
+---
+
+## Phase 15: 定例支払い（月次固定費・振替）テンプレート管理 & 自動支払い予定明細追加機能の実装（要件 2-8）
+
+- [ ] **15.1 テナントDBスキーマ・マイグレーション・型定義・月次サイクル計算ヘルパーの追加 (`src/db/schema/tenant.ts`, `src/db/migrate.ts`, `src/types/index.ts`, `src/lib/recurring-helpers.ts`)**:
+  - `src/db/schema/tenant.ts`: `recurring_templates` テーブル定義を追加し、`transactions` テーブルに `recurringTemplateId: varchar("recurring_template_id", { length: 64 })` カラムを追加する。
+  - `src/db/migrate.ts`: `createTenantTables()` に `recurring_templates` テーブル作成 DDL、`transactions.recurring_template_id` の `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`、およびインデックスを追加する。
+  - `src/types/index.ts`: `RecurringTemplateItem` 型および `TransactionItem` への `recurringTemplateId?: string` を追加する。
+  - `src/lib/recurring-helpers.ts`（新規）:
+    - テンプレート入力バリデーション（名称 1〜150文字、金額 `1 <= amount <= 9,999,999,999` の整数、取引種別 `expense | transfer`、振替時の `fromAccountId !== toAccountId` 必須検証、支払基準日 `1`〜`28` または `99`:月末）。
+    - クレジットカード選択時の規定引き落とし日（`payment_methods.withdrawal_day || 27`）自動適用ロジック（`resolveEffectiveDayOfMonth`）。
+    - 「規定支払日の翌日」からの月次サイクル判定・支払予定日算出ロジック（`resolveTargetCycleAndDates(referenceDateStr, effectiveDayOfMonth)`：基準日当日までは当月サイクル `YYYY-MM`、基準日の翌日以降は翌月サイクル `YYYY-(MM+1)` を返し、該当サイクルの支払予定日 `scheduledWithdrawalDate` と取引日 `date` を算出する純粋関数）。
+    - 支払予定日到来済み（`scheduledWithdrawalDate <= today`）かつ未精算（`isSettled === false`）の非クレジットカード明細の自動精算対象判定ヘルパー。
+
+- [ ] **15.2 定例支払いテンプレート & 月次自動追加・精算 API の実装 (`src/app/api/recurring-templates/route.ts`, `src/app/api/transactions/route.ts`, `src/app/api/admin/revert/route.ts`)**:
+  - `src/app/api/recurring-templates/route.ts`（新規）:
+    - `GET /api/recurring-templates`: テンプレート一覧取得（費目名・決済手段名・種別・口座名を結合）。`autoSync=true` 指定時は現在日付基準で有効テンプレートの未生成サイクル分の「支払い予定（`isSettled: false`）」明細自動追加、および支払予定日到来済みの非クレカ未精算明細の口座残高精算（`isSettled: true` 更新＋残高減額/加算＋積立受入明細生成）を `db.transaction()` 内で冪等に実行し、`syncResult: { generatedCount, settledCount }` とともに返却する。
+    - `POST /api/recurring-templates`: 新規テンプレート登録（`action: "create"` または省略時、有効時は初回対象サイクルの支払い予定明細も同時生成）、月次同期手動実行（`action: "sync"`）、および未精算支払い予定明細の手動確定精算（`action: "settle", transactionId`）を実装し、監査ログ・チェックポイントを記録する。
+    - `PUT /api/recurring-templates`: テンプレート編集および有効/一時停止（`isActive`）切替を実装し、監査ログを記録する。
+    - `DELETE /api/recurring-templates?id=...`: テンプレートの物理削除（生成済み明細は保持）および監査ログ記録を実装する。
+  - `src/app/api/transactions/route.ts` & `src/app/api/admin/revert/route.ts`:
+    - `GET /api/transactions` の返却フィールドに `recurringTemplateId` を含め、未精算（`isSettled === false`）の定例支払い予定明細を更新・削除・24hリバートした際も、`isSettled` 状態に応じて二重減額や不正な残高逆算が起きないよう残高整合性を保証する。
+
+- [ ] **15.3 記帳タブ内「定例支払いテンプレート管理」UIおよびアプリ起動時自動同期の実装 (`src/components/RegisterTab.tsx`, `src/app/page.tsx`, `src/lib/i18n.ts`)**:
+  - `src/lib/i18n.ts`: 定例支払いテンプレート管理および支払い予定（未精算）・精算確定に関する日英翻訳キーを追加する。
+  - `src/components/RegisterTab.tsx`:
+    - 記帳タブ内に「定例支払いテンプレート管理」セクション（テンプレート一覧・新規作成/編集フォーム・手動同期・未精算支払い予定一覧）を追加する。
+    - 支出（クレカ・口座引き落とし・積立投資等）と口座間振替の切り替えに対応し、クレジットカード選択時はカード規定の引き落とし日（支払日の翌日に次回分自動追加）を自動表示し、口座引き落とし・振替等の場合は任意の日（1〜28日 / 月末）を選択できるUIを実装する。
+    - 各テンプレートの編集、有効/一時停止トグル、削除ボタン、および未精算の支払い予定明細に対する「今すぐ精算（残高へ反映）」ボタンを実装する。
+  - `src/app/page.tsx`:
+    - ログイン後のデータ取得時（`fetchAllData`）に `/api/recurring-templates?autoSync=true` を呼び出し、月次支払い予定の自動追加または支払日到来分の自動精算が行われた場合にトースト通知および明細・口座残高の最新化を行う。
+
+- [ ] **15.4 単体テスト・E2E総合テストの追加とビルド検証・変更履歴記録 (`scripts/test-recurring-unit.ts`, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `AICHANGELOG.md`)**:
+  - `scripts/test-recurring-unit.ts` を新規作成し、テンプレート入力バリデーション、クレカ規定引き落とし日の自動連動、「規定支払日の翌日」での次回サイクル年月・支払予定日算出、二重生成防止（冪等性）、および支払日到来時の精算判定ロジックの単体テストを実行する。
+  - `scripts/comprehensive-test.ts` および `for_agent/06_operation_and_testing_guide.md` に定例支払いテンプレートの検証項目を追記する。
+  - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-recurring-unit.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。
   - `AICHANGELOG.md` に作業内容を記録し、Git コミットを行う。
 
 

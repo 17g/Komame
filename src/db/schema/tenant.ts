@@ -162,6 +162,7 @@ export function createTenantSchema(schemaName: string) {
     accountIdsJson: jsonb("account_ids_json"),
     color: varchar("color", { length: 20 }),
     isCompleted: boolean("is_completed").default(false).notNull(),
+    isArchived: boolean("is_archived").default(false).notNull(), // 達成済み目標アーカイブフラグ
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   });
 

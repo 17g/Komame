@@ -208,6 +208,7 @@ export async function createTenantTables(schemaName: string) {
       account_ids_json JSONB,
       color VARCHAR(20),
       is_completed BOOLEAN DEFAULT FALSE NOT NULL,
+      is_archived BOOLEAN DEFAULT FALSE NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
     );
 
@@ -241,6 +242,7 @@ export async function createTenantTables(schemaName: string) {
     ALTER TABLE "${schemaName}".checkpoints ALTER COLUMN id TYPE VARCHAR(64);
     ALTER TABLE "${schemaName}".transactions ALTER COLUMN id TYPE VARCHAR(64);
     ALTER TABLE "${schemaName}".transactions ADD COLUMN IF NOT EXISTS parent_transaction_id VARCHAR(64);
+    ALTER TABLE "${schemaName}".savings_goals ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT FALSE NOT NULL;
     ALTER TABLE "${schemaName}".categories ADD COLUMN IF NOT EXISTS is_system BOOLEAN DEFAULT FALSE NOT NULL;
     UPDATE "${schemaName}".categories
     SET is_system = TRUE

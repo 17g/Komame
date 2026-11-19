@@ -128,10 +128,12 @@ export interface SavingsGoalItem {
   targetAmount: number;
   currentAmount?: number;
   progressRate?: number;
-  targetDate?: string;
+  targetDate?: string | null;
   accountIdsJson?: string[];
   color?: string;
   isCompleted: boolean;
+  isArchived?: boolean;
+  createdAt?: string;
 }
 
 export interface AuditLogItem {

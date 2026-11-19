@@ -2,6 +2,41 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-20] 【Phase 14.1】貯蓄目標のテナントDBスキーマ拡張・マイグレーション・型定義・バリデーションヘルパーの追加
+
+### 1. 概要
+要件 17-2 および `Plan.md` Phase 14.1 に基づき、貯蓄目標の編集・未達成目標削除・達成済み目標アーカイブ/復元機能の基盤となる DB スキーマ（`savings_goals.is_archived`）、マイグレーション DDL / `ALTER TABLE`、TypeScript 型定義（`SavingsGoalItem`）、および純粋関数によるバリデーション・達成判定・削除/アーカイブ可否判定・進行中合算進捗算出ヘルパー（`src/lib/goal-helpers.ts`）を実装した。
+
+### 2. 変更内容 (Before / After)
+1. **テナントDBスキーマ拡張 (`src/db/schema/tenant.ts`)**:
+   - Before: `savingsGoals` テーブルにアーカイブ状態カラムが存在しなかった。
+   - After: `isArchived: boolean("is_archived").default(false).notNull()` カラムを追加した。
+2. **マイグレーション DDL および既存テナント向け ALTER 追加 (`src/db/migrate.ts`)**:
+   - Before: `createTenantTables()` の `savings_goals` DDL に `is_archived` 列が含まれていなかった。
+   - After: `CREATE TABLE IF NOT EXISTS "${schemaName}".savings_goals` に `is_archived BOOLEAN DEFAULT FALSE NOT NULL` を追加し、既存テナントスキーマ向けに `ALTER TABLE "${schemaName}".savings_goals ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT FALSE NOT NULL;` を追加した。
+3. **型定義拡張 (`src/types/index.ts`)**:
+   - Before: `SavingsGoalItem` に `isArchived`・`createdAt` プロパティが存在せず、`targetDate` が `null` を許容していなかった。
+   - After: `SavingsGoalItem` に `isArchived?: boolean` および `createdAt?: string` を追加し、`targetDate?: string | null` とした。
+4. **貯蓄目標ヘルパー新規作成 (`src/lib/goal-helpers.ts`)**:
+   - Before: 貯蓄目標の入力検証・達成判定・削除/アーカイブ可否判定・未アーカイブ限定合算進捗算出の共通ロジックが存在しなかった。
+   - After: 以下の純粋関数および定数を実装した：
+     - `validateGoalInput`: タイトル（1〜100文字）、目標金額（`1 <= targetAmount <= 9,999,999,999` の安全な整数）、達成予定日（`YYYY-MM-DD` 暦日検証）、対象口座ID配列（重複排除）、テーマカラー（`#RRGGBB`）の検証。
+     - `calculateGoalCurrentAmount` / `calculateGoalProgressRate`: 対象口座合算残高・達成率（0〜100%）の算出。
+     - `isGoalAchieved(currentAmount, targetAmount, isCompleted)`: 達成状態判定。
+     - `canDeleteGoal` / `canArchiveGoal` / `canRestoreGoal`: 未達成かつ未アーカイブのみ削除可・達成済みかつ未アーカイブのみアーカイブ可・アーカイブ済みのみ復元可の保護判定。
+     - `calculateActiveGoalsSummary`: 進行中（未アーカイブ）目標のみを対象とした合算目標額・合算積立額・全体達成率・件数集計。
+
+### 3. 変更理由
+- 要件 17-2（貯蓄目標の編集・未達成削除・達成済みアーカイブ/復元）を後続の API（Phase 14.2）・UI（Phase 14.3）・単体テスト（Phase 14.4）で安全かつ一貫したロジックで実装できるようにするため。
+
+### 4. 影響範囲・検証結果
+- 変更・新規作成ファイル: `src/db/schema/tenant.ts`, `src/db/migrate.ts`, `src/types/index.ts`, `src/lib/goal-helpers.ts`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（23ルートビルド成功）
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+
+
 ## [2026-11-19] 【全体レビュー (/review)】全仕様整合性点検・エッジケース保護強化・仕様書および手順書の最新化・フルビルド検証
 
 ### 1. 概要
