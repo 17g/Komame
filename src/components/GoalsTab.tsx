@@ -2,20 +2,34 @@
 
 import React, { useState, useMemo } from "react";
 import { SavingsGoalItem, TransactionItem, AccountItem, CategoryItem } from "@/types";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
+import {
+  calculateActiveGoalsSummary,
+  calculateGoalProgressRate,
+  canArchiveGoal,
+  canDeleteGoal,
+  DEFAULT_GOAL_COLOR,
+  GOAL_COLOR_PRESETS,
+  isGoalAchieved,
+  MAX_GOAL_TITLE_LENGTH,
+  validateGoalInput,
+} from "@/lib/goal-helpers";
 import {
   Target,
   Sprout,
   Sparkles,
-  Award,
   Plus,
   Flame,
   CheckCircle2,
   Calendar,
   X,
-  TrendingUp,
-  Leaf,
-  ShieldCheck,
+  Pencil,
+  Trash2,
+  Archive,
+  RotateCcw,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 interface GoalsTabProps {
@@ -31,25 +45,40 @@ export function GoalsTab({
   goals,
   transactions = [],
   accounts = [],
-  categories = [],
   onTriggerToast,
   onRefreshGoals,
 }: GoalsTabProps) {
-  // 新規目標追加モーダルの状態
+  // 目標作成・編集共通モーダルの状態
   const [showModal, setShowModal] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newTargetAmount, setNewTargetAmount] = useState("");
-  const [newTargetDate, setNewTargetDate] = useState("");
+  const [editingGoal, setEditingGoal] = useState<SavingsGoalItem | null>(null);
+  const [formTitle, setFormTitle] = useState("");
+  const [formTargetAmount, setFormTargetAmount] = useState("");
+  const [formTargetDate, setFormTargetDate] = useState("");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
-  const [selectedColor, setSelectedColor] = useState("#2E7D32");
+  const [selectedColor, setSelectedColor] = useState(DEFAULT_GOAL_COLOR);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 未達成目標の削除確認モーダル & 操作中ロック状態
+  const [deleteTargetGoal, setDeleteTargetGoal] = useState<SavingsGoalItem | null>(null);
+  const [processingGoalId, setProcessingGoalId] = useState<string | null>(null);
+
+  // アーカイブ済み目標一覧の表示トグル
+  const [showArchived, setShowArchived] = useState(false);
+
+  // 進行中目標とアーカイブ済み目標の分離
+  const activeGoals = useMemo(
+    () => (goals || []).filter((g) => !g.isArchived),
+    [goals]
+  );
+  const archivedGoals = useMemo(
+    () => (goals || []).filter((g) => Boolean(g.isArchived)),
+    [goals]
+  );
 
   // 1. こまめ活動（ストリーク & 記帳実績）の動的集計
   const {
     streakDays,
-    thisMonthTxCount,
     distinctDaysThisMonth,
-    txCountByDate,
   } = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -68,7 +97,6 @@ export function GoalsTab({
 
     // 日付ごとの明細件数マップ
     const counts: Record<string, number> = {};
-    let monthTxCount = 0;
     const monthDaysSet = new Set<string>();
 
     (transactions || []).forEach((t) => {
@@ -76,7 +104,6 @@ export function GoalsTab({
       if (d) {
         counts[d] = (counts[d] || 0) + 1;
         if (d.startsWith(currentMonthPrefix)) {
-          monthTxCount += 1;
           monthDaysSet.add(d);
         }
       }
@@ -101,34 +128,18 @@ export function GoalsTab({
 
     return {
       streakDays: streak,
-      thisMonthTxCount: monthTxCount,
       distinctDaysThisMonth: monthDaysSet.size,
-      txCountByDate: counts,
     };
   }, [transactions]);
 
-  // 2. 貯蓄目標の総合進捗集計
-  const { totalTargetAmount, totalCurrentAmount, overallProgressRate } = useMemo(() => {
-    if (!goals || goals.length === 0) {
-      return { totalTargetAmount: 0, totalCurrentAmount: 0, overallProgressRate: 0 };
-    }
-    const totalTarget = goals.reduce((sum, g) => sum + (g.targetAmount || 0), 0);
-    const totalCurrent = goals.reduce((sum, g) => sum + (g.currentAmount || 0), 0);
-    const rate = totalTarget > 0 ? Math.min(100, Math.round((totalCurrent / totalTarget) * 100)) : 0;
-    return {
-      totalTargetAmount: totalTarget,
-      totalCurrentAmount: totalCurrent,
-      overallProgressRate: rate,
-    };
-  }, [goals]);
+  // 2. 進行中（未アーカイブ）貯蓄目標のみの総合進捗集計
+  const { totalTargetAmount, totalCurrentAmount, overallProgressRate } = useMemo(
+    () => calculateActiveGoalsSummary(goals),
+    [goals]
+  );
 
   // 3. まめの樹育成システム：ステージ動的遷移（種 / 双葉 / 新芽 / 実り）
   const sproutStage = useMemo(() => {
-    // 判定基準: 貯蓄目標達成率、または継続ストリーク日数
-    // ステージ4: 達成率80%以上 または ストリーク14日以上
-    // ステージ3: 達成率50%以上 または ストリーク7日以上
-    // ステージ2: 達成率25%以上 または ストリーク3日以上
-    // ステージ1: 初期（種）
     if (overallProgressRate >= 80 || streakDays >= 14) {
       return {
         level: 4,
@@ -186,7 +197,7 @@ export function GoalsTab({
     }
   }, [overallProgressRate, streakDays]);
 
-  // 4. 今月の収支・前月比節約額・やさしいアドバイスの動的生成
+  // 4. 今月の収支・前月比節約額・やさしいアドバイスの動的生成（進行中目標のみ対象）
   const smartAdvices = useMemo(() => {
     const today = new Date();
     const currentYear = today.getFullYear();
@@ -269,25 +280,29 @@ export function GoalsTab({
       adviceList.push({
         icon: "🌱",
         title: "こまめな記録が最大の資産！",
-        content: "日々の支出を見える化できていることが安心への一番の近道です。焦らずマイペースに記録を重ねていきましょう。",
+        content:
+          "日々の支出を見える化できていることが安心への一番の近道です。焦らずマイペースに記録を重ねていきましょう。",
       });
     }
 
-    // ② 目標達成ペース・見通しアドバイス
-    if (goals.length > 0) {
-      const mainGoal = goals[0];
+    // ② 目標達成ペース・見通しアドバイス（アーカイブ済み目標は除外し進行中目標のみ判定）
+    if (activeGoals.length > 0) {
+      const mainGoal =
+        activeGoals.find(
+          (g) => !isGoalAchieved(g.currentAmount ?? 0, g.targetAmount, g.isCompleted)
+        ) ?? activeGoals[0];
       const targetAmount = mainGoal.targetAmount;
-      const currentAmount = mainGoal.currentAmount || 0;
+      const currentAmount = mainGoal.currentAmount ?? 0;
       const remainingAmount = Math.max(0, targetAmount - currentAmount);
 
-      if (remainingAmount === 0 || (mainGoal.progressRate || 0) >= 100) {
+      if (isGoalAchieved(currentAmount, targetAmount, mainGoal.isCompleted)) {
         adviceList.push({
           icon: "🎉",
           title: "目標達成おめでとうございます！",
-          content: `「${mainGoal.title}」の目標金額（${formatCurrency(targetAmount)}）を見事に達成しました！次のステップに向けて、新しい目標も設定してみましょう。`,
+          content: `「${mainGoal.title}」の目標金額（${formatCurrency(targetAmount)}）を見事に達成しました！達成済み目標はアーカイブして次の目標へ進むこともできます。`,
         });
       } else {
-        const rate = mainGoal.progressRate || Math.round((currentAmount / targetAmount) * 100);
+        const rate = calculateGoalProgressRate(currentAmount, targetAmount);
         if (rate >= 70) {
           adviceList.push({
             icon: "🎯",
@@ -322,53 +337,192 @@ export function GoalsTab({
     }
 
     return adviceList;
-  }, [transactions, goals, streakDays]);
+  }, [transactions, activeGoals, streakDays]);
 
-  // 新規目標の作成処理
-  const handleCreateGoal = async (e: React.FormEvent) => {
+  // モーダルを開く（新規作成）
+  const openCreateModal = () => {
+    setEditingGoal(null);
+    setFormTitle("");
+    setFormTargetAmount("");
+    setFormTargetDate("");
+    setSelectedAccountIds([]);
+    setSelectedColor(DEFAULT_GOAL_COLOR);
+    setShowModal(true);
+  };
+
+  // モーダルを開く（編集）
+  const openEditModal = (goal: SavingsGoalItem) => {
+    setEditingGoal(goal);
+    setFormTitle(goal.title);
+    setFormTargetAmount(String(goal.targetAmount));
+    setFormTargetDate(goal.targetDate || "");
+    setSelectedAccountIds(Array.isArray(goal.accountIdsJson) ? goal.accountIdsJson : []);
+    setSelectedColor(goal.color || DEFAULT_GOAL_COLOR);
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingGoal(null);
+  };
+
+  // 目標の作成・更新共通送信処理
+  const handleSubmitGoal = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTitle.trim()) {
-      onTriggerToast("目標タイトルを入力してください");
-      return;
-    }
-    const amt = parseInt(newTargetAmount.replace(/,/g, ""), 10);
-    if (isNaN(amt) || amt <= 0) {
-      onTriggerToast("有効な目標金額を入力してください");
+    const rawAmountStr = formTargetAmount.replace(/,/g, "").trim();
+    const parsedAmt = Number(rawAmountStr);
+
+    const validation = validateGoalInput({
+      title: formTitle,
+      targetAmount: rawAmountStr.length > 0 && Number.isFinite(parsedAmt) ? parsedAmt : NaN,
+      targetDate: formTargetDate || null,
+      accountIds: selectedAccountIds,
+      color: selectedColor,
+    });
+
+    if (!validation.ok) {
+      onTriggerToast(validation.error);
       return;
     }
 
     setIsSubmitting(true);
     try {
+      const isEdit = editingGoal !== null;
       const res = await fetch("/api/goals", {
-        method: "POST",
+        method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: newTitle.trim(),
-          targetAmount: amt,
-          targetDate: newTargetDate || null,
-          accountIds: selectedAccountIds,
-          color: selectedColor,
-        }),
+        body: JSON.stringify(
+          isEdit
+            ? {
+                action: "update",
+                id: editingGoal.id,
+                ...validation.data,
+              }
+            : validation.data
+        ),
       });
 
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        onTriggerToast("新しい貯蓄目標を作成しました！🌱");
-        setShowModal(false);
-        setNewTitle("");
-        setNewTargetAmount("");
-        setNewTargetDate("");
-        setSelectedAccountIds([]);
-        if (onRefreshGoals) {
-          onRefreshGoals();
-        }
+        onTriggerToast(
+          isEdit
+            ? `貯蓄目標「${validation.data.title}」を更新しました`
+            : "新しい貯蓄目標を作成しました！🌱"
+        );
+        closeModal();
+        onRefreshGoals?.();
       } else {
-        const data = await res.json();
-        onTriggerToast(data.error || "目標の作成に失敗しました");
+        onTriggerToast(
+          data.error || (isEdit ? "目標の更新に失敗しました" : "目標の作成に失敗しました")
+        );
       }
     } catch {
       onTriggerToast("通信エラーが発生しました");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // 未達成目標の物理削除処理
+  const handleConfirmDeleteGoal = async () => {
+    if (!deleteTargetGoal || processingGoalId) return;
+
+    const current = deleteTargetGoal.currentAmount ?? 0;
+    const deleteCheck = canDeleteGoal({
+      currentAmount: current,
+      targetAmount: deleteTargetGoal.targetAmount,
+      isCompleted: deleteTargetGoal.isCompleted,
+      isArchived: deleteTargetGoal.isArchived,
+    });
+
+    if (!deleteCheck.allowed) {
+      onTriggerToast(deleteCheck.reason || "この目標は削除できません");
+      setDeleteTargetGoal(null);
+      return;
+    }
+
+    setProcessingGoalId(deleteTargetGoal.id);
+    try {
+      const res = await fetch(`/api/goals?id=${encodeURIComponent(deleteTargetGoal.id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        onTriggerToast(data.message || `貯蓄目標「${deleteTargetGoal.title}」を削除しました`);
+        setDeleteTargetGoal(null);
+        onRefreshGoals?.();
+      } else {
+        onTriggerToast(data.error || "目標の削除に失敗しました");
+      }
+    } catch {
+      onTriggerToast("通信エラーが発生しました");
+    } finally {
+      setProcessingGoalId(null);
+    }
+  };
+
+  // 達成済み目標のアーカイブ処理
+  const handleArchiveGoal = async (goal: SavingsGoalItem) => {
+    if (processingGoalId) return;
+
+    const current = goal.currentAmount ?? 0;
+    const archiveCheck = canArchiveGoal({
+      currentAmount: current,
+      targetAmount: goal.targetAmount,
+      isCompleted: goal.isCompleted,
+      isArchived: goal.isArchived,
+    });
+
+    if (!archiveCheck.allowed) {
+      onTriggerToast(archiveCheck.reason || "達成済みの目標のみアーカイブできます");
+      return;
+    }
+
+    setProcessingGoalId(goal.id);
+    try {
+      const res = await fetch("/api/goals", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "archive", id: goal.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        onTriggerToast(data.message || `貯蓄目標「${goal.title}」をアーカイブしました`);
+        onRefreshGoals?.();
+      } else {
+        onTriggerToast(data.error || "目標のアーカイブに失敗しました");
+      }
+    } catch {
+      onTriggerToast("通信エラーが発生しました");
+    } finally {
+      setProcessingGoalId(null);
+    }
+  };
+
+  // アーカイブ済み目標の進行中一覧への復元処理
+  const handleRestoreGoal = async (goal: SavingsGoalItem) => {
+    if (processingGoalId) return;
+
+    setProcessingGoalId(goal.id);
+    try {
+      const res = await fetch("/api/goals", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "restore", id: goal.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        onTriggerToast(
+          data.message || `貯蓄目標「${goal.title}」を進行中一覧へ復元しました`
+        );
+        onRefreshGoals?.();
+      } else {
+        onTriggerToast(data.error || "目標の復元に失敗しました");
+      }
+    } catch {
+      onTriggerToast("通信エラーが発生しました");
+    } finally {
+      setProcessingGoalId(null);
     }
   };
 
@@ -378,14 +532,11 @@ export function GoalsTab({
     );
   };
 
-  // カラープリセット
-  const colorPresets = ["#2E7D32", "#E6A15C", "#2563EB", "#9333EA", "#0D9488", "#DC2626"];
-
   return (
     <div className="flex flex-col gap-5 pb-24">
       {/* 1. まめの樹 育成システム (要件16-2: 実データ動的連動) */}
       <div className="p-5 bg-gradient-to-br from-app-surface via-app-surface to-primary-light/30 border border-primary-border rounded-2xl shadow-sm flex flex-col gap-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-primary-light flex items-center justify-center text-primary">
               <Sprout className="w-5 h-5" />
@@ -461,7 +612,7 @@ export function GoalsTab({
         {/* 次のステージへの条件 */}
         <div className="flex items-center justify-between text-[11px] text-content-muted bg-app-subtle px-3 py-2 rounded-xl border border-border">
           <span className="font-medium">🌱 {sproutStage.nextGoalHint}</span>
-          <span className="font-bold text-primary">今月 {distinctDaysThisMonth}日記録</span>
+          <span className="font-bold text-primary shrink-0 ml-2">今月 {distinctDaysThisMonth}日記録</span>
         </div>
       </div>
 
@@ -473,7 +624,7 @@ export function GoalsTab({
           </div>
           <div>
             <h3 className="text-xs font-bold text-content-main">こまめからのやさしいアドバイス</h3>
-            <p className="text-[11px] text-content-muted">収支と目標ペースに合わせた前向きなメッセージ</p>
+            <p className="text-[11px] text-content-muted">収支と進行中目標のペースに合わせた前向きなメッセージ</p>
           </div>
         </div>
 
@@ -501,7 +652,7 @@ export function GoalsTab({
 
       {/* 3. 貯蓄目標カード一覧 (要件17-2) */}
       <div className="p-5 bg-app-surface border border-border rounded-2xl shadow-sm flex flex-col gap-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-primary-light flex items-center justify-center text-primary">
               <Target className="w-4 h-4" />
@@ -512,19 +663,22 @@ export function GoalsTab({
             </div>
           </div>
           <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-xl text-xs font-bold shadow-xs hover:bg-primary-hover active:scale-95 transition-all"
+            type="button"
+            onClick={openCreateModal}
+            className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white rounded-xl text-xs font-bold shadow-xs hover:bg-primary-hover active:scale-95 transition-all cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>目標を追加</span>
           </button>
         </div>
 
-        {/* 目標サマリーバナー */}
-        {goals.length > 0 && (
+        {/* 進行中目標サマリーバナー (アーカイブ済み目標は集計対象外) */}
+        {activeGoals.length > 0 && (
           <div className="flex items-center justify-between p-3.5 bg-app-subtle rounded-xl border border-border text-xs">
             <div>
-              <span className="text-content-muted block text-[10px] font-bold">全目標の合算進捗</span>
+              <span className="text-content-muted block text-[10px] font-bold">
+                進行中目標の合算進捗（{activeGoals.length}件）
+              </span>
               <span className="text-content-main font-bold font-display text-sm">
                 {formatCurrency(totalCurrentAmount)} / {formatCurrency(totalTargetAmount)}
               </span>
@@ -536,141 +690,314 @@ export function GoalsTab({
           </div>
         )}
 
-        {/* 各目標カード */}
-        {goals.length === 0 ? (
+        {/* 進行中の各目標カード */}
+        {activeGoals.length === 0 ? (
           <div className="p-8 text-center bg-app-subtle rounded-xl border border-dashed border-border flex flex-col items-center gap-2">
             <span className="text-3xl">🌱</span>
-            <p className="text-xs font-bold text-content-main">まだ貯蓄目標が登録されていません</p>
+            <p className="text-xs font-bold text-content-main">
+              {archivedGoals.length > 0
+                ? "現在進行中の貯蓄目標はありません"
+                : "まだ貯蓄目標が登録されていません"}
+            </p>
             <p className="text-[11px] text-content-muted max-w-sm">
-              「年間100万円貯蓄」や「旅行積立」など、叶えたい目標を登録すると自動で進捗を集計します。
+              {archivedGoals.length > 0
+                ? "新しい目標を作成するか、下の「アーカイブ済みを表示」から過去の達成目標を進行中へ復元できます。"
+                : "「年間100万円貯蓄」や「旅行積立」など、叶えたい目標を登録すると自動で進捗を集計します。"}
             </p>
             <button
-              onClick={() => setShowModal(true)}
-              className="mt-2 px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl shadow-xs hover:bg-primary-hover transition-all"
+              type="button"
+              onClick={openCreateModal}
+              className="mt-2 px-4 py-2 bg-primary text-white text-xs font-bold rounded-xl shadow-xs hover:bg-primary-hover transition-all cursor-pointer"
             >
-              最初の目標を作成する
+              {archivedGoals.length > 0 ? "新しい目標を作成する" : "最初の目標を作成する"}
             </button>
           </div>
         ) : (
-          goals.map((g) => {
-            const current = g.currentAmount ?? 0;
-            const target = g.targetAmount;
-            const progress = g.progressRate ?? (target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0);
-            const isCompleted = progress >= 100 || g.isCompleted;
-            const remaining = Math.max(0, target - current);
+          <div className="flex flex-col gap-3">
+            {activeGoals.map((g) => {
+              const current = g.currentAmount ?? 0;
+              const target = g.targetAmount;
+              const progress =
+                g.progressRate ?? calculateGoalProgressRate(current, target);
+              const achieved = isGoalAchieved(current, target, g.isCompleted);
+              const remaining = Math.max(0, target - current);
+              const isBusy = processingGoalId === g.id;
 
-            // 目標に紐づく口座名リスト
-            const targetAccounts = accounts.filter((a) =>
-              (g.accountIdsJson as string[] | undefined)?.includes(a.id)
-            );
+              const targetAccounts = accounts.filter((a) =>
+                (g.accountIdsJson as string[] | undefined)?.includes(a.id)
+              );
 
-            return (
-              <div
-                key={g.id}
-                className="p-4 bg-app-subtle rounded-xl border border-border flex flex-col gap-3 relative overflow-hidden"
-              >
-                {/* 達成時のデコレーションバナー */}
-                {isCompleted && (
-                  <div className="absolute top-2 right-2 flex items-center gap-1 bg-emerald-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow-xs">
-                    <CheckCircle2 className="w-3 h-3" />
-                    <span>目標達成！🎉</span>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between pr-24">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-3 h-3 rounded-full shrink-0"
-                      style={{ backgroundColor: g.color || "#2E7D32" }}
-                    />
-                    <span className="text-xs font-extrabold text-content-main">{g.title}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-baseline justify-between text-xs font-bold text-content-main">
-                  <span className="text-content-muted text-[11px]">現在積立額</span>
-                  <div className="text-right">
-                    <span className="font-display text-sm font-extrabold text-primary">
-                      {formatCurrency(current)}
-                    </span>
-                    <span className="text-content-muted font-normal text-[11px] ml-1">
-                      / {formatCurrency(target)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* プログレスバー */}
-                <div className="w-full h-3 bg-app-surface rounded-full overflow-hidden border border-border/40 p-0.5">
-                  <div
-                    className="h-full rounded-full transition-all duration-700 ease-out shadow-xs"
-                    style={{
-                      width: `${progress}%`,
-                      backgroundColor: g.color || "#2E7D32",
-                    }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-content-muted pt-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-primary bg-primary-light px-2 py-0.5 rounded-md border border-primary-border">
-                      {progress}%
-                    </span>
-                    {g.targetDate && (
-                      <span className="flex items-center gap-1">
-                        <Calendar className="w-3 h-3 text-content-subtle" />
-                        <span>期日: {g.targetDate}</span>
+              return (
+                <div
+                  key={g.id}
+                  className={`p-4 bg-app-subtle rounded-xl border flex flex-col gap-3 transition-colors ${
+                    achieved ? "border-emerald-500/40" : "border-border"
+                  }`}
+                >
+                  {/* カードヘッダー: タイトル + 達成バッジ + アクションボタン */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{ backgroundColor: g.color || DEFAULT_GOAL_COLOR }}
+                      />
+                      <span className="text-xs font-extrabold text-content-main truncate">
+                        {g.title}
                       </span>
-                    )}
-                  </div>
-                  <span>
-                    {isCompleted ? (
-                      <span className="text-emerald-600 font-bold">達成済み</span>
-                    ) : (
-                      <>残り {formatCurrency(remaining)}</>
-                    )}
-                  </span>
-                </div>
+                      {achieved && (
+                        <span className="inline-flex items-center gap-1 bg-emerald-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow-xs shrink-0">
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>目標達成！🎉</span>
+                        </span>
+                      )}
+                    </div>
 
-                {/* 紐付け口座タグ */}
-                {targetAccounts.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/50 text-[10px] text-content-muted">
-                    <span className="font-bold">対象口座:</span>
-                    {targetAccounts.map((acc) => (
-                      <span
-                        key={acc.id}
-                        className="px-2 py-0.5 bg-app-surface rounded-md border border-border font-medium"
+                    {/* アクションボタン群 */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(g)}
+                        disabled={isBusy}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border bg-app-surface text-[11px] font-bold text-content-main hover:border-primary hover:text-primary transition-colors disabled:opacity-50 cursor-pointer"
+                        title="目標を編集"
                       >
-                        {acc.icon} {acc.name} ({formatCurrency(acc.balance)})
-                      </span>
-                    ))}
+                        <Pencil className="w-3 h-3" />
+                        <span>編集</span>
+                      </button>
+
+                      {achieved ? (
+                        <button
+                          type="button"
+                          onClick={() => handleArchiveGoal(g)}
+                          disabled={isBusy}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50 cursor-pointer"
+                          title="達成済み目標をアーカイブへ移動"
+                        >
+                          <Archive className="w-3 h-3" />
+                          <span>{isBusy ? "処理中..." : "アーカイブ"}</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTargetGoal(g)}
+                          disabled={isBusy}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-red-500/30 bg-red-500/5 text-[11px] font-bold text-red-600 dark:text-red-400 hover:bg-red-500/15 transition-colors disabled:opacity-50 cursor-pointer"
+                          title="未達成の目標を削除"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>削除</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-            );
-          })
+
+                  <div className="flex items-baseline justify-between text-xs font-bold text-content-main">
+                    <span className="text-content-muted text-[11px]">現在積立額</span>
+                    <div className="text-right">
+                      <span className="font-display text-sm font-extrabold text-primary">
+                        {formatCurrency(current)}
+                      </span>
+                      <span className="text-content-muted font-normal text-[11px] ml-1">
+                        / {formatCurrency(target)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* プログレスバー */}
+                  <div className="w-full h-3 bg-app-surface rounded-full overflow-hidden border border-border/40 p-0.5">
+                    <div
+                      className="h-full rounded-full transition-all duration-700 ease-out shadow-xs"
+                      style={{
+                        width: `${progress}%`,
+                        backgroundColor: g.color || DEFAULT_GOAL_COLOR,
+                      }}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-content-muted pt-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-primary bg-primary-light px-2 py-0.5 rounded-md border border-primary-border">
+                        {progress}%
+                      </span>
+                      {g.targetDate && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-content-subtle" />
+                          <span>期日: {g.targetDate}</span>
+                        </span>
+                      )}
+                    </div>
+                    <span>
+                      {achieved ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                          達成済み（アーカイブで履歴保管可）
+                        </span>
+                      ) : (
+                        <>残り {formatCurrency(remaining)}</>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* 紐付け口座タグ */}
+                  {targetAccounts.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/50 text-[10px] text-content-muted">
+                      <span className="font-bold">対象口座:</span>
+                      {targetAccounts.map((acc) => (
+                        <span
+                          key={acc.id}
+                          className="px-2 py-0.5 bg-app-surface rounded-md border border-border font-medium"
+                        >
+                          {acc.icon} {acc.name} ({formatCurrency(acc.balance)})
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
+
+        {/* アーカイブ済み達成目標表示トグル & 一覧 */}
+        <div className="pt-3 border-t border-border/60">
+          <button
+            type="button"
+            onClick={() => setShowArchived((prev) => !prev)}
+            className="text-[11px] font-bold text-content-muted hover:text-primary transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <Archive className="w-3.5 h-3.5" />
+            <span>
+              {showArchived
+                ? `アーカイブ済みを隠す（${archivedGoals.length}件）`
+                : `アーカイブ済みを表示（${archivedGoals.length}件）`}
+            </span>
+            {showArchived ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </button>
+
+          {showArchived && (
+            <div className="mt-3 space-y-2.5">
+              {archivedGoals.length === 0 ? (
+                <div className="p-4 bg-app-subtle/60 border border-border/60 rounded-xl text-center text-xs text-content-muted">
+                  アーカイブ済みの達成目標はありません
+                </div>
+              ) : (
+                archivedGoals.map((g) => {
+                  const current = g.currentAmount ?? 0;
+                  const target = g.targetAmount;
+                  const progress =
+                    g.progressRate ?? calculateGoalProgressRate(current, target);
+                  const isBusy = processingGoalId === g.id;
+                  const targetAccounts = accounts.filter((a) =>
+                    (g.accountIdsJson as string[] | undefined)?.includes(a.id)
+                  );
+
+                  return (
+                    <div
+                      key={g.id}
+                      className="p-3.5 bg-app-subtle/60 border border-border/70 rounded-xl flex flex-col gap-2.5 opacity-90"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <div
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: g.color || DEFAULT_GOAL_COLOR }}
+                          />
+                          <span className="text-xs font-bold text-content-main truncate">
+                            {g.title}
+                          </span>
+                          <span className="inline-flex items-center gap-1 bg-stone-500/15 text-content-muted border border-border text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            <span>達成・アーカイブ済</span>
+                          </span>
+                        </div>
+
+                        {/* 復元ボタンのみ配置（達成履歴保護のため削除ボタンは非表示） */}
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreGoal(g)}
+                          disabled={isBusy}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-500/30 bg-app-surface text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50 shrink-0 cursor-pointer"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          <span>{isBusy ? "復元中..." : "復元（進行中に戻す）"}</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-content-muted">
+                        <span>
+                          積立額:{" "}
+                          <strong className="text-content-main font-display">
+                            {formatCurrency(current)}
+                          </strong>{" "}
+                          / {formatCurrency(target)}（{progress}%）
+                        </span>
+                        {g.targetDate && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            <span>期日: {g.targetDate}</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="w-full h-2 bg-app-surface rounded-full overflow-hidden border border-border/40">
+                        <div
+                          className="h-full rounded-full opacity-75"
+                          style={{
+                            width: `${progress}%`,
+                            backgroundColor: g.color || DEFAULT_GOAL_COLOR,
+                          }}
+                        />
+                      </div>
+
+                      {targetAccounts.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1 text-[10px] text-content-muted">
+                          <span className="font-bold">対象口座:</span>
+                          {targetAccounts.map((acc) => (
+                            <span
+                              key={acc.id}
+                              className="px-1.5 py-0.5 bg-app-surface rounded border border-border/70"
+                            >
+                              {acc.icon} {acc.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* 新規目標作成モーダル */}
+      {/* 目標作成・編集共通モーダル */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-app-surface border border-border rounded-3xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in duration-200">
+          <div className="bg-app-surface border border-border rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in duration-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-primary-light flex items-center justify-center text-primary font-bold">
-                  🌱
+                  {editingGoal ? <Pencil className="w-4 h-4" /> : "🌱"}
                 </div>
-                <h3 className="text-sm font-bold text-content-main">新しい貯蓄目標を作成</h3>
+                <h3 className="text-sm font-bold text-content-main">
+                  {editingGoal ? "貯蓄目標を編集" : "新しい貯蓄目標を作成"}
+                </h3>
               </div>
               <button
-                onClick={() => setShowModal(false)}
-                className="w-8 h-8 rounded-xl hover:bg-app-subtle flex items-center justify-center text-content-muted"
+                type="button"
+                onClick={closeModal}
+                className="w-8 h-8 rounded-xl hover:bg-app-subtle flex items-center justify-center text-content-muted cursor-pointer"
+                aria-label="モーダルを閉じる"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateGoal} className="space-y-3.5">
+            <form onSubmit={handleSubmitGoal} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-content-muted mb-1">
                   目標のタイトル
@@ -678,8 +1005,9 @@ export function GoalsTab({
                 <input
                   type="text"
                   placeholder="例: 年間100万円貯蓄, 旅行積立, 生活防衛資金"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
+                  value={formTitle}
+                  onChange={(e) => setFormTitle(e.target.value)}
+                  maxLength={MAX_GOAL_TITLE_LENGTH}
                   className="w-full px-3 py-2 bg-app-subtle border border-border rounded-xl text-xs font-medium focus:border-primary outline-none text-content-main"
                   required
                 />
@@ -691,12 +1019,15 @@ export function GoalsTab({
                 </label>
                 <input
                   type="number"
+                  inputMode="numeric"
                   placeholder="1000000"
-                  value={newTargetAmount}
-                  onChange={(e) => setNewTargetAmount(e.target.value)}
+                  value={formTargetAmount}
+                  onChange={(e) => setFormTargetAmount(e.target.value)}
                   className="w-full px-3 py-2 bg-app-subtle border border-border rounded-xl text-xs font-medium focus:border-primary outline-none text-content-main font-display"
                   required
-                  min="1"
+                  min={1}
+                  max={9999999999}
+                  step={1}
                 />
               </div>
 
@@ -706,8 +1037,8 @@ export function GoalsTab({
                 </label>
                 <input
                   type="date"
-                  value={newTargetDate}
-                  onChange={(e) => setNewTargetDate(e.target.value)}
+                  value={formTargetDate}
+                  onChange={(e) => setFormTargetDate(e.target.value)}
                   className="w-full px-3 py-2 bg-app-subtle border border-border rounded-xl text-xs font-medium focus:border-primary outline-none text-content-main"
                 />
               </div>
@@ -756,15 +1087,18 @@ export function GoalsTab({
                   テーマカラー
                 </label>
                 <div className="flex items-center gap-2">
-                  {colorPresets.map((c) => (
+                  {GOAL_COLOR_PRESETS.map((c) => (
                     <button
                       key={c}
                       type="button"
                       onClick={() => setSelectedColor(c)}
-                      className={`w-7 h-7 rounded-full border-2 transition-transform ${
-                        selectedColor === c ? "scale-110 border-content-main shadow-xs" : "border-transparent"
+                      className={`w-7 h-7 rounded-full border-2 transition-transform cursor-pointer ${
+                        selectedColor.toUpperCase() === c
+                          ? "scale-110 border-content-main shadow-xs"
+                          : "border-transparent"
                       }`}
                       style={{ backgroundColor: c }}
+                      aria-label={`テーマカラー ${c}`}
                     />
                   ))}
                 </div>
@@ -773,20 +1107,74 @@ export function GoalsTab({
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-content-muted hover:bg-app-subtle transition-all"
+                  onClick={closeModal}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-content-muted hover:bg-app-subtle transition-all cursor-pointer"
                 >
                   キャンセル
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-primary text-white shadow-xs hover:bg-primary-hover active:scale-98 transition-all disabled:opacity-50"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-primary text-white shadow-xs hover:bg-primary-hover active:scale-98 transition-all disabled:opacity-50 cursor-pointer"
                 >
-                  {isSubmitting ? "作成中..." : "作成する"}
+                  {isSubmitting
+                    ? editingGoal
+                      ? "保存中..."
+                      : "作成中..."
+                    : editingGoal
+                    ? "保存する"
+                    : "作成する"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 未達成目標の削除確認モーダル（誤操作防止） */}
+      {deleteTargetGoal && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-app-surface border border-border rounded-3xl max-w-sm w-full p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-600 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-content-main">貯蓄目標を削除しますか？</h3>
+                <p className="text-[11px] text-content-muted">未達成目標の削除（取り消し不可）</p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-app-subtle rounded-xl border border-border text-xs space-y-1">
+              <p className="font-bold text-content-main">{deleteTargetGoal.title}</p>
+              <p className="text-[11px] text-content-muted">
+                目標金額: {formatCurrency(deleteTargetGoal.targetAmount)} / 現在:{" "}
+                {formatCurrency(deleteTargetGoal.currentAmount ?? 0)}
+              </p>
+            </div>
+
+            <p className="text-[11px] text-content-muted leading-relaxed">
+              この操作は取り消せません。紐付けられた口座自体の残高は変更されません。
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetGoal(null)}
+                disabled={processingGoalId === deleteTargetGoal.id}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-content-muted hover:bg-app-subtle transition-all disabled:opacity-50 cursor-pointer"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteGoal}
+                disabled={processingGoalId === deleteTargetGoal.id}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-red-600 text-white shadow-xs hover:bg-red-700 active:scale-98 transition-all disabled:opacity-50 cursor-pointer"
+              >
+                {processingGoalId === deleteTargetGoal.id ? "削除中..." : "削除する"}
+              </button>
+            </div>
           </div>
         </div>
       )}

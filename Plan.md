@@ -364,7 +364,7 @@
     - `action: "restore"`: アーカイブ済み目標の `isArchived` を `false` に更新して進行中一覧へ復元し、監査ログを記録する。
   - `DELETE /api/goals?id=...`: 対象目標が達成済み（`currentAmount >= targetAmount || isCompleted`）またはアーカイブ済み（`isArchived === true`）の場合は `400 Bad Request` で削除を拒否し、未達成目標のみ物理削除して監査ログ（`action: "DELETE", entityType: "savings_goal"`）を記録する。
 
-- [ ] **14.3 目標・成長タブ UI (`src/components/GoalsTab.tsx`) における目標編集・削除・アーカイブ/復元UIの実装**:
+- [x] **14.3 目標・成長タブ UI (`src/components/GoalsTab.tsx`) における目標編集・削除・アーカイブ/復元UIの実装**:
   - 進行中目標（`!g.isArchived`）とアーカイブ済み目標（`Boolean(g.isArchived)`）を分離し、「全目標の合算進捗（全体達成率）」「まめの樹育成システム」「やさしいアドバイス」の集計対象を進行中（未アーカイブ）目標のみに限定する（`calculateActiveGoalsSummary` 連動）。
   - 各進行中目標カードに「編集」ボタンを配置し、新規作成と共通化されたモーダル（または編集モード）でタイトル・目標金額・達成予定日・対象口座・テーマカラーを編集・保存できるようにする。
   - 未達成目標カードには「削除」ボタン（誤操作防止の確認UI付き）を配置し、達成済み目標カードには削除ボタンを表示せず「アーカイブ」ボタンを配置する。
