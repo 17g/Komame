@@ -13,6 +13,7 @@ description: Plan.md から未完了タスクを1つ実行・検証・記録・�
 2. 関連する `for\_agent/` の仕様を確認し、コードの実装・修正を行う。
 
 3. `AGENTS.md` に記載された検証コマンドを実行し、エラーがない（Exit Code 0）ことを確認する。
+   - 機能実装・API/DB/UI の変更を伴う場合は、静的検証・単体テストだけでなく、原則としてローカルの PostgreSQL（`npm run db:up` / `npm run db:migrate`）および開発サーバー（`npm run dev`、ポート 3080）を起動して `npx tsx scripts/comprehensive-test.ts` や対象機能の動作検証まで行うこと（環境上の制約で起動できない場合のみ具体的エラーを報告する）。
    - 失敗した場合はエラーログを修正し、パスするまで繰り返すこと。
 
 4. `AICHANGELOG.md` に今回の変更内容（Before/After、変更理由）を追記する。

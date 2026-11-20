@@ -2,6 +2,32 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-20] 【運用ルール改訂】ローカル開発サーバー・PostgreSQL起動による動作検証の原則必須化
+
+### 1. 概要
+ユーザーの指示に基づき、機能実装および API・DB・UI 変更時の検証ルールを改訂し、静的検証（型チェック・ビルド・DB不要単体テスト）だけでなく、原則としてローカルの PostgreSQL（ポート 5532）および Next.js 開発サーバー（`npm run dev` / ポート 3080）を起動して `scripts/comprehensive-test.ts` 等の総合動作検証を実施するよう、プロジェクト設定・ガードレール・検証ガイド・各スキル指示書へ追記した。
+
+### 2. 変更内容 (Before / After)
+1. **`AGENTS.md` (第2章)**:
+   - Before: 総合テストに「（※開発サーバー起動時）」と記載されており、未起動時に省略可能と解釈される余地があった。
+   - After: 機能追加・API/DB/UI 修正時は原則としてローカル PostgreSQL・開発サーバーを起動して総合テストおよび実動作検証を実施する旨と、未起動時の起動手順・例外基準を明記した。
+2. **`for_agent/guardrails.md` (第1章1.3・改訂履歴)**:
+   - Before: DB 未起動時は静的検証を Ground Truth とする記載が、未起動時の省略理由になり得る表現だった。
+   - After: 未起動時の起動手順（`npm run db:up`, `npm run db:migrate`, `npm run dev`）および検証後のサーバー停止手順を明記し、単なる「未起動」を理由としたスキップを禁止（Docker デーモン不可等の真の環境制約時のみ具体的障害理由を報告）するガードレールへ改訂した。
+3. **`for_agent/06_operation_and_testing_guide.md` (第2章2.3・改訂履歴)**:
+   - Before: DB・サーバー起動済み前提のコマンド記載のみだった。
+   - After: 原則必須の明記と起動〜検証〜停止フローを追記した。
+4. **`.agent/skills/loop-step/SKILL.md` & `.agent/skills/review/SKILL.md`**:
+   - Before: `AGENTS.md` の検証コマンド実行やフルビルド・テスト実行の指示のみだった。
+   - After: ローカルの PostgreSQL および開発サーバーを起動して `scripts/comprehensive-test.ts` 等の動作検証を行う原則を追記した。
+
+### 3. 変更理由
+- ローカル開発サーバーを起動した実環境ベースでの API・DB・UI 動作検証を確実に実施する運用を徹底するため。
+
+### 4. 影響範囲
+- 更新ファイル: `AGENTS.md`, `for_agent/guardrails.md`, `for_agent/06_operation_and_testing_guide.md`, `.agent/skills/loop-step/SKILL.md`, `.agent/skills/review/SKILL.md`, `AICHANGELOG.md`
+
+
 ## [2026-11-20] 【Phase 14.4】貯蓄目標の単体テスト・E2E総合テスト追加・仕様書同期およびビルド検証
 
 ### 1. 概要

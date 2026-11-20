@@ -78,11 +78,20 @@ npx tsx scripts/test-goals-unit.ts
 npx tsx scripts/test-security-unit.ts
 ```
 
-### 2.3 E2E & ビジネスロジック総合自動テスト
-PostgreSQL サービス (ポート 5532) および Next.js 開発サーバー (ポート 3080) が起動している状態で以下を実行：
+### 2.3 E2E & ビジネスロジック総合自動テスト（原則必須）
+機能実装および API・DB・UI の変更時は、原則としてローカルの PostgreSQL サービス（ポート 5532）および Next.js 開発サーバー（ポート 3080）を起動した上で、実サーバーに対する動作検証を実行すること：
 ```powershell
+# 1. PostgreSQL が未起動の場合はコンテナを起動し、必要に応じてマイグレーション・シードを実行
+npm run db:up
+npm run db:migrate
+
+# 2. 開発サーバーが未起動の場合はバックグラウンド等で起動 (`http://localhost:3080`)
+npm run dev
+
+# 3. 総合テスト実行（検証後、新規起動した開発サーバーは停止すること）
 npx tsx scripts/comprehensive-test.ts
 ```
+※ Docker デーモン停止等の真の環境制約で起動不可な場合のみ、その具体的理由を明示すること（単に「未起動だったため」で省略しないこと）。
 
 ---
 
@@ -117,6 +126,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec app np
 
 ## 4. 改訂履歴
 
+- **2026-11-20**: 第2章2.3にローカル PostgreSQL・開発サーバーを起動しての総合動作検証を原則必須とする手順および例外規定を追記。
 - **2026-11-20**: 単体テスト一覧に貯蓄目標管理（編集・未達成削除・達成済みアーカイブ/復元・合算進捗集計）単体テスト（`test-goals-unit.ts`）を追加。
 - **2026-11-18**: 単体テスト一覧に新規世帯登録申請・承認制 & Super Admin 操作バリデーション単体テスト（`test-household-approval-unit.ts`）を追加。
 - **2026-11-18**: 初期デモ管理者アカウント（`admin@komame.local`）がテスト環境（`NODE_ENV !== "production"`）限定で有効であり、本番環境（`NODE_ENV === "production"`）ではログイン・セッション・シード作成・ログイン画面表示のすべてが無効化される仕様を追記。

@@ -21,9 +21,16 @@
 - 本プロジェクトは **Next.js 15 (React 19, TypeScript) + Drizzle ORM + PostgreSQL 16** です。
 - `AGENTS.md` の初期テンプレートに誤記（Python/Streamlit）がある場合でも、実プロジェクトの Next.js 構成に基づいて検証コマンド（`npm run build`, `npx tsc --noEmit` 等）を実行すること。
 
-### 1.3 テスト実行・DB前提条件の確認ガードレール
-- `scripts/comprehensive-test.ts` や E2E テスト等の API・DB 結合検証を実行する際は、事前にローカルの PostgreSQL サービスまたは Docker コンテナ（`docker compose -f docker-compose.dev.yml up -d`）が起動中（ポート 5532 がリッスン中）であることを確認すること。
-- DB 未起動環境や CI 等で Docker デーモンが停止している場合は、無理に API サーバーへの接続テストを無限ループで試行せず、型チェック（`npx tsc --noEmit`）およびプロダクションビルド検証（`npm run build`）による静的整合性検証を Ground Truth として担保すること。
+### 1.3 テスト実行・ローカル開発サーバー動作検証ガードレール（原則必須）
+- **ローカル開発サーバーでの動作検証の原則実施**:
+  - 機能実装および API・DB・UI の変更を行った場合、型チェック（`npx tsc --noEmit`）・ビルド検証（`npm run build`）・DB不要単体テストのみで作業を完了とせず、**原則としてローカルの PostgreSQL サービス（ポート 5532）および開発サーバー（`npm run dev`、ポート 3080）を起動して動作検証（`npx tsx scripts/comprehensive-test.ts` や対象 API / ブラウザ画面での疎通確認）を必ず実施すること**。
+- **未起動時の起動・停止手順**:
+  1. ポート `5532`（PostgreSQL）がリッスンしていない場合は、`npm run db:up`（`docker compose -f docker-compose.dev.yml up -d`）で起動し、スキーマ変更がある場合は `npm run db:migrate`（初回または空DB時は `npm run db:seed`）を実行する。
+  2. ポート `3080`（Next.js 開発サーバー）がリッスンしていない場合は、バックグラウンドプロセス（`IsDaemon: true`）として `npm run dev` を起動し、リッスン開始を確認した上で `npx tsx scripts/comprehensive-test.ts` やブラウザ/API 動作検証を実行する。
+  3. 本作業で新規に起動したバックグラウンド開発サーバーは、検証完了後にタスク管理ツール等で適切に停止する。
+- **例外（起動不可時の取り扱い）**:
+  - 単に「未起動だった」ことを理由に動作検証をスキップしてはならない。
+  - Docker デーモン未インストール・権限不足・ポート競合解消不可など、環境上のやむを得ない理由でローカル DB または開発サーバーの起動に失敗した場合に限り、無限リトライを避けて起動失敗の具体的な原因・エラーログをユーザーへ明示した上で、静的検証（`tsc` / `build` / 単体テスト）の結果を報告すること。
 
 ---
 
@@ -46,6 +53,8 @@
   - 費目: `cat_xxx`
   - 明細: `tx_xxx`
   - 一時保存: `draft_xxx`
+  - 定例支払いテンプレート: `tpl_xxx`
+  - 貯蓄目標: `goal_xxx`
   - チェックポイント: `cp_xxx`
   - 監査ログ: `log_xxx`
 
@@ -129,6 +138,7 @@
 
 ## 6. 改訂履歴
 
+- **2026-11-20**: 第1章1.3を改訂し、ローカルの PostgreSQL（ポート 5532）および開発サーバー（ポート 3080）を起動しての動作検証を原則必須とするガードレールを追記。
 - **2026-11-18**: 第2章2.1に初期デモ管理者アカウント（`admin@komame.local`）のテスト環境（`NODE_ENV !== "production"`）限定有効化ガードレールを追記。
 - **2026-11-18**: 第2章2.1に新規世帯登録申請時のテナントスキーマ未作成ルールおよび `login` / `getCurrentSession` での `households.status === 'approved'` 必須検証ガードレールを追記。
 - **2026-11-14**: Docker 本番ビルド時の `next/font/google` ビルドエラー再発防止のため、フォントの `@fontsource` セルフホスト必須化ガードレールを追記。
