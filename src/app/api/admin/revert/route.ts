@@ -48,7 +48,14 @@ export async function POST(req: NextRequest) {
       // 3. 残高の逆算復元
       for (const t of affectedTxs) {
         if (!t.isSettled) {
-          // 未決済（クレジットカード決済等）は口座残高に影響していないため残高逆算は不要
+          // 未精算明細（定例支払い予定・クレカ決済等）は出金元口座残高に影響していないため逆算不要
+          // 非定例のクレカ積立投資（toAccountId あり）のみ受入口座を逆算減額する
+          if (!t.recurringTemplateId && t.type === "expense" && t.toAccountId) {
+            await tx
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} - ${t.amount}` })
+              .where(eq(schema.accounts.id, t.toAccountId));
+          }
           continue;
         }
 
@@ -73,7 +80,8 @@ export async function POST(req: NextRequest) {
               .where(eq(schema.accounts.id, t.toAccountId));
           }
         } else if (t.type === "expense") {
-          // 1. 決済手段に応じた支払元口座への返戻 (+t.amount)
+          // 1. 決済手段・出金元口座に応じた支払元口座への返戻 (+t.amount)
+          let sourceAccountId: string | null = null;
           if (t.paymentMethodId) {
             const [pm] = await tx
               .select()
@@ -82,7 +90,7 @@ export async function POST(req: NextRequest) {
               .limit(1);
 
             if (pm) {
-              let sourceAccountId = pm.sourceAccountId;
+              sourceAccountId = pm.sourceAccountId ?? null;
 
               // 現金決済で引き落とし元が未設定の場合、手元現金口座を自動特定して返戻
               if (!sourceAccountId && pm.type === "cash") {
@@ -91,7 +99,7 @@ export async function POST(req: NextRequest) {
                   .from(schema.accounts)
                   .where(eq(schema.accounts.type, "cash"))
                   .limit(1);
-                sourceAccountId = cashAcc?.id;
+                sourceAccountId = cashAcc?.id ?? null;
               } else if (!sourceAccountId && pm.type === "qr_code") {
                 // QR決済で引き落とし元が未設定の場合、プリペイド残高口座を自動特定して返戻
                 const [walletAcc] = await tx
@@ -99,16 +107,20 @@ export async function POST(req: NextRequest) {
                   .from(schema.accounts)
                   .where(eq(schema.accounts.type, "prepaid_wallet"))
                   .limit(1);
-                sourceAccountId = walletAcc?.id;
-              }
-
-              if (sourceAccountId) {
-                await tx
-                  .update(schema.accounts)
-                  .set({ balance: sql`${schema.accounts.balance} + ${t.amount}` })
-                  .where(eq(schema.accounts.id, sourceAccountId));
+                sourceAccountId = walletAcc?.id ?? null;
               }
             }
+          }
+
+          if (!sourceAccountId && t.fromAccountId) {
+            sourceAccountId = t.fromAccountId;
+          }
+
+          if (sourceAccountId) {
+            await tx
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} + ${t.amount}` })
+              .where(eq(schema.accounts.id, sourceAccountId));
           }
 
           // 2. 貯蓄・投資等で移動先口座（toAccountId）が指定されていた場合、移動先口座から逆算減額 (-t.amount)

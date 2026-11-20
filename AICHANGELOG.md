@@ -2,6 +2,40 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-20] 【Phase 15.2】定例支払いテンプレート & 月次自動追加・精算 API の実装
+
+### 1. 概要
+要件 2-8 および `Plan.md` Phase 15.2 に基づき、定例支払い（月次固定費・口座間振替）テンプレートの CRUD・月次支払い予定明細の自動追加・支払日到来分および手動確定による精算 API（`/api/recurring-templates`）を新規実装するとともに、`GET/PUT/DELETE /api/transactions` および `POST /api/admin/revert` における未精算定例予定明細の残高整合性保護を実装した。
+
+### 2. 変更内容 (Before / After)
+1. **定例支払いテンプレート & 月次同期・精算 API の新規実装 (`src/app/api/recurring-templates/route.ts`)**:
+   - Before: 定例支払いテンプレートを操作・同期・精算する API エンドポイントが存在しなかった。
+   - After:
+     - `GET /api/recurring-templates`: 費目・決済手段・口座情報を結合したテンプレート一覧を返却。`autoSync=true` 指定時は `db.transaction()` 内で現在日付（JST）基準の未生成サイクル分の支払い予定明細（`isSettled: false`）生成と支払予定日到来済み非クレカ明細の自動口座残高精算を冪等に実行し、`syncResult: { generatedCount, settledCount }` とともに返却する。
+     - `POST /api/recurring-templates`: 新規テンプレート登録（`action: "create"` または省略時、クレカ決済時はカードの `withdrawalDay` を自動適用、有効時は初回対象サイクルの支払い予定明細を同時生成）、月次同期手動実行（`action: "sync"`）、および未精算支払い予定明細の手動確定精算（`action: "settle"`、二重精算防止・積立受入明細生成・チェックポイント/監査ログ記録対応）を実装した。
+     - `PUT /api/recurring-templates`: テンプレート内容編集（`action: "update"`）および有効/一時停止切替（`action: "toggle"`）と監査ログ記録を実装した。
+     - `DELETE /api/recurring-templates?id=...`: テンプレートの物理削除（生成済み明細は `transactions` に保持）および監査ログ記録を実装した。
+2. **明細 API の `recurringTemplateId` 返却と未精算予定明細の残高保護 (`src/app/api/transactions/route.ts`)**:
+   - Before: `GET /api/transactions` に `recurringTemplateId` が含まれておらず、`PUT` / `DELETE` では `transfer` の無条件精算や `expense` の `toAccountId` ロールバックが `isSettled` や未精算定例明細かを区別せずに走っていた。また出金元口座特定ロジックが重複していた。
+   - After: `GET` に `recurringTemplateId` を追加し、共通ヘルパー `resolveExpenseSourceAccountId`（`fromAccountId` フォールバック含む）へ整理したうえで、未精算の定例支払い予定明細（`Boolean(existingTx.recurringTemplateId) && !existingTx.isSettled`）の編集・削除時は口座残高の二重減額・誤減額・勝手な精算済み化や受入明細生成が起きないよう保護した。
+3. **24時間リバート API の未精算定例明細保護・出金元フォールバック対応 (`src/app/api/admin/revert/route.ts`)**:
+   - Before: `expense` のリバート時に `paymentMethodId` 経由の口座解決のみ行っており、`fromAccountId` 指定で精算された定例支出の返戻フォールバックがなかった。
+   - After: 未精算の定例予定明細（`!t.isSettled && t.recurringTemplateId`）を残高逆算から確実に除外するとともに、精算済み支出明細の `fromAccountId` フォールバック返戻に対応した。
+
+### 3. 変更理由
+- 月次の固定費・積立・口座間振替をテンプレート化し、支払予定日到来前でも未精算の予定明細として家計簿・クレカ引き落とし予測へ計上しつつ、実際の口座残高への影響は支払予定日到来時または手動精算確定時のみに限定して会計整合性を保つため。
+
+### 4. 影響範囲・検証結果
+- 変更・新規作成ファイル: `src/app/api/recurring-templates/route.ts`（新規）, `src/app/api/transactions/route.ts`, `src/app/api/admin/revert/route.ts`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（`/api/recurring-templates` 含む 24 ルートビルド成功）
+  - `npm run db:migrate`: 終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格（`raw.unsafe` 0件）・終了コード 0
+  - `npx tsx scripts/comprehensive-test.ts`（ローカル開発サーバー ポート3080 起動下）: 全17カテゴリ合格・終了コード 0
+  - 実機 API 検証スクリプト（`verify-recurring-api.ts`, `verify-recurring-revert.ts`）: クレカ規定支払日連動、未精算予定明細の PUT/DELETE 保護、月次同期（自動精算・冪等性）、手動確定精算・二重精算拒否、テンプレート編集/一時停止/削除（生成明細保持）、24時間リバート時の未精算/精算済み残高整合性、および全口座残高の完全回復を確認（検証後開発サーバー停止済み）
+
+
 ## [2026-11-20] 【Phase 15.1】定例支払いテンプレート用DBスキーマ・マイグレーション・型定義・月次サイクル計算ヘルパーの実装
 
 ### 1. 概要

@@ -6,6 +6,49 @@ import { calculateWithdrawalDate, isValidAmount, parseValidAmount, MAX_BATCH_TRA
 import { normalizeDate } from "@/lib/csv";
 import { logger } from "@/lib/logger";
 
+type TenantTx = Parameters<Parameters<ReturnType<typeof getTenantDb>["db"]["transaction"]>[0]>[0];
+type TenantSchema = ReturnType<typeof getTenantDb>["schema"];
+
+async function resolveExpenseSourceAccountId(
+  tx: TenantTx,
+  schema: TenantSchema,
+  paymentMethodId: string | null | undefined,
+  fromAccountId: string | null | undefined
+): Promise<{ sourceAccountId: string | null; pmType: string | null }> {
+  let pmType: string | null = null;
+  let sourceAccountId: string | null = null;
+
+  if (paymentMethodId) {
+    const [pm] = await tx
+      .select()
+      .from(schema.paymentMethods)
+      .where(eq(schema.paymentMethods.id, paymentMethodId))
+      .limit(1);
+
+    if (pm) {
+      pmType = pm.type;
+      sourceAccountId = pm.sourceAccountId ?? null;
+      if (!sourceAccountId && pm.type === "cash") {
+        const [c] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "cash")).limit(1);
+        sourceAccountId = c?.id ?? null;
+      } else if (!sourceAccountId && pm.type === "qr_code") {
+        const [w] = await tx
+          .select()
+          .from(schema.accounts)
+          .where(eq(schema.accounts.type, "prepaid_wallet"))
+          .limit(1);
+        sourceAccountId = w?.id ?? null;
+      }
+    }
+  }
+
+  if (!sourceAccountId && fromAccountId) {
+    sourceAccountId = fromAccountId;
+  }
+
+  return { sourceAccountId, pmType };
+}
+
 // GET: 明細一覧取得 (検索・フィルタ対応)
 export async function GET(req: NextRequest) {
   const session = await getCurrentSession();
@@ -55,6 +98,7 @@ export async function GET(req: NextRequest) {
         isSettled: schema.transactions.isSettled,
         scheduledWithdrawalDate: schema.transactions.scheduledWithdrawalDate,
         parentTransactionId: schema.transactions.parentTransactionId,
+        recurringTemplateId: schema.transactions.recurringTemplateId,
         createdAt: schema.transactions.createdAt,
       })
       .from(schema.transactions)
@@ -471,39 +515,47 @@ export async function PUT(req: NextRequest) {
       const targetCategoryId =
         categoryId !== undefined ? categoryId || null : existingTx.categoryId;
 
+      const isUnsettledRecurring = Boolean(existingTx.recurringTemplateId) && !existingTx.isSettled;
       let isSettled = false;
       let scheduledWithdrawalDate: string | null = null;
 
       if (existingTx.type === "transfer") {
-        // 振替明細: 旧残高ロールバックと新残高反映
-        if (existingTx.isSettled) {
-          if (existingTx.fromAccountId) {
-            await tx
-              .update(schema.accounts)
-              .set({ balance: sql`${schema.accounts.balance} + ${existingTx.amount}` })
-              .where(eq(schema.accounts.id, existingTx.fromAccountId));
+        if (isUnsettledRecurring) {
+          // 未精算の定例振替予定明細は編集時も未精算状態を維持し、口座残高は変動させない
+          isSettled = false;
+          scheduledWithdrawalDate =
+            date !== undefined ? targetDate : existingTx.scheduledWithdrawalDate;
+        } else {
+          // 振替明細: 旧残高ロールバックと新残高反映
+          if (existingTx.isSettled) {
+            if (existingTx.fromAccountId) {
+              await tx
+                .update(schema.accounts)
+                .set({ balance: sql`${schema.accounts.balance} + ${existingTx.amount}` })
+                .where(eq(schema.accounts.id, existingTx.fromAccountId));
+            }
+            if (!existingTx.parentTransactionId && existingTx.toAccountId) {
+              await tx
+                .update(schema.accounts)
+                .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
+                .where(eq(schema.accounts.id, existingTx.toAccountId));
+            }
           }
-          if (!existingTx.parentTransactionId && existingTx.toAccountId) {
-            await tx
-              .update(schema.accounts)
-              .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
-              .where(eq(schema.accounts.id, existingTx.toAccountId));
-          }
-        }
 
-        if (targetFromAccountId) {
-          await tx
-            .update(schema.accounts)
-            .set({ balance: sql`${schema.accounts.balance} - ${newAmount}` })
-            .where(eq(schema.accounts.id, targetFromAccountId));
+          if (targetFromAccountId) {
+            await tx
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} - ${newAmount}` })
+              .where(eq(schema.accounts.id, targetFromAccountId));
+          }
+          if (!existingTx.parentTransactionId && targetToAccountId) {
+            await tx
+              .update(schema.accounts)
+              .set({ balance: sql`${schema.accounts.balance} + ${newAmount}` })
+              .where(eq(schema.accounts.id, targetToAccountId));
+          }
+          isSettled = true;
         }
-        if (!existingTx.parentTransactionId && targetToAccountId) {
-          await tx
-            .update(schema.accounts)
-            .set({ balance: sql`${schema.accounts.balance} + ${newAmount}` })
-            .where(eq(schema.accounts.id, targetToAccountId));
-        }
-        isSettled = true;
       } else if (existingTx.type === "income") {
         // 収入明細: 旧受入口座残高ロールバックと新金額加算
         if (existingTx.isSettled && existingTx.toAccountId) {
@@ -520,22 +572,14 @@ export async function PUT(req: NextRequest) {
           isSettled = true;
         }
       } else {
-        // 1. 旧明細が即時決済（isSettled）だった場合、旧出金元口座の残高を元に戻す (ロールバック)
-        if (existingTx.isSettled && existingTx.paymentMethodId) {
-          const [oldPm] = await tx
-            .select()
-            .from(schema.paymentMethods)
-            .where(eq(schema.paymentMethods.id, existingTx.paymentMethodId))
-            .limit(1);
-
-          let oldSourceAccId = oldPm?.sourceAccountId;
-          if (!oldSourceAccId && oldPm?.type === "cash") {
-            const [c] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "cash")).limit(1);
-            oldSourceAccId = c?.id;
-          } else if (!oldSourceAccId && oldPm?.type === "qr_code") {
-            const [w] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "prepaid_wallet")).limit(1);
-            oldSourceAccId = w?.id;
-          }
+        // 1. 旧明細が精算済み（isSettled）だった場合、旧出金元口座の残高を元に戻す (ロールバック)
+        if (existingTx.isSettled) {
+          const { sourceAccountId: oldSourceAccId } = await resolveExpenseSourceAccountId(
+            tx,
+            schema,
+            existingTx.paymentMethodId,
+            existingTx.fromAccountId
+          );
 
           if (oldSourceAccId) {
             await tx
@@ -546,7 +590,8 @@ export async function PUT(req: NextRequest) {
         }
 
         // 2. 旧明細が投資・積立支出（type === "expense" かつ toAccountId）だった場合、旧受入先口座の残高を戻す (減額ロールバック)
-        if (existingTx.type === "expense" && existingTx.toAccountId) {
+        // ※未精算の定例支払い予定明細はまだ口座へ加算されていないためロールバック不要
+        if (existingTx.type === "expense" && existingTx.toAccountId && !isUnsettledRecurring) {
           await tx
             .update(schema.accounts)
             .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
@@ -554,7 +599,12 @@ export async function PUT(req: NextRequest) {
         }
 
         // 3. 新しい支払手段に応じた残高減額と決済状態の計算
-        if (targetPmId) {
+        if (isUnsettledRecurring) {
+          // 未精算の定例支払い予定明細は編集時も未精算状態を維持し、即時減額は行わない
+          isSettled = false;
+          scheduledWithdrawalDate =
+            date !== undefined ? targetDate : existingTx.scheduledWithdrawalDate;
+        } else if (targetPmId) {
           const [newPm] = await tx
             .select()
             .from(schema.paymentMethods)
@@ -573,14 +623,12 @@ export async function PUT(req: NextRequest) {
               isSettled = false;
             } else {
               // 即時決済 (現金, QR, デビット等): 口座から即座に減額
-              let newSourceAccId = newPm.sourceAccountId;
-              if (!newSourceAccId && newPm.type === "cash") {
-                const [c] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "cash")).limit(1);
-                newSourceAccId = c?.id;
-              } else if (!newSourceAccId && newPm.type === "qr_code") {
-                const [w] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "prepaid_wallet")).limit(1);
-                newSourceAccId = w?.id;
-              }
+              const { sourceAccountId: newSourceAccId } = await resolveExpenseSourceAccountId(
+                tx,
+                schema,
+                targetPmId,
+                targetFromAccountId
+              );
 
               if (newSourceAccId) {
                 await tx
@@ -591,11 +639,17 @@ export async function PUT(req: NextRequest) {
               isSettled = true;
             }
           }
+        } else if (targetFromAccountId) {
+          await tx
+            .update(schema.accounts)
+            .set({ balance: sql`${schema.accounts.balance} - ${newAmount}` })
+            .where(eq(schema.accounts.id, targetFromAccountId));
+          isSettled = true;
         }
       }
 
       // 4. 投資・積立支出の移動先口座残高加算 & 連動受入明細の更新/作成/削除
-      if (existingTx.type === "expense") {
+      if (existingTx.type === "expense" && !isUnsettledRecurring) {
         // ペア受入明細の特定 (1. parentTransactionId 検索、2. クエリ特定フォールバック)
         let [linkedTx] = await tx
           .select()
@@ -818,7 +872,9 @@ export async function DELETE(req: NextRequest) {
         throw new Error("NOT_FOUND");
       }
 
-      // 1. 出金元・受入先口座の残高ロールバック (即時決済されていた場合)
+      const isUnsettledRecurring = Boolean(existingTx.recurringTemplateId) && !existingTx.isSettled;
+
+      // 1. 出金元・受入先口座の残高ロールバック (即時決済または精算済みだった場合)
       if (existingTx.type === "transfer" && !existingTx.parentTransactionId) {
         if (existingTx.isSettled) {
           if (existingTx.fromAccountId) {
@@ -841,21 +897,13 @@ export async function DELETE(req: NextRequest) {
             .set({ balance: sql`${schema.accounts.balance} - ${existingTx.amount}` })
             .where(eq(schema.accounts.id, existingTx.toAccountId));
         }
-      } else if (existingTx.isSettled && existingTx.paymentMethodId) {
-        const [pm] = await tx
-          .select()
-          .from(schema.paymentMethods)
-          .where(eq(schema.paymentMethods.id, existingTx.paymentMethodId))
-          .limit(1);
-
-        let sourceAccId = pm?.sourceAccountId;
-        if (!sourceAccId && pm?.type === "cash") {
-          const [c] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "cash")).limit(1);
-          sourceAccId = c?.id;
-        } else if (!sourceAccId && pm?.type === "qr_code") {
-          const [w] = await tx.select().from(schema.accounts).where(eq(schema.accounts.type, "prepaid_wallet")).limit(1);
-          sourceAccId = w?.id;
-        }
+      } else if (existingTx.type === "expense" && existingTx.isSettled) {
+        const { sourceAccountId: sourceAccId } = await resolveExpenseSourceAccountId(
+          tx,
+          schema,
+          existingTx.paymentMethodId,
+          existingTx.fromAccountId
+        );
 
         if (sourceAccId) {
           await tx
@@ -866,7 +914,8 @@ export async function DELETE(req: NextRequest) {
       }
 
       // 2. 投資・積立支出だった場合、受入先口座の残高ロールバック & 連動受入明細の論理削除
-      if (existingTx.type === "expense" && existingTx.toAccountId) {
+      // ※未精算の定例支払い予定明細はまだ口座へ加算されていないためロールバック不要
+      if (existingTx.type === "expense" && existingTx.toAccountId && !isUnsettledRecurring) {
         // 受入先口座から加算されていた分を減額してロールバック
         await tx
           .update(schema.accounts)

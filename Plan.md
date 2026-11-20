@@ -390,7 +390,7 @@
     - 「規定支払日の翌日」からの月次サイクル判定・支払予定日算出ロジック（`resolveTargetCycleAndDates(referenceDateStr, effectiveDayOfMonth)`：基準日当日までは当月サイクル `YYYY-MM`、基準日の翌日以降は翌月サイクル `YYYY-(MM+1)` を返し、該当サイクルの支払予定日 `scheduledWithdrawalDate` と取引日 `date` を算出する純粋関数）。
     - 支払予定日到来済み（`scheduledWithdrawalDate <= today`）かつ未精算（`isSettled === false`）の非クレジットカード明細の自動精算対象判定ヘルパー。
 
-- [ ] **15.2 定例支払いテンプレート & 月次自動追加・精算 API の実装 (`src/app/api/recurring-templates/route.ts`, `src/app/api/transactions/route.ts`, `src/app/api/admin/revert/route.ts`)**:
+- [x] **15.2 定例支払いテンプレート & 月次自動追加・精算 API の実装 (`src/app/api/recurring-templates/route.ts`, `src/app/api/transactions/route.ts`, `src/app/api/admin/revert/route.ts`)**:
   - `src/app/api/recurring-templates/route.ts`（新規）:
     - `GET /api/recurring-templates`: テンプレート一覧取得（費目名・決済手段名・種別・口座名を結合）。`autoSync=true` 指定時は現在日付基準で有効テンプレートの未生成サイクル分の「支払い予定（`isSettled: false`）」明細自動追加、および支払予定日到来済みの非クレカ未精算明細の口座残高精算（`isSettled: true` 更新＋残高減額/加算＋積立受入明細生成）を `db.transaction()` 内で冪等に実行し、`syncResult: { generatedCount, settledCount }` とともに返却する。
     - `POST /api/recurring-templates`: 新規テンプレート登録（`action: "create"` または省略時、有効時は初回対象サイクルの支払い予定明細も同時生成）、月次同期手動実行（`action: "sync"`）、および未精算支払い予定明細の手動確定精算（`action: "settle", transactionId`）を実装し、監査ログ・チェックポイントを記録する。
