@@ -20,7 +20,7 @@
 - [x] Phase 12: 新規世帯登録の申請・許可制およびシステム管理者（Super Admin）世帯管理機能の実装（要件 1-1, 1-2, 1-8）
 - [x] Phase 13: 初期デモ管理者アカウントのテスト環境限定有効化およびログイン画面表示制御の実装（要件 1-9）
 - [x] Phase 14: 貯蓄目標の編集・未達成目標削除・達成済み目標アーカイブ/復元機能の実装（要件 17-2）
-- [ ] Phase 15: 定例支払い（月次固定費・振替）テンプレート管理 & 自動支払い予定明細追加機能の実装（要件 2-8）
+- [x] Phase 15: 定例支払い（月次固定費・振替）テンプレート管理 & 自動支払い予定明細追加機能の実装（要件 2-8）
 
 
 ---
@@ -408,7 +408,7 @@
   - `src/app/page.tsx`:
     - ログイン後のデータ取得時（`fetchAllData`）に `/api/recurring-templates?autoSync=true` を呼び出し、月次支払い予定の自動追加または支払日到来分の自動精算が行われた場合にトースト通知および明細・口座残高の最新化を行う。
 
-- [ ] **15.4 単体テスト・E2E総合テストの追加とビルド検証・変更履歴記録 (`scripts/test-recurring-unit.ts`, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `AICHANGELOG.md`)**:
+- [x] **15.4 単体テスト・E2E総合テストの追加とビルド検証・変更履歴記録 (`scripts/test-recurring-unit.ts`, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `AICHANGELOG.md`)**:
   - `scripts/test-recurring-unit.ts` を新規作成し、テンプレート入力バリデーション、クレカ規定引き落とし日の自動連動、「規定支払日の翌日」での次回サイクル年月・支払予定日算出、二重生成防止（冪等性）、および支払日到来時の精算判定ロジックの単体テストを実行する。
   - `scripts/comprehensive-test.ts` および `for_agent/06_operation_and_testing_guide.md` に定例支払いテンプレートの検証項目を追記する。
   - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-recurring-unit.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。

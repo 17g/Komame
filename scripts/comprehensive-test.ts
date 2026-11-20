@@ -1120,8 +1120,323 @@ ${dupCheckDate},${dupCheckShop},${dupCheckAmount},食費,,重複検証用
     method: "DELETE",
   });
 
+  // 18. 定例支払い（月次固定費・振替）テンプレート管理 & 自動支払い予定明細追加・精算テスト
+  console.log("\n--- 18. 定例支払いテンプレート管理 & 自動支払い予定・精算テスト ---");
+  const recSrcAccRes = await apiFetch("/api/accounts", {
+    method: "POST",
+    body: JSON.stringify({
+      actionType: "account",
+      name: "定例テスト出金口座",
+      type: "bank",
+      balance: 100000,
+      icon: "🏦",
+    }),
+  });
+  assert(recSrcAccRes.ok, "定例テスト用出金口座作成成功");
+  const recSrcAccId = recSrcAccRes.json.id;
+
+  const recDstAccRes = await apiFetch("/api/accounts", {
+    method: "POST",
+    body: JSON.stringify({
+      actionType: "account",
+      name: "定例テスト振替先口座",
+      type: "bank",
+      balance: 10000,
+      icon: "💰",
+    }),
+  });
+  assert(recDstAccRes.ok, "定例テスト用振替先口座作成成功");
+  const recDstAccId = recDstAccRes.json.id;
+
+  const recDebitPmRes = await apiFetch("/api/accounts", {
+    method: "POST",
+    body: JSON.stringify({
+      actionType: "payment_method",
+      name: "定例テスト口座引落",
+      type: "debit_card",
+      sourceAccountId: recSrcAccId,
+    }),
+  });
+  assert(recDebitPmRes.ok, "定例テスト用口座引落決済手段作成成功");
+  const recDebitPmId = recDebitPmRes.json.id;
+
+  const recCardPmRes = await apiFetch("/api/accounts", {
+    method: "POST",
+    body: JSON.stringify({
+      actionType: "payment_method",
+      name: "定例テストクレカ",
+      type: "credit_card",
+      sourceAccountId: recSrcAccId,
+      closingDay: 99,
+      withdrawalDay: 27,
+      withdrawalMonthOffset: 1,
+    }),
+  });
+  assert(recCardPmRes.ok, "定例テスト用クレジットカード決済手段作成成功 (引き落とし日: 27日)");
+  const recCardPmId = recCardPmRes.json.id;
+
+  const listTplInitRes = await apiFetch("/api/recurring-templates");
+  assert(
+    listTplInitRes.ok && Array.isArray(listTplInitRes.json?.templates),
+    "定例支払いテンプレート一覧取得成功 (GET /api/recurring-templates)"
+  );
+
+  // 18.1 クレカ定例支出テンプレート登録 (カード規定引き落とし日27日が自動適用されること)
+  const createCardTplRes = await apiFetch("/api/recurring-templates", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "create",
+      type: "expense",
+      title: "テスト光回線（クレカ定例）",
+      amount: 5500,
+      categoryId: foodCat.id,
+      paymentMethodId: recCardPmId,
+      dayOfMonth: 5, // クレカ選択時はカードの規定引き落とし日(27)が優先される
+      note: "クレカ自動連動テスト",
+      isActive: true,
+    }),
+  });
+  assert(
+    createCardTplRes.ok &&
+      createCardTplRes.json?.template?.dayOfMonth === 27 &&
+      !!createCardTplRes.json?.generatedTransactionId,
+    "クレカ定例支出テンプレート登録成功（カード規定日 27日自動適用・初回予定明細生成）"
+  );
+  const cardTplId = createCardTplRes.json.id;
+  const cardInitialTxId = createCardTplRes.json.generatedTransactionId;
+
+  // 編集 (PUT action=update) & 一時停止/再開 (PUT action=toggle)
+  const updateCardTplRes = await apiFetch("/api/recurring-templates", {
+    method: "PUT",
+    body: JSON.stringify({
+      action: "update",
+      id: cardTplId,
+      type: "expense",
+      title: "テスト光回線（更新後）",
+      amount: 5800,
+      categoryId: foodCat.id,
+      paymentMethodId: recCardPmId,
+      dayOfMonth: 27,
+      note: "金額更新済み",
+      isActive: true,
+    }),
+  });
+  assert(
+    updateCardTplRes.ok && updateCardTplRes.json?.template?.amount === 5800,
+    "定例支払いテンプレート編集成功 (PUT action=update)"
+  );
+
+  const pauseCardTplRes = await apiFetch("/api/recurring-templates", {
+    method: "PUT",
+    body: JSON.stringify({
+      action: "toggle",
+      id: cardTplId,
+      isActive: false,
+    }),
+  });
+  assert(
+    pauseCardTplRes.ok && pauseCardTplRes.json?.template?.isActive === false,
+    "定例支払いテンプレートの一時停止成功 (PUT action=toggle, isActive=false)"
+  );
+
+  const resumeCardTplRes = await apiFetch("/api/recurring-templates", {
+    method: "PUT",
+    body: JSON.stringify({
+      action: "toggle",
+      id: cardTplId,
+      isActive: true,
+    }),
+  });
+  assert(
+    resumeCardTplRes.ok && resumeCardTplRes.json?.template?.isActive === true,
+    "定例支払いテンプレートの再開成功 (PUT action=toggle, isActive=true)"
+  );
+
+  // 18.2 非クレカ定例支出テンプレート登録 (15日払い) & 支払日到来自動精算・翌月サイクル生成・冪等性テスト
+  const createDebitTplRes = await apiFetch("/api/recurring-templates", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "create",
+      type: "expense",
+      title: "テスト電気代（口座引落定例）",
+      amount: 12000,
+      categoryId: foodCat.id,
+      paymentMethodId: recDebitPmId,
+      dayOfMonth: 15,
+      note: "口座引落テスト",
+      isActive: true,
+    }),
+  });
+  assert(
+    createDebitTplRes.ok && !!createDebitTplRes.json?.generatedTransactionId,
+    "口座引落定例支出テンプレート登録 & 初回支払い予定明細生成成功"
+  );
+  const debitTplId = createDebitTplRes.json.id;
+  const debitTx1Id = createDebitTplRes.json.generatedTransactionId;
+
+  const txAfterTplCreateRes = await apiFetch("/api/transactions");
+  const debitTx1 = txAfterTplCreateRes.json.transactions.find((t: any) => t.id === debitTx1Id);
+  assert(
+    !!debitTx1 && debitTx1.isSettled === false && debitTx1.recurringTemplateId === debitTplId,
+    "初回追加された定例支払い予定明細が未精算 (isSettled: false) であることを確認"
+  );
+
+  const accBeforeSyncRes = await apiFetch("/api/accounts");
+  const srcAccBeforeSync = accBeforeSyncRes.json.accounts.find((a: any) => a.id === recSrcAccId);
+  assert(
+    srcAccBeforeSync.balance === 100000,
+    `支払い予定明細の追加時点では口座残高が変動しないことを確認 (${srcAccBeforeSync.balance}円)`
+  );
+
+  // 初回予定明細の支払予定日 (YYYY-MM-15) を基準日として月次同期を実行 -> 非クレカ明細のみ自動精算
+  const firstScheduledDate: string = debitTx1.scheduledWithdrawalDate;
+  const syncOnDueRes = await apiFetch("/api/recurring-templates", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "sync",
+      referenceDate: firstScheduledDate,
+    }),
+  });
+  assert(
+    syncOnDueRes.ok &&
+      Array.isArray(syncOnDueRes.json?.settledTransactionIds) &&
+      syncOnDueRes.json.settledTransactionIds.includes(debitTx1Id),
+    `支払予定日 (${firstScheduledDate}) 到来により非クレカ定例明細が自動精算されたことを確認`
+  );
+  assert(
+    !syncOnDueRes.json.settledTransactionIds.includes(cardInitialTxId),
+    "クレジットカード定例明細は個別自動精算の対象外として未精算維持されることを確認"
+  );
+
+  const accAfterDueSyncRes = await apiFetch("/api/accounts");
+  const srcAccAfterDueSync = accAfterDueSyncRes.json.accounts.find((a: any) => a.id === recSrcAccId);
+  assert(
+    srcAccAfterDueSync.balance === 88000,
+    `自動精算後にテスト用口座残高が 12,000円減額されたことを確認 (100,000円 -> ${srcAccAfterDueSync.balance}円)`
+  );
+
+  // 同日再同期しても二重生成・二重精算されないこと (冪等性)
+  const syncIdempotentRes = await apiFetch("/api/recurring-templates", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "sync",
+      referenceDate: firstScheduledDate,
+    }),
+  });
+  assert(
+    syncIdempotentRes.ok &&
+      !syncIdempotentRes.json?.generatedTransactionIds?.length &&
+      !syncIdempotentRes.json?.settledTransactionIds?.includes(debitTx1Id),
+    "同日再同期時に二重生成・二重精算されないこと（冪等性）を確認"
+  );
+
+  // 支払予定日の翌日 (YYYY-MM-16) を基準日として同期 -> 翌月サイクルの支払い予定明細が自動生成されること
+  const nextDayDate = `${firstScheduledDate.slice(0, 8)}16`;
+  const syncNextDayRes = await apiFetch("/api/recurring-templates", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "sync",
+      referenceDate: nextDayDate,
+    }),
+  });
+  assert(
+    syncNextDayRes.ok && syncNextDayRes.json?.generatedCount >= 1,
+    `規定支払日の翌日 (${nextDayDate}) での同期により翌月サイクルの支払い予定明細が自動生成されたことを確認`
+  );
+
+  const txAfterNextDaySyncRes = await apiFetch("/api/transactions");
+  const debitNextMonthTx = txAfterNextDaySyncRes.json.transactions.find(
+    (t: any) => t.recurringTemplateId === debitTplId && t.id !== debitTx1Id && !t.isSettled
+  );
+  assert(
+    !!debitNextMonthTx && debitNextMonthTx.scheduledWithdrawalDate > firstScheduledDate,
+    `翌月サイクルの未精算支払い予定明細が生成されたことを確認 (${debitNextMonthTx?.scheduledWithdrawalDate})`
+  );
+
+  // 18.3 未精算支払い予定明細の手動確定精算 (POST action=settle)
+  const settleManualRes = await apiFetch("/api/recurring-templates", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "settle",
+      transactionId: debitNextMonthTx.id,
+    }),
+  });
+  assert(settleManualRes.ok, "未精算支払い予定明細の手動確定精算成功 (POST action=settle)");
+
+  const accAfterManualSettleRes = await apiFetch("/api/accounts");
+  const srcAccAfterManualSettle = accAfterManualSettleRes.json.accounts.find((a: any) => a.id === recSrcAccId);
+  assert(
+    srcAccAfterManualSettle.balance === 76000,
+    `手動確定精算後に口座残高がさらに 12,000円減額されたことを確認 (88,000円 -> ${srcAccAfterManualSettle.balance}円)`
+  );
+
+  // 18.4 定例口座間振替テンプレート登録 & 手動精算による両口座残高連動 & 削除時明細保持
+  const createTransferTplRes = await apiFetch("/api/recurring-templates", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "create",
+      type: "transfer",
+      title: "テスト定例口座振替",
+      amount: 5000,
+      fromAccountId: recSrcAccId,
+      toAccountId: recDstAccId,
+      dayOfMonth: 20,
+      note: "毎月振替テスト",
+      isActive: true,
+    }),
+  });
+  assert(
+    createTransferTplRes.ok && !!createTransferTplRes.json?.generatedTransactionId,
+    "定例口座間振替テンプレート登録 & 初回振替予定明細生成成功"
+  );
+  const transferTplId = createTransferTplRes.json.id;
+  const transferTplTxId = createTransferTplRes.json.generatedTransactionId;
+
+  const settleTransferRes = await apiFetch("/api/recurring-templates", {
+    method: "POST",
+    body: JSON.stringify({
+      action: "settle",
+      transactionId: transferTplTxId,
+    }),
+  });
+  assert(settleTransferRes.ok, "定例振替予定明細の手動確定精算成功");
+
+  const accAfterTransferSettleRes = await apiFetch("/api/accounts");
+  const srcAfterTr = accAfterTransferSettleRes.json.accounts.find((a: any) => a.id === recSrcAccId);
+  const dstAfterTr = accAfterTransferSettleRes.json.accounts.find((a: any) => a.id === recDstAccId);
+  assert(
+    srcAfterTr.balance === 71000 && dstAfterTr.balance === 15000,
+    `定例振替精算で出金元(76,000->${srcAfterTr.balance})・入金先(10,000->${dstAfterTr.balance})が双方向同期されたことを確認`
+  );
+
+  // テンプレート削除後も生成済み明細は保持されること
+  const delTransferTplRes = await apiFetch(
+    `/api/recurring-templates?id=${encodeURIComponent(transferTplId)}`,
+    { method: "DELETE" }
+  );
+  assert(delTransferTplRes.ok, "定例支払いテンプレート削除成功 (DELETE)");
+
+  const txAfterTplDeleteRes = await apiFetch("/api/transactions");
+  const keptTransferTx = txAfterTplDeleteRes.json.transactions.find((t: any) => t.id === transferTplTxId);
+  assert(!!keptTransferTx, "テンプレート削除後も生成済み明細がそのまま保持されていることを確認");
+
+  // 定例テスト用データのクリーンアップ
+  await apiFetch(`/api/recurring-templates?id=${encodeURIComponent(cardTplId)}`, { method: "DELETE" });
+  await apiFetch(`/api/recurring-templates?id=${encodeURIComponent(debitTplId)}`, { method: "DELETE" });
+  const txCleanupRes = await apiFetch("/api/transactions");
+  const recTestTxs = txCleanupRes.json.transactions.filter(
+    (t: any) => t.recurringTemplateId === cardTplId || t.recurringTemplateId === debitTplId || t.recurringTemplateId === transferTplId
+  );
+  for (const rtx of recTestTxs) {
+    await apiFetch(`/api/transactions?id=${encodeURIComponent(rtx.id)}`, { method: "DELETE" });
+  }
+  await apiFetch(`/api/accounts?id=${encodeURIComponent(recDebitPmId)}&actionType=payment_method`, { method: "DELETE" });
+  await apiFetch(`/api/accounts?id=${encodeURIComponent(recCardPmId)}&actionType=payment_method`, { method: "DELETE" });
+  await apiFetch(`/api/accounts?id=${encodeURIComponent(recSrcAccId)}&actionType=account`, { method: "DELETE" });
+  await apiFetch(`/api/accounts?id=${encodeURIComponent(recDstAccId)}&actionType=account`, { method: "DELETE" });
+
   console.log("\n==========================================================");
-  console.log("🎉 すべてのテスト（全17カテゴリ・貯蓄目標CRUD/アーカイブ・新規世帯申請/承認制・資金移動・QR逆算・CSV・CRUD・一括登録・残高整合性・管理機能）に完全合格しました！");
+  console.log("🎉 すべてのテスト（全18カテゴリ・定例支払いテンプレート/自動同期/精算・貯蓄目標CRUD/アーカイブ・新規世帯申請/承認制・資金移動・QR逆算・CSV・CRUD・一括登録・残高整合性・管理機能）に完全合格しました！");
   console.log("==========================================================");
 }
 

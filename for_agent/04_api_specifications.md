@@ -190,11 +190,85 @@
 
 ## 5. 貯蓄目標 API (`/api/goals`)
 
+本エンドポイント群は、ログイン中世帯の全メンバー（`Household Admin` および `Household Member`）が利用可能。
+
 ### 5.1 `GET /api/goals`
-- 各目標の対象口座の現在残高を合算し、`currentAmount` と `progressRate` (%) を動的集計して返却。
+- **概要**: 貯蓄目標一覧および現在の進捗額・達成率の動的集計取得（進行中・アーカイブ済みの両方を含む全件を `createdAt ASC` または作成順で返却し、クライアント側で進行中とアーカイブ済みを切り分けて表示・集計する）。
+- **処理**:
+  - 各目標の `accountIdsJson` に含まれる対象口座の現在残高を合算し、`currentAmount` と `progressRate` (`Math.min(100, Math.round((currentAmount / targetAmount) * 100))`) を動的算出。
+  - `isArchived`（アーカイブ状態フラグ）および実質達成状態（`progressRate >= 100 || isCompleted`）を含めて返却。
+- **レスポンス (200 OK)**:
+  ```json
+  {
+    "goals": [
+      {
+        "id": "goal_xxx",
+        "title": "旅行積立",
+        "targetAmount": 300000,
+        "targetDate": "2026-12-31",
+        "accountIdsJson": ["acc_bank_1"],
+        "color": "#2E7D32",
+        "isCompleted": false,
+        "isArchived": false,
+        "currentAmount": 150000,
+        "progressRate": 50,
+        "createdAt": "2026-10-01T00:00:00.000Z"
+      }
+    ]
+  }
+  ```
 
 ### 5.2 `POST /api/goals`
-- 新規目標の登録。
+- **概要**: 新規貯蓄目標の登録。
+- **リクエストボディ**:
+  ```json
+  {
+    "title": "年間100万円貯蓄",
+    "targetAmount": 1000000,
+    "targetDate": "2026-12-31",
+    "accountIds": ["acc_bank_1"],
+    "color": "#2E7D32"
+  }
+  ```
+- **バリデーション & ロジック**:
+  - `title` 必須（前後空白トリム後 1〜100文字）。
+  - `targetAmount` は `isValidAmount`（`1 <= targetAmount <= 9,999,999,999` の整数）で検証。
+  - `isCompleted: false`, `isArchived: false` で新規作成し、監査ログ（`action: "CREATE", entityType: "savings_goal"`）を記録。
+
+### 5.3 `PUT /api/goals`
+- **概要**: 貯蓄目標の編集、達成済み目標のアーカイブ、またはアーカイブ済み目標の進行中一覧への復元。
+- **モード 1: 目標情報の編集 (`action: "update"` または省略時)**
+  - **リクエストボディ**:
+    ```json
+    {
+      "action": "update",
+      "id": "goal_xxx",
+      "title": "家族旅行積立",
+      "targetAmount": 350000,
+      "targetDate": "2026-12-31",
+      "accountIds": ["acc_bank_1", "acc_bank_2"],
+      "color": "#2563EB"
+    }
+    ```
+  - **バリデーション & ロジック**:
+    - `id` の存在確認、`title`（1〜100文字）および `targetAmount`（`1 <= targetAmount <= 9,999,999,999` の整数）を検証。
+    - 対象目標を更新し、監査ログ（`action: "UPDATE", entityType: "savings_goal"`）に `beforeDataJson` / `afterDataJson` を記録。
+- **モード 2: 達成済み目標のアーカイブ (`action: "archive"`)**
+  - **リクエストボディ**: `{ "action": "archive", "id": "goal_xxx" }`
+  - **バリデーション & ロジック**:
+    - 対象目標の対象口座合算残高（`currentAmount`）から達成状況を算出し、達成済み（`currentAmount >= goal.targetAmount` または `goal.isCompleted === true`）であることを検証。未達成の目標に対するアーカイブ要求は `400 Bad Request`（「達成済みの目標のみアーカイブできます。」）で拒否。
+    - `isArchived = true`（および `isCompleted = true`）に更新し、監査ログ（`action: "UPDATE", entityType: "savings_goal"`）を記録。
+- **モード 3: アーカイブ済み目標の復元 (`action: "restore"`)**
+  - **リクエストボディ**: `{ "action": "restore", "id": "goal_xxx" }`
+  - **バリデーション & ロジック**:
+    - 対象目標の `isArchived` を `false` に更新して進行中一覧へ復元し、監査ログ（`action: "UPDATE", entityType: "savings_goal"`）を記録。
+
+### 5.4 `DELETE /api/goals?id=...`
+- **概要**: 未達成の貯蓄目標の物理削除。
+- **バリデーション & ロジック**:
+  - クエリパラメータ `id` の必須・存在確認。
+  - 対象目標の対象口座合算残高（`currentAmount`）を算出し、**達成済み（`currentAmount >= goal.targetAmount` または `goal.isCompleted === true`）またはアーカイブ済み（`goal.isArchived === true`）である場合は削除を拒否**（`400 Bad Request`「達成済みまたはアーカイブ済みの目標は削除できません。アーカイブ機能をご利用ください。」）。
+  - 未達成目標のみ `savings_goals` から物理削除し、監査ログ（`action: "DELETE", entityType: "savings_goal"`）を記録。
 
 ---
 
@@ -502,7 +576,118 @@
 
 ---
 
+## 11. 定例支払いテンプレート & 月次自動追加・精算 API (`/api/recurring-templates`)
+
+本エンドポイント群は、ログイン中世帯の全メンバー（`Household Admin` および `Household Member`）が利用可能。
+
+### 11.1 `GET /api/recurring-templates`
+- **概要**: 定例支払いテンプレート一覧の取得。オプション（`autoSync=true`）指定時は、取得前に現在日時基準での月次支払い予定明細の自動追加および支払日到来分の自動口座残高精算を冪等に実行する。
+- **クエリパラメータ**:
+  - `autoSync?: "true"`: `"true"` の場合、有効なテンプレート（`isActive === true`）の月次サイクル自動生成および支払予定日到来済み未精算明細の精算処理をトランザクション内で実行したうえで最新一覧を返却。
+- **レスポンス (200 OK)**:
+  ```json
+  {
+    "templates": [
+      {
+        "id": "tpl_xxx",
+        "userId": "usr_xxx",
+        "type": "expense",
+        "title": "サブスク動画サービス",
+        "amount": 1490,
+        "categoryId": "cat_fun",
+        "categoryName": "娯楽・趣味",
+        "paymentMethodId": "pm_rakuten_card",
+        "paymentMethodName": "楽天カード",
+        "paymentMethodType": "credit_card",
+        "fromAccountId": null,
+        "toAccountId": null,
+        "dayOfMonth": 27,
+        "note": "月額プラン",
+        "isActive": true,
+        "lastGeneratedMonth": "2026-12",
+        "createdAt": "2026-11-20T00:00:00.000Z"
+      }
+    ],
+    "syncResult": {
+      "generatedCount": 0,
+      "settledCount": 0
+    }
+  }
+  ```
+
+### 11.2 `POST /api/recurring-templates`
+- **概要**: 新規テンプレートの登録、月次同期の手動トリガー（`action: "sync"`）、または支払い予定（未精算）明細の手動確定精算（`action: "settle"`）。
+- **モード 1: 新規テンプレート登録 (`action: "create"` または省略時)**
+  - **リクエストボディ**:
+    ```json
+    {
+      "type": "expense" | "transfer",
+      "title": "住宅ローン・家賃引き落とし",
+      "amount": 85000,
+      "categoryId": "cat_house",
+      "paymentMethodId": "pm_direct_debit",
+      "fromAccountId": "acc_bank_1",
+      "toAccountId": null,
+      "dayOfMonth": 27,
+      "note": "毎月27日引き落とし",
+      "isActive": true
+    }
+    ```
+  - **バリデーション & ロジック**:
+    1. `title` 必須（1〜150文字）、`amount` は `isValidAmount`（`1 <= amount <= 9,999,999,999` の整数）で検証。
+    2. `type === "expense"` の場合、決済手段がクレジットカード（`payment_methods.type === "credit_card"`）であれば、そのカードに規定されている引き落とし日（`payment_methods.withdrawal_day`、未設定時は `27`）を `dayOfMonth` として自動適用する。それ以外の決済手段または `type === "transfer"` の場合は、リクエストで指定された `dayOfMonth`（`1`〜`28` または `99`: 月末）を検証・適用する。
+    3. `type === "transfer"` の場合は `fromAccountId` と `toAccountId`（互いに異なる有効口座）を必須とする。
+    4. テンプレート保存後、`isActive === true` の場合は現在日時に応じた対象サイクル月（当月支払日到来前なら当月サイクル、当月支払日の翌日以降なら翌月サイクル）の「支払い予定」明細を初回自動生成し、監査ログ（`action: "CREATE", entityType: "recurring_template"`）を記録する。
+- **モード 2: 月次自動追加 & 支払日到来精算の同期実行 (`action: "sync"`)**
+  - **リクエストボディ**: `{ "action": "sync", "referenceDate"?: "YYYY-MM-DD" }`（※`referenceDate` は省略時サーバー現在日付）
+  - **月次サイクル判定と自動明細追加ロジック**:
+    1. 有効な全テンプレート（`isActive === true`）を走査し、各テンプレートの実効支払基準日 `D`（クレカはカードの `withdrawal_day || 27`、それ以外は `template.dayOfMonth`、`99` はその月の末日）を特定。
+    2. 現在日付（`today`）の「日」が当月の支払基準日 `D` 以下（`today.day <= D`）であれば対象支払サイクル年月を**当月（`YYYY-MM`）**とし、支払基準日の**翌日以降（`today.day >= D + 1`、または月末基準で翌月1日以降）**であれば対象支払サイクル年月を**翌月（`YYYY-(MM+1)`）**と判定する。
+    3. `template.lastGeneratedMonth !== targetCycleMonth`（かつ同一 `recurringTemplateId` で該当サイクルの未削除明細が未存在）の場合、以下の「支払い予定（未精算）」明細を `transactions` に自動追加し、`template.lastGeneratedMonth = targetCycleMonth` に更新する：
+       - `isSettled: false`（自動追加時点では口座残高を減額・移動しない）
+       - `scheduledWithdrawalDate`: 対象サイクル年月（`targetCycleMonth`）における支払基準日 `D`（`YYYY-MM-DD`）
+       - `date`: 対象サイクルの支払予定日（またはクレカ利用サイクル開始日＝前支払日の翌日）
+       - `recurringTemplateId`: `template.id`
+  - **支払予定日到来時の自動口座残高精算ロジック**:
+    1. 定例テンプレート由来の未精算明細（`isSettled === false` かつ `deletedAt IS NULL` かつ `scheduledWithdrawalDate <= today`）のうち、クレジットカード以外の明細（口座振替・即時決済・積立投資支出・口座間振替）を抽出。
+    2. `db.transaction()` 内で対象明細を `isSettled = true` に更新するとともに、出金元口座からの減額および入金先口座（振替・積立投資時）への加算（＋積立受入明細生成）・チェックポイント・監査ログ記録を実行する。
+- **モード 3: 支払い予定明細の手動確定精算 (`action: "settle"`)**
+  - **リクエストボディ**: `{ "action": "settle", "transactionId": "tx_xxx" }`
+  - **処理**: 指定された未精算（`isSettled === false`）明細を支払日到来前であっても即座に `isSettled = true` に確定し、口座残高への減額・移動および監査ログ記録をトランザクション内で実行する。
+
+### 11.3 `PUT /api/recurring-templates`
+- **概要**: 定例支払いテンプレートの編集、または有効/無効（一時停止 `isActive`）の切り替え。
+- **リクエストボディ**:
+  ```json
+  {
+    "id": "tpl_xxx",
+    "type": "expense",
+    "title": "更新後の名称",
+    "amount": 90000,
+    "categoryId": "cat_house",
+    "paymentMethodId": "pm_direct_debit",
+    "fromAccountId": "acc_bank_1",
+    "toAccountId": null,
+    "dayOfMonth": 25,
+    "note": "...",
+    "isActive": true
+  }
+  ```
+  （※一時停止トグルのみの場合は `{ "action": "toggle", "id": "tpl_xxx", "isActive": false }` も受け付ける）
+- **処理**:
+  - 入力バリデーション（金額境界値、クレカ選択時の `withdrawal_day` 自動適用等）を実施。
+  - `recurring_templates` を更新し、監査ログ（`action: "UPDATE", entityType: "recurring_template"`）を記録。
+
+### 11.4 `DELETE /api/recurring-templates?id=...`
+- **概要**: 定例支払いテンプレートの物理削除（既に自動生成された明細は `transactions` 上にそのまま保持される）。
+- **処理**:
+  - テンプレートを削除し、監査ログ（`action: "DELETE", entityType: "recurring_template"`）を記録。
+
+---
+
 ## 改訂履歴
+- **2026-11-20**: 第11章「定例支払いテンプレート & 月次自動追加・精算 API (`/api/recurring-templates`)」を追加（クレカ規定支払日の翌日および任意指定引き落とし日の翌日に次回サイクル分の支払い予定明細を自動生成、支払日到来時または手動確定時の口座残高精算、テンプレートCRUD・一時停止・監査ログ仕様）。
+- **2026-11-20**: 第5章「貯蓄目標 API (`/api/goals`)」を拡張し、`PUT /api/goals`（目標編集・達成済み目標のアーカイブ・進行中への復元）および `DELETE /api/goals`（未達成目標の物理削除・達成済み/アーカイブ済み目標の削除拒否保護・監査ログ記録）の仕様を追加。
 - **2026-11-19**: `POST /api/auth/signup`, `GET/POST /api/auth/invite`, `POST /api/admin/members` におけるエッジケース保護（本番環境での初期デモ管理者アカウント `admin@komame.local` の登録・招待拒否、および招待トークン使用時の招待元世帯承認ステータス `status === "approved"` 検証）を追記。
 - **2026-11-18**: `POST /api/auth/login` および `GET /api/auth/me`（`getCurrentSession()`）において、初期デモ管理者アカウント（`admin@komame.local` / `usr-yamada-taro-001`）をテスト環境（`NODE_ENV !== "production"`）でのみ有効とし、本番環境（`NODE_ENV === "production"`）では認証・セッションを拒否する仕様を追記。
 - **2026-11-18**: 新規世帯登録の申請・許可制導入に伴い、`POST /api/auth/signup`（`pending` 申請受付・スキーマ未作成・セッション未発行）、`POST /api/auth/login`（世帯ステータス別 `403` 応答・`isSuperAdmin` 返却）、`GET /api/auth/me`（`isSuperAdmin` 返却）を更新し、第10章「システム管理者（Super Admin）API (`/api/super-admin/households`)」を追加。

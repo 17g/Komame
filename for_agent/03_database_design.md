@@ -24,6 +24,7 @@ erDiagram
     tenant_transactions ||--o{ tenant_transaction_tags : "tagged"
     tenant_tags ||--o{ tenant_transaction_tags : "tags"
     tenant_transactions ||--o| tenant_incomes : "details"
+    tenant_recurring_templates ||--o{ tenant_transactions : "generates"
     tenant_checkpoints ||--o{ tenant_transactions : "groups"
     tenant_checkpoints ||--o{ tenant_audit_logs : "traces"
 ```
@@ -161,6 +162,7 @@ erDiagram
 | `scheduled_withdrawal_date` | DATE | | カード引き落とし予定日 | - |
 | `checkpoint_id` | VARCHAR(64) | FK(checkpoints.id) SET NULL | チェックポイントID | - |
 | `parent_transaction_id` | VARCHAR(64) | | 親明細ID (投資・積立受入明細のペア紐付け) | - |
+| `recurring_template_id` | VARCHAR(64) | | 生成元の定例支払いテンプレートID (`tpl_xxx`) | - |
 | `deleted_at` | TIMESTAMPTZ | | 削除日時 | **論理削除 (NULL以外で非表示)** |
 | `created_at` | TIMESTAMPTZ | DEFAULT NOW(), NOT NULL | 登録日時 | - |
 | `updated_at` | TIMESTAMPTZ | DEFAULT NOW(), NOT NULL | 更新日時 | - |
@@ -191,7 +193,17 @@ erDiagram
 | `saved_at` | TIMESTAMPTZ | DEFAULT NOW(), NOT NULL | 保存日時 |
 
 #### 10. `savings_goals` (貯蓄目標)
-- `id`, `title`, `target_amount`, `target_date`, `account_ids_json`, `color`, `is_completed`, `created_at`
+| カラム名 | 型 | 制約 | 説明 | 削除ポリシー |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | VARCHAR(64) | PK | 目標ID (`goal_xxx`) | - |
+| `title` | VARCHAR(100) | NOT NULL | 目標タイトル | - |
+| `target_amount` | BIGINT | NOT NULL | 目標金額 (円, `1 <= target_amount <= 9,999,999,999`) | - |
+| `target_date` | DATE | | 目標達成予定日 (YYYY-MM-DD, 任意) | - |
+| `account_ids_json` | JSONB | | 集計対象口座ID配列 (`string[]`) | - |
+| `color` | VARCHAR(20) | | テーマカラーコード | - |
+| `is_completed` | BOOLEAN | DEFAULT FALSE, NOT NULL | 達成フラグ | - |
+| `is_archived` | BOOLEAN | DEFAULT FALSE, NOT NULL | アーカイブフラグ (達成済み目標の履歴保管用) | **未達成のみ物理削除可 / 達成済は削除不可・論理アーカイブ (`is_archived = true`)** |
+| `created_at` | TIMESTAMPTZ | DEFAULT NOW(), NOT NULL | 作成日時 | - |
 
 #### 11. `notifications` (アプリ内通知)
 - `id`, `user_id`, `type`, `title`, `message`, `is_read`, `created_at`
@@ -199,9 +211,30 @@ erDiagram
 #### 12. `audit_logs` (監査ログ)
 - `id`, `user_id`, `operator_user_id`, `action` (`CREATE`/`UPDATE`/`DELETE`/`REVERT`), `entity_type`, `entity_id`, `summary`, `before_data_json`, `after_data_json`, `checkpoint_id`, `created_at`
 
+#### 13. `recurring_templates` (定例支払い・月次自動追加テンプレート)
+| カラム名 | 型 | 制約 | 説明 | 削除ポリシー |
+| :--- | :--- | :--- | :--- | :--- |
+| `id` | VARCHAR(64) | PK | テンプレートID (`tpl_xxx`) | - |
+| `user_id` | VARCHAR(64) | NOT NULL | 作成・最終更新ユーザーID | - |
+| `type` | VARCHAR(20) | NOT NULL | `expense` (定例支出) / `transfer` (定例口座間振替) | - |
+| `title` | VARCHAR(150) | NOT NULL | テンプレート名・店舗/取引先名 (`transactions.shop_name` に転記) | - |
+| `amount` | BIGINT | NOT NULL | 月次支払金額 (円, `1 <= amount <= 9,999,999,999`) | - |
+| `category_id` | VARCHAR(64) | FK(categories.id) SET NULL | 費目ID (支出時) | - |
+| `payment_method_id` | VARCHAR(64) | FK(payment_methods.id) SET NULL | 決済手段ID (支出時) | - |
+| `from_account_id` | VARCHAR(64) | FK(accounts.id) SET NULL | 出金元口座ID (口座間振替時、または口座引き落とし時の明示指定用) | - |
+| `to_account_id` | VARCHAR(64) | FK(accounts.id) SET NULL | 入金先口座ID (口座間振替時、または積立・投資支出時の受入先口座) | - |
+| `day_of_month` | INT | NOT NULL | 毎月の支払基準日・引き落とし日 (`1`〜`28`, `99`:月末)<br>※クレジットカード選択時はカードの `withdrawal_day`（未設定時27）と連動 | - |
+| `note` | TEXT | | 簡易メモ | - |
+| `is_active` | BOOLEAN | DEFAULT TRUE, NOT NULL | 自動追加の有効状態 (`true`: 有効 / `false`: 一時停止) | - |
+| `last_generated_month` | VARCHAR(7) | | 最終自動生成済みの支払サイクル年月 (`'YYYY-MM'`, 二重生成防止用) | **一時停止 (`is_active = false`) または物理削除（生成済明細は保持）** |
+| `created_at` | TIMESTAMPTZ | DEFAULT NOW(), NOT NULL | 作成日時 | - |
+| `updated_at` | TIMESTAMPTZ | DEFAULT NOW(), NOT NULL | 更新日時 | - |
+
 ---
 
 ## 4. 改訂履歴
 
+- **2026-11-20**: 定例支払いテンプレート管理および月次自動支払い予定明細追加機能（要件 2-8）のため、`recurring_templates` テーブル定義および `transactions.recurring_template_id` カラムを追記。
+- **2026-11-20**: `savings_goals` テーブルの定義を詳細化し、達成済み目標のアーカイブ・復元用カラム `is_archived`（`BOOLEAN DEFAULT FALSE NOT NULL`）および削除・アーカイブポリシーを追記。
 - **2026-11-18**: `public.households` テーブルに新規世帯登録の申請・許可制用カラム（`status`, `reviewed_by`, `reviewed_at`, `rejection_reason`）および申請時テナントスキーマ未作成方針を追記。
 - **2026-11-15**: `categories` テーブルに標準12費目保護フラグ `is_system`（`BOOLEAN DEFAULT FALSE NOT NULL`）の仕様を追加。

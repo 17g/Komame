@@ -2,6 +2,35 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-20] 【Phase 15.4】定例支払いテンプレート機能の単体テスト・E2E総合テスト追加と検証完了
+
+### 1. 概要
+要件 2-8 および `Plan.md` Phase 15.4 に基づき、定例支払い（月次固定費・口座間振替）テンプレート管理および自動支払い予定明細追加・精算機能の単体テスト（`scripts/test-recurring-unit.ts`）を新規作成し、E2E総合テスト（`scripts/comprehensive-test.ts`）および運用・検証ガイド（`for_agent/06_operation_and_testing_guide.md`）を更新して全検証を実施した。
+
+### 2. 変更内容 (Before / After)
+1. **定例支払いテンプレート単体テストの新規作成 (`scripts/test-recurring-unit.ts`)**:
+   - Before: `src/lib/recurring-helpers.ts` のバリデーション・サイクル計算・冪等性・自動精算判定ロジックを単独で網羅検証する単体テストスクリプトが存在しなかった。
+   - After: 支払基準日（1〜28日・99:月末）およびテンプレート入力バリデーション、クレジットカード規定引き落とし日（`withdrawalDay || 27`）自動連動、「規定支払日の翌日」からの翌月サイクル・年月跨ぎ・月末丸め込み算出、二重生成防止（`shouldGenerateRecurringCycle`）、支払日到来時の非クレカ自動精算判定（`isDueForAutoSettlement`）、および API/UI 静的コード検査を網羅する単体テストを実装した。
+2. **E2E 総合テストの拡充 (`scripts/comprehensive-test.ts`)**:
+   - Before: 17カテゴリまでが検証対象で、定例支払いテンプレートおよび月次自動同期・精算フローが含まれていなかった。
+   - After: セクション 18「定例支払いテンプレート管理 & 自動支払い予定・精算テスト」を追加し、クレカ規定引き落とし日自動適用、テンプレート編集・一時停止/再開、非クレカ支出の未精算生成〜支払日到来自動精算〜同日再同期冪等性〜支払日翌日同期による翌月サイクル生成、手動確定精算、定例口座間振替の双方向残高連動、テンプレート削除後の生成済み明細保持、およびテストデータクリーンアップを一気通貫で検証できるようにした。
+3. **検証ガイド・進捗管理の更新 (`for_agent/06_operation_and_testing_guide.md`, `Plan.md`)**:
+   - `for_agent/06_operation_and_testing_guide.md` の単体テスト一覧と改訂履歴に `test-recurring-unit.ts` を追記し、`Plan.md` Phase 15（および 15.4）を完了済み（`[x]`）に更新した。
+
+### 3. 変更理由
+- 定例支払いテンプレート機能の境界値・月次サイクル遷移・冪等性・残高整合性を継続的かつ客観的に検証可能にし、Phase 15 の全要件を完了させるため。
+
+### 4. 影響範囲・検証結果
+- 変更・新規作成ファイル: `scripts/test-recurring-unit.ts`（新規）, `scripts/comprehensive-test.ts`, `for_agent/06_operation_and_testing_guide.md`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（24ルートビルド成功）
+  - `npm run db:migrate`: 終了コード 0
+  - `npx tsx scripts/test-recurring-unit.ts`: 全アサーション合格・終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格（`raw.unsafe` 0件）・終了コード 0
+  - `npx tsx scripts/test-goals-unit.ts`: 全テスト合格・終了コード 0
+  - `npx tsx scripts/comprehensive-test.ts`（ローカル PostgreSQL ポート5532・開発サーバー ポート3080 起動下）: 全18カテゴリ合格・終了コード 0（検証後、起動した開発サーバー停止済み）
+
 ## [2026-11-20] 【Phase 15.3】記帳タブ内「定例支払いテンプレート管理」UIおよびアプリ起動時自動同期の実装
 
 ### 1. 概要
