@@ -378,7 +378,7 @@ export function SearchTab({
                     {tx.type === "income" ? "💰" : tx.type === "transfer" ? "🔄" : tx.categoryIcon || "🥦"}
                   </div>
                   <div>
-                    <div className="text-xs font-bold text-content-main flex items-center gap-2">
+                    <div className="text-xs font-bold text-content-main flex items-center gap-2 flex-wrap">
                       <span>
                         {tx.shopName ||
                           (tx.type === "income"
@@ -387,6 +387,12 @@ export function SearchTab({
                             ? t.search.badgeTransfer
                             : "支出明細")}
                       </span>
+                      {Boolean(tx.recurringTemplateId) && !tx.isSettled && (
+                        <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                          {t.recurring.scheduledBadge}
+                          {tx.scheduledWithdrawalDate ? ` (${tx.scheduledWithdrawalDate})` : ""}
+                        </span>
+                      )}
                       {tx.note && (
                         <span className="text-[10px] text-content-subtle font-normal truncate max-w-[150px] sm:max-w-xs">
                           ({tx.note})

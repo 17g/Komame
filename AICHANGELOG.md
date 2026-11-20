@@ -2,6 +2,43 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-20] 【Phase 15.3】記帳タブ内「定例支払いテンプレート管理」UIおよびアプリ起動時自動同期の実装
+
+### 1. 概要
+要件 2-8 および `Plan.md` Phase 15.3 に基づき、記帳タブ（`RegisterTab.tsx`）内に「定例支払いテンプレート管理」セクション（`RecurringTemplatesSection.tsx`）を新設するとともに、ログイン・データ取得時（`src/app/page.tsx`）の `/api/recurring-templates?autoSync=true` 自動同期・トースト通知、明細検索タブ（`SearchTab.tsx`）での未精算定例予定バッジ表示、および日英翻訳キー（`src/lib/i18n.ts`）を実装した。
+
+### 2. 変更内容 (Before / After)
+1. **日英多言語翻訳辞書の拡張 (`src/lib/i18n.ts`)**:
+   - Before: 定例支払いテンプレート管理、支払日連動案内、未精算支払い予定、手動精算確定、および自動同期トースト用の翻訳キーが未定義だった。
+   - After: `translations.ja.recurring` および `translations.en.recurring` を追加し、UI ラベル・案内文・ステータスバッジ・確認ダイアログ・自動同期トーストを日英両対応で整備した。
+2. **定例支払いテンプレート管理UIコンポーネントの新規作成 (`src/components/RecurringTemplatesSection.tsx`)**:
+   - Before: 画面上から定例支払いテンプレートを作成・編集・一時停止・削除・手動同期・精算する UI が存在しなかった。
+   - After:
+     - 「定例支出（クレカ・口座引落・積立等）」と「定例口座間振替（資金移動）」の種別切替に対応した作成・編集共通モーダルを実装した。
+     - クレジットカード選択時はカード規定の引き落とし日（`withdrawalDay`、未設定時は 27 日）を自動表示して日付手入力を不要とし、非クレカ支出・口座間振替選択時は `1〜28日` または `99: 月末` のセレクトボックスを表示して「支払日の翌日に次回サイクル分が自動追加される」案内を表示するようにした。
+     - 登録済みテンプレート一覧カードに種別・状態・クレカ連動バッジ・費目/決済手段/口座・支払日・最終生成サイクルを表示し、編集・有効/一時停止トグル・削除（生成済み明細保持の確認モーダル付き）操作および「今すぐ月次同期」ボタンを実装した。
+     - `transactions` から未精算の定例支払い予定明細（`Boolean(tx.recurringTemplateId) && !tx.isSettled`）を抽出し、予定日と「今すぐ精算 (残高反映)」ボタンを配置した。
+3. **記帳タブ・メイン画面・明細一覧の連携 (`src/components/RegisterTab.tsx`, `src/app/page.tsx`, `src/components/SearchTab.tsx`)**:
+   - Before: `src/app/page.tsx` の `fetchAllData()` で `/api/recurring-templates?autoSync=true` が呼ばれておらず、`RegisterTab.tsx` にもテンプレート管理 UI が組み込まれていなかった。また `SearchTab.tsx` で未精算の定例予定明細を識別するバッジがなかった。
+   - After:
+     - `src/app/page.tsx`: `fetchAllData()` の冒頭で `/api/recurring-templates?autoSync=true` を実行し、自動生成または自動精算が行われた場合にトースト通知を表示した上で、最新の口座残高・明細等を取得するよう実装した。また `recurringTemplates`・`transactions`・`onRefreshData` を `RegisterTab` に渡した。
+     - `src/components/RegisterTab.tsx`: `RecurringTemplatesSection` を記帳タブ内に組み込んだ。
+     - `src/components/SearchTab.tsx`: 定例支払い由来の未精算明細に対し「支払い予定 (未精算) (YYYY-MM-DD)」バッジを表示するようにした。
+
+### 3. 変更理由
+- 毎月の固定費・積立投資・定期振替をUIから直感的にテンプレート管理し、アプリ利用開始時の自動同期による予定明細追加・自動精算と手動精算確定、および明細検索画面での視認性を確保するため。
+
+### 4. 影響範囲・検証結果
+- 変更・新規作成ファイル: `src/lib/i18n.ts`, `src/components/RecurringTemplatesSection.tsx`（新規）, `src/components/RegisterTab.tsx`, `src/app/page.tsx`, `src/components/SearchTab.tsx`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（24ルートビルド成功）
+  - `npm run db:migrate`: 終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格（`raw.unsafe` 0件）・終了コード 0
+  - `npx tsx scripts/test-unit-calculator.ts`: 全テスト合格・終了コード 0
+  - `npx tsx scripts/comprehensive-test.ts`（ローカル開発サーバー ポート3080 起動下）: 全17カテゴリ合格・終了コード 0
+  - Playwright による実ブラウザ E2E 動作検証（Edge headless / `http://localhost:3080`）: ログイン時の `/api/recurring-templates?autoSync=true` 呼び出し、記帳タブ内テンプレート管理セクション表示、クレカ規定引き落とし日自動連動表示、非クレカ・口座間振替フォーム切替、テンプレート作成・手動同期・`SearchTab` 未精算バッジ表示・一時停止/再開・編集・手動精算・削除（およびテスト明細クリーンアップ）の全フローがコンソール/ページエラー 0 件でパス（検証後サーバー停止済み）
+
 ## [2026-11-20] 【Phase 15.2】定例支払いテンプレート & 月次自動追加・精算 API の実装
 
 ### 1. 概要

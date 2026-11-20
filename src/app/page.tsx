@@ -22,6 +22,7 @@ import {
   TransactionItem,
   SavingsGoalItem,
   TagItem,
+  RecurringTemplateItem,
 } from "@/types";
 import { ArrowRight, CheckCircle2, Clock, ShieldAlert } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
@@ -74,6 +75,7 @@ export default function Home() {
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [goals, setGoals] = useState<SavingsGoalItem[]>([]);
   const [tags, setTags] = useState<TagItem[]>([]);
+  const [recurringTemplates, setRecurringTemplates] = useState<RecurringTemplateItem[]>([]);
 
   // 通知状態 (アプリ内通知ボックス)
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -143,9 +145,30 @@ export default function Home() {
     checkSession();
   }, []);
 
-  // 全データ取得
+  // 全データ取得 (初回・更新時に定例支払いの月次自動同期も実行)
   const fetchAllData = async () => {
     try {
+      try {
+        const recRes = await fetch("/api/recurring-templates?autoSync=true");
+        if (recRes.ok) {
+          const recData = await recRes.json();
+          setRecurringTemplates(recData.templates || []);
+          const syncResult = recData.syncResult;
+          if (syncResult && (syncResult.generatedCount > 0 || syncResult.settledCount > 0)) {
+            const parts: string[] = [];
+            if (syncResult.generatedCount > 0) {
+              parts.push(`${t.recurring.autoSyncGenerated} ${syncResult.generatedCount}${t.recurring.countUnit}`);
+            }
+            if (syncResult.settledCount > 0) {
+              parts.push(`${t.recurring.autoSyncSettled} ${syncResult.settledCount}${t.recurring.countUnit}`);
+            }
+            triggerToast(`${t.recurring.autoSyncToastPrefix} ${parts.join(" / ")}`);
+          }
+        }
+      } catch {
+        // ignore recurring auto-sync failure so core data still loads
+      }
+
       const [accRes, catRes, txRes, goalRes, tagRes] = await Promise.all([
         fetch("/api/accounts"),
         fetch("/api/categories"),
@@ -492,7 +515,10 @@ export default function Home() {
               paymentMethods={paymentMethods}
               accounts={accounts}
               tags={tags}
+              recurringTemplates={recurringTemplates}
+              transactions={transactions}
               onRefreshTags={fetchAllData}
+              onRefreshData={fetchAllData}
               onSubmitSuccess={() => {
                 fetchAllData();
                 setIsRegisterDirty(false);

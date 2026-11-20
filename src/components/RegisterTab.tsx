@@ -1,7 +1,16 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { CategoryItem, PaymentMethodItem, AccountItem, SuggestionItem, SuggestionResult, TagItem } from "@/types";
+import {
+  CategoryItem,
+  PaymentMethodItem,
+  AccountItem,
+  SuggestionItem,
+  SuggestionResult,
+  TagItem,
+  RecurringTemplateItem,
+  TransactionItem,
+} from "@/types";
 import { Sparkles, Save, Check, Plus, Trash2, RotateCcw, Clock, AlertTriangle, X, ArrowRightLeft, TrendingUp, Tag } from "lucide-react";
 import { HelpTooltip } from "./HelpTooltip";
 import {
@@ -10,6 +19,7 @@ import {
   UnitPriceCalculatorPanel,
   UnitPriceCalculatorToggle,
 } from "./UnitPriceCalculator";
+import { RecurringTemplatesSection } from "./RecurringTemplatesSection";
 import { formatCurrency } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 
@@ -18,7 +28,10 @@ interface RegisterTabProps {
   paymentMethods: PaymentMethodItem[];
   accounts?: AccountItem[];
   tags?: TagItem[];
+  recurringTemplates?: RecurringTemplateItem[];
+  transactions?: TransactionItem[];
   onRefreshTags?: () => void;
+  onRefreshData?: () => Promise<void> | void;
   onSubmitSuccess: () => void;
   onTriggerToast: (msg: string) => void;
   onDirtyChange?: (isDirty: boolean) => void;
@@ -103,7 +116,10 @@ export function RegisterTab({
   paymentMethods,
   accounts = [],
   tags = [],
+  recurringTemplates = [],
+  transactions = [],
   onRefreshTags,
+  onRefreshData,
   onSubmitSuccess,
   onTriggerToast,
   onDirtyChange,
@@ -1681,6 +1697,17 @@ export function RegisterTab({
           </div>
         </form>
       </div>
+
+      {/* 定例支払いテンプレート管理 & 未精算支払い予定一覧 (要件 2-8) */}
+      <RecurringTemplatesSection
+        templates={recurringTemplates}
+        transactions={transactions}
+        categories={categories}
+        paymentMethods={paymentMethods}
+        accounts={accounts}
+        onRefreshAll={onRefreshData || onRefreshTags || onSubmitSuccess}
+        onTriggerToast={onTriggerToast}
+      />
 
       {/* 手動一時保存データ未呼び出し時の上書き破棄 警告モーダル */}
       {showDraftWarningModal && (

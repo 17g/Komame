@@ -399,7 +399,7 @@
   - `src/app/api/transactions/route.ts` & `src/app/api/admin/revert/route.ts`:
     - `GET /api/transactions` の返却フィールドに `recurringTemplateId` を含め、未精算（`isSettled === false`）の定例支払い予定明細を更新・削除・24hリバートした際も、`isSettled` 状態に応じて二重減額や不正な残高逆算が起きないよう残高整合性を保証する。
 
-- [ ] **15.3 記帳タブ内「定例支払いテンプレート管理」UIおよびアプリ起動時自動同期の実装 (`src/components/RegisterTab.tsx`, `src/app/page.tsx`, `src/lib/i18n.ts`)**:
+- [x] **15.3 記帳タブ内「定例支払いテンプレート管理」UIおよびアプリ起動時自動同期の実装 (`src/components/RegisterTab.tsx`, `src/app/page.tsx`, `src/lib/i18n.ts`)**:
   - `src/lib/i18n.ts`: 定例支払いテンプレート管理および支払い予定（未精算）・精算確定に関する日英翻訳キーを追加する。
   - `src/components/RegisterTab.tsx`:
     - 記帳タブ内に「定例支払いテンプレート管理」セクション（テンプレート一覧・新規作成/編集フォーム・手動同期・未精算支払い予定一覧）を追加する。
