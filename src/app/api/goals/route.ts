@@ -317,6 +317,13 @@ export async function PUT(req: NextRequest) {
         throw new ApiHttpError(404, "指定された貯蓄目標が見つかりません。");
       }
 
+      if (target.isArchived) {
+        throw new ApiHttpError(
+          400,
+          "アーカイブ済みの目標は直接編集できません。先に進行中一覧へ復元してください。"
+        );
+      }
+
       const [updated] = await tx
         .update(schema.savingsGoals)
         .set({

@@ -299,6 +299,11 @@ assert(
   goalsApiSource.includes("db.transaction(") && goalsApiSource.includes("auditLogs"),
   "/api/goals が db.transaction 内で監査ログ (auditLogs) を記録している"
 );
+assert(
+  goalsApiSource.includes("if (target.isArchived)") &&
+    goalsApiSource.includes("アーカイブ済みの目標は直接編集できません"),
+  "/api/goals の PUT(update) がアーカイブ済み目標の直接編集を拒否する保護ガードを実装している"
+);
 
 const goalsTabSource = fs
   .readFileSync(path.join(projectRoot, "src/components/GoalsTab.tsx"), "utf-8")

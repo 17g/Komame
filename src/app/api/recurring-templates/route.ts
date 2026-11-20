@@ -338,11 +338,6 @@ async function settleRecurringTransactionInTx(params: {
     }
 
     if (txRecord.toAccountId) {
-      await tx
-        .update(schema.accounts)
-        .set({ balance: sql`${schema.accounts.balance} + ${txRecord.amount}` })
-        .where(eq(schema.accounts.id, txRecord.toAccountId));
-
       const [existingLinked] = await tx
         .select({ id: schema.transactions.id })
         .from(schema.transactions)
@@ -354,7 +349,13 @@ async function settleRecurringTransactionInTx(params: {
         )
         .limit(1);
 
+      // 既に受入明細が存在する場合（非定例クレカ積立投資等）は受入口座への二重加算を防止
       if (!existingLinked) {
+        await tx
+          .update(schema.accounts)
+          .set({ balance: sql`${schema.accounts.balance} + ${txRecord.amount}` })
+          .where(eq(schema.accounts.id, txRecord.toAccountId));
+
         const [destAcc] = await tx
           .select({ name: schema.accounts.name })
           .from(schema.accounts)

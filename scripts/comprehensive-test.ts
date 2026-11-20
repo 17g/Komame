@@ -1090,6 +1090,23 @@ ${dupCheckDate},${dupCheckShop},${dupCheckAmount},食費,,重複検証用
     "アーカイブ済み目標の削除試行が 400 で拒否保護されることを確認"
   );
 
+  const editArchivedRes = await apiFetch("/api/goals", {
+    method: "PUT",
+    body: JSON.stringify({
+      action: "update",
+      id: achievedGoalId,
+      title: "アーカイブ直接編集テスト",
+      targetAmount: 60000,
+      targetDate: null,
+      accountIds: [goalTestAccId],
+      color: "#0D9488",
+    }),
+  });
+  assert(
+    editArchivedRes.status === 400,
+    "アーカイブ済み目標の直接編集試行が 400 で拒否保護されることを確認"
+  );
+
   const restoreGoalRes = await apiFetch("/api/goals", {
     method: "PUT",
     body: JSON.stringify({

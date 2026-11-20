@@ -526,6 +526,12 @@ assert(
     recurringApiSource.includes("existingCycleTx"),
   "/api/recurring-templates が db.transaction 内で監査ログ記録と同一サイクル重複生成ガードを実施している"
 );
+assert(
+  recurringApiSource.indexOf("if (!existingLinked)") !== -1 &&
+    recurringApiSource.indexOf("if (!existingLinked)") <
+      recurringApiSource.indexOf("schema.accounts.balance} + ${txRecord.amount}", recurringApiSource.indexOf("if (!existingLinked)")),
+  "/api/recurring-templates の精算処理が既存受入明細の有無を確認した上で受入口座へ加算し二重加算を防止している"
+);
 
 const transactionsApiSource = fs
   .readFileSync(path.join(projectRoot, "src/app/api/transactions/route.ts"), "utf-8")
@@ -540,8 +546,12 @@ const revertApiSource = fs
   .readFileSync(path.join(projectRoot, "src/app/api/admin/revert/route.ts"), "utf-8")
   .replace(/\r\n/g, "\n");
 assert(
-  revertApiSource.includes("recurringTemplateId") && revertApiSource.includes("!t.isSettled"),
-  "/api/admin/revert が未精算の定例支払い予定明細リバート時の誤った残高逆算を防止している"
+  revertApiSource.includes("recurringTemplateId") &&
+    revertApiSource.includes("!t.isSettled") &&
+    revertApiSource.includes("t.deletedAt != null") &&
+    revertApiSource.includes("affectedRecurringTemplateIds") &&
+    revertApiSource.includes("settledExistingTxIds"),
+  "/api/admin/revert が未精算定例明細・論理削除済明細二重返戻防止・既存明細精算ロールバック・lastGeneratedMonth再同期を実装している"
 );
 
 const recurringUiSource = fs

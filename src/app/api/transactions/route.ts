@@ -824,7 +824,7 @@ export async function PUT(req: NextRequest) {
         afterDataJson: {
           date: targetDate,
           amount: newAmount,
-          categoryId,
+          categoryId: targetCategoryId,
           paymentMethodId: targetPmId,
           toAccountId: targetToAccountId,
           shopName: targetShopName,

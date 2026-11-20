@@ -2,6 +2,41 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-20] 【全体レビュー】仕様整合性点検・会計/リバートエッジケース保護強化・仕様書最新化および全テスト検証
+
+### 1. 概要
+`/review` スキルに基づき、`for_agent/` 配下の全仕様書と実装コード全体（Phase 14 貯蓄目標管理、Phase 15 定例支払いテンプレート管理および既存の会計・24時間リバート処理）を突き合わせ点検した。精査により発見した会計整合性・履歴保護のエッジケースを改修し、単体テスト・E2E総合テスト・仕様書およびガードレールを最新化した上で、型チェック・本番フルビルド・全10種単体テスト・実サーバー E2E 総合テスト（全18カテゴリ）およびエッジケース実機検証をすべて実施・合格確認した。
+
+### 2. 変更内容 (Before / After)
+1. **定例支払い精算時の積立受入口座二重加算防止 (`src/app/api/recurring-templates/route.ts`)**:
+   - Before: `settleRecurringTransactionInTx()` で `txRecord.toAccountId` への残高加算を `existingLinked`（既存受入明細）の有無確認前に無条件実行していたため、既に受入明細が存在する明細（非定例クレカ積立投資等）を手動精算した場合に受入口座へ二重加算される恐れがあった。
+   - After: 連動受入明細（`parentTransactionId === txRecord.id`）の存在を先に確認し、未存在（`!existingLinked`）の場合にのみ受入口座加算と受入明細作成を行う構造へ修正した。
+2. **24時間チェックポイントリバート時の二重返戻防止・既存明細精算ロールバック・`lastGeneratedMonth` 再同期 (`src/app/api/admin/revert/route.ts`)**:
+   - Before: チェックポイント以降に作成され既に論理削除（`deletedAt != null`）で残高ロールバック済みの明細にも残高返戻が再度走り二重返戻となるエッジケース、チェックポイント以前の作成明細がチェックポイント以降に手動/自動精算された場合の残高巻き戻し漏れ、およびリバートで削除された定例支払い予定明細に紐づく `recurring_templates.last_generated_month` が更新されたまま残る不整合が存在した。
+   - After: 論理削除済み明細（`t.deletedAt != null`）を残高逆算からスキップして二重返戻を防止し、チェックポイント以降に `isSettled: false -> true` となった既存明細の残高復元と `isSettled = false` 復帰（受入明細削除有無に応じた二重減額防止含む）、およびリバート対象テンプレートの `lastGeneratedMonth` を残存未削除親明細の最新サイクル月（なければ `null`）へ再同期する処理を追加した。
+3. **アーカイブ済み貯蓄目標の直接編集保護ガード追加 (`src/app/api/goals/route.ts`)**:
+   - Before: `PUT /api/goals`（`action: "update"`）が `target.isArchived === true` の目標に対しても直接編集を受け付けていた。
+   - After: アーカイブ済み目標の直接編集を `400 Bad Request`（「アーカイブ済みの目標は直接編集できません。先に進行中一覧へ復元してください。」）で拒否し、達成履歴の保護と UI 仕様の整合性を強化した。
+4. **明細更新時の監査ログ記録値の正規化修正 (`src/app/api/transactions/route.ts`)**:
+   - Before: `PUT /api/transactions` の監査ログ `afterDataJson` に未正規化の `categoryId` を記録していた。
+   - After: 正規化後の `targetCategoryId` を記録するよう修正した。
+5. **単体テスト・総合テスト・仕様書・ガードレールの同期更新**:
+   - `scripts/test-goals-unit.ts`, `scripts/test-recurring-unit.ts`, `scripts/comprehensive-test.ts`: 今回のエッジケース保護（アーカイブ済み目標直接編集拒否、精算時受入二重加算防止、24hリバート二重返戻防止・精算ロールバック・`lastGeneratedMonth` 再同期）の検証アサーションを追加した。
+   - `for_agent/00_system_overview.md`, `for_agent/04_api_specifications.md`, `for_agent/guardrails.md`: 最新機能概要およびエッジケース保護仕様・再発防止ガードレール（3.5節）を反映し、各ファイルの改訂履歴を追記した。
+
+### 3. 変更理由
+- 全機能実装後の総合レビューにおいて、実運用時の複雑な操作シーケンス（明細作成→論理削除→24hリバート、定例予定生成→別チェックポイントでの精算→24hリバート、アーカイブ済み目標への直接API更新）における残高・データ不整合リスクを未然に解消し、仕様書正本と実装の完全一致を保証するため。
+
+### 4. 影響範囲・検証結果
+- 変更ファイル: `src/app/api/recurring-templates/route.ts`, `src/app/api/admin/revert/route.ts`, `src/app/api/goals/route.ts`, `src/app/api/transactions/route.ts`, `scripts/test-goals-unit.ts`, `scripts/test-recurring-unit.ts`, `scripts/comprehensive-test.ts`, `for_agent/00_system_overview.md`, `for_agent/04_api_specifications.md`, `for_agent/guardrails.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（全24ルート・Standalone 本番ビルド成功）
+  - `npm run db:migrate`: 終了コード 0
+  - 全10種単体テスト（`test-csv-unit.ts`, `test-members-unit.ts`, `test-auth-session-unit.ts`, `test-rate-limit-csrf.ts`, `test-categories-unit.ts`, `test-unit-calculator.ts`, `test-household-approval-unit.ts`, `test-goals-unit.ts`, `test-recurring-unit.ts`, `test-security-unit.ts`）: 全テスト合格・終了コード 0（`raw.unsafe` 0件）
+  - `npx tsx scripts/comprehensive-test.ts`（ローカル PostgreSQL ポート5532・開発サーバー ポート3080 起動下）: 全18カテゴリ完全合格・終了コード 0
+  - エッジケース実機検証スクリプト（論理削除済明細リバート二重返戻防止、定例精算チェックポイントリバート残高/未精算復帰、リバート後 `lastGeneratedMonth` 再同期）: 全アサーション合格・終了コード 0（検証後、起動した開発サーバー停止済み）
+
 ## [2026-11-20] 【Phase 15.4】定例支払いテンプレート機能の単体テスト・E2E総合テスト追加と検証完了
 
 ### 1. 概要
