@@ -108,6 +108,7 @@ export interface TransactionItem {
   isSettled: boolean;
   scheduledWithdrawalDate?: string;
   parentTransactionId?: string;
+  recurringTemplateId?: string;
   tags?: TagItem[];
   createdAt: string;
 }
@@ -237,5 +238,32 @@ export interface SystemSettingsConfig {
   currencySymbol: string;
   dateFormat: string;
   passwordPolicy: PasswordPolicyConfig;
+}
+
+export type RecurringTemplateType = "expense" | "transfer";
+
+export interface RecurringTemplateItem {
+  id: string;
+  userId: string;
+  type: RecurringTemplateType;
+  title: string;
+  amount: number;
+  categoryId?: string | null;
+  categoryName?: string | null;
+  categoryIcon?: string | null;
+  categoryColor?: string | null;
+  paymentMethodId?: string | null;
+  paymentMethodName?: string | null;
+  paymentMethodType?: PaymentMethodItem["type"] | null;
+  fromAccountId?: string | null;
+  fromAccountName?: string | null;
+  toAccountId?: string | null;
+  toAccountName?: string | null;
+  dayOfMonth: number; // 1-28 or 99 (月末)
+  note?: string | null;
+  isActive: boolean;
+  lastGeneratedMonth?: string | null;
+  createdAt: string;
+  updatedAt?: string;
 }
 

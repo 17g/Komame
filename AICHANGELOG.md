@@ -2,6 +2,39 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-20] 【Phase 15.1】定例支払いテンプレート用DBスキーマ・マイグレーション・型定義・月次サイクル計算ヘルパーの実装
+
+### 1. 概要
+要件 2-8 および `Plan.md` Phase 15.1 に基づき、定例支払い（月次固定費・口座間振替）テンプレート管理および自動支払い予定明細追加機能の基盤となるテナントDBスキーマ定義（`recurring_templates` および `transactions.recurring_template_id`）、冪等マイグレーション DDL・インデックス、TypeScript 型定義、ならびにバリデーション・月次サイクル算出・自動精算判定純粋関数ヘルパー（`src/lib/recurring-helpers.ts`）を実装した。
+
+### 2. 変更内容 (Before / After)
+1. **テナントDBスキーマ定義の拡張 (`src/db/schema/tenant.ts`)**:
+   - Before: `recurring_templates` テーブルおよび `transactions.recurringTemplateId` カラムが未定義だった。
+   - After: `recurringTemplates` テーブル（`id`, `userId`, `type`, `title`, `amount`, `categoryId`, `paymentMethodId`, `fromAccountId`, `toAccountId`, `dayOfMonth`, `note`, `isActive`, `lastGeneratedMonth`, `createdAt`, `updatedAt`）と `transactions.recurringTemplateId` カラムを追加した。
+2. **テナントマイグレーション DDL・インデックスの追加 (`src/db/migrate.ts`)**:
+   - Before: テナント作成・更新時に定例支払い用テーブル・カラムが作成されなかった。
+   - After: `createTenantTables()` に `recurring_templates` テーブル作成 DDL、`transactions.recurring_template_id` カラム作成および既存テナント向け `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`、さらに `idx_*_tx_recurring_tpl` および `idx_*_recurring_tpl_active` インデックスを追加した。
+3. **型定義の追加 (`src/types/index.ts`)**:
+   - Before: 定例支払いテンプレート型が未定義で、`TransactionItem` にも `recurringTemplateId` がなかった。
+   - After: `RecurringTemplateType` (`"expense" | "transfer"`) および `RecurringTemplateItem` 型を新設し、`TransactionItem` に `recurringTemplateId?: string` を追加した。
+4. **定例支払いバリデーション・月次サイクル算出ヘルパーの新規作成 (`src/lib/recurring-helpers.ts`)**:
+   - Before: 定例支払いテンプレートの入力検証、クレカ引き落とし日自動適用、および月次サイクル判定ロジックが存在しなかった。
+   - After: `validateRecurringTemplateInput`（名称 1〜150文字、金額 `1〜9,999,999,999`、種別 `expense | transfer`、振替時の `fromAccountId !== toAccountId` 必須、支払基準日 `1〜28` / `99`:月末）、`resolveEffectiveDayOfMonth`（クレカ選択時の `withdrawalDay || 27` 自動適用）、`resolveTargetCycleAndDates`（基準日当日までは当月 `YYYY-MM`、翌日以降は翌月 `YYYY-(MM+1)` を算出するタイムゾーン非依存純粋関数）、`shouldGenerateRecurringCycle`（二重生成防止）、および `isDueForAutoSettlement`（支払予定日到来済み・未精算・非クレカ明細の自動精算判定）を実装した。
+
+### 3. 変更理由
+- 後続の Phase 15.2（`/api/recurring-templates` API および `transactions` / `revert` 連携）および Phase 15.3（記帳タブ UI・自動同期）で安全かつ一貫したデータモデル・月次サイクル判定を利用できるようにするため。
+
+### 4. 影響範囲・検証結果
+- 変更・新規作成ファイル: `src/db/schema/tenant.ts`, `src/db/migrate.ts`, `src/types/index.ts`, `src/lib/recurring-helpers.ts`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（23ルートビルド成功）
+  - `npm run db:up` / `npm run db:seed` / `npm run db:migrate`: 終了コード 0（`tenant_yamada_001` への `recurring_templates` テーブル・`recurring_template_id` カラム・インデックス反映確認）
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格・終了コード 0
+  - `npx tsx scripts/test-goals-unit.ts`: 全テスト合格・終了コード 0
+  - `npx tsx scripts/comprehensive-test.ts`（ローカル開発サーバー ポート3080 起動下）: 全17カテゴリ合格・終了コード 0（検証後サーバー停止済み）
+
+
 ## [2026-11-20] 【運用ルール改訂】ローカル開発サーバー・PostgreSQL起動による動作検証の原則必須化
 
 ### 1. 概要

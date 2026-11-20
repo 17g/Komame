@@ -104,6 +104,7 @@ export function createTenantSchema(schemaName: string) {
       onDelete: "set null",
     }),
     parentTransactionId: varchar("parent_transaction_id", { length: 64 }), // 親明細ID (投資・振替受入等のペア紐付け用)
+    recurringTemplateId: varchar("recurring_template_id", { length: 64 }), // 生成元の定例支払いテンプレートID (tpl_xxx)
     deletedAt: timestamp("deleted_at", { withTimezone: true }), // 論理削除
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -192,6 +193,34 @@ export function createTenantSchema(schemaName: string) {
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   });
 
+  // 13. 定例支払い・月次自動追加テンプレート
+  const recurringTemplates = schema.table("recurring_templates", {
+    id: varchar("id", { length: 64 }).primaryKey(),
+    userId: varchar("user_id", { length: 64 }).notNull(),
+    type: varchar("type", { length: 20 }).notNull(), // 'expense' | 'transfer'
+    title: varchar("title", { length: 150 }).notNull(),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    categoryId: varchar("category_id", { length: 64 }).references(() => categories.id, {
+      onDelete: "set null",
+    }),
+    paymentMethodId: varchar("payment_method_id", { length: 64 }).references(
+      () => paymentMethods.id,
+      { onDelete: "set null" }
+    ),
+    fromAccountId: varchar("from_account_id", { length: 64 }).references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    toAccountId: varchar("to_account_id", { length: 64 }).references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    dayOfMonth: integer("day_of_month").notNull(), // 1〜28, 99:月末
+    note: text("note"),
+    isActive: boolean("is_active").default(true).notNull(),
+    lastGeneratedMonth: varchar("last_generated_month", { length: 7 }), // 'YYYY-MM'
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  });
+
   return {
     accounts,
     accountReservations,
@@ -206,6 +235,7 @@ export function createTenantSchema(schemaName: string) {
     savingsGoals,
     notifications,
     auditLogs,
+    recurringTemplates,
   };
 }
 

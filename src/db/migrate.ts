@@ -164,6 +164,7 @@ export async function createTenantTables(schemaName: string) {
       scheduled_withdrawal_date DATE,
       checkpoint_id VARCHAR(64) REFERENCES "${schemaName}".checkpoints(id) ON DELETE SET NULL,
       parent_transaction_id VARCHAR(64),
+      recurring_template_id VARCHAR(64),
       deleted_at TIMESTAMP WITH TIME ZONE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
@@ -236,12 +237,31 @@ export async function createTenantTables(schemaName: string) {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS "${schemaName}".recurring_templates (
+      id VARCHAR(64) PRIMARY KEY,
+      user_id VARCHAR(64) NOT NULL,
+      type VARCHAR(20) NOT NULL,
+      title VARCHAR(150) NOT NULL,
+      amount BIGINT NOT NULL,
+      category_id VARCHAR(64) REFERENCES "${schemaName}".categories(id) ON DELETE SET NULL,
+      payment_method_id VARCHAR(64) REFERENCES "${schemaName}".payment_methods(id) ON DELETE SET NULL,
+      from_account_id VARCHAR(64) REFERENCES "${schemaName}".accounts(id) ON DELETE SET NULL,
+      to_account_id VARCHAR(64) REFERENCES "${schemaName}".accounts(id) ON DELETE SET NULL,
+      day_of_month INT NOT NULL,
+      note TEXT,
+      is_active BOOLEAN DEFAULT TRUE NOT NULL,
+      last_generated_month VARCHAR(7),
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+    );
+
     -- 既存テーブルの列拡張 (VARCHAR 36 -> 64)
     ALTER TABLE "${schemaName}".drafts ALTER COLUMN id TYPE VARCHAR(64);
     ALTER TABLE "${schemaName}".drafts ALTER COLUMN user_id TYPE VARCHAR(64);
     ALTER TABLE "${schemaName}".checkpoints ALTER COLUMN id TYPE VARCHAR(64);
     ALTER TABLE "${schemaName}".transactions ALTER COLUMN id TYPE VARCHAR(64);
     ALTER TABLE "${schemaName}".transactions ADD COLUMN IF NOT EXISTS parent_transaction_id VARCHAR(64);
+    ALTER TABLE "${schemaName}".transactions ADD COLUMN IF NOT EXISTS recurring_template_id VARCHAR(64);
     ALTER TABLE "${schemaName}".savings_goals ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT FALSE NOT NULL;
     ALTER TABLE "${schemaName}".categories ADD COLUMN IF NOT EXISTS is_system BOOLEAN DEFAULT FALSE NOT NULL;
     UPDATE "${schemaName}".categories
@@ -257,6 +277,8 @@ export async function createTenantTables(schemaName: string) {
     CREATE INDEX IF NOT EXISTS "idx_${schemaName}_tx_cat" ON "${schemaName}".transactions(category_id);
     CREATE INDEX IF NOT EXISTS "idx_${schemaName}_tx_user" ON "${schemaName}".transactions(user_id);
     CREATE INDEX IF NOT EXISTS "idx_${schemaName}_tx_parent" ON "${schemaName}".transactions(parent_transaction_id);
+    CREATE INDEX IF NOT EXISTS "idx_${schemaName}_tx_recurring_tpl" ON "${schemaName}".transactions(recurring_template_id);
+    CREATE INDEX IF NOT EXISTS "idx_${schemaName}_recurring_tpl_active" ON "${schemaName}".recurring_templates(is_active);
     CREATE INDEX IF NOT EXISTS "idx_${schemaName}_audit_time" ON "${schemaName}".audit_logs(created_at);
   `);
 

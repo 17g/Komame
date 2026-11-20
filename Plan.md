@@ -380,7 +380,7 @@
 
 ## Phase 15: 定例支払い（月次固定費・振替）テンプレート管理 & 自動支払い予定明細追加機能の実装（要件 2-8）
 
-- [ ] **15.1 テナントDBスキーマ・マイグレーション・型定義・月次サイクル計算ヘルパーの追加 (`src/db/schema/tenant.ts`, `src/db/migrate.ts`, `src/types/index.ts`, `src/lib/recurring-helpers.ts`)**:
+- [x] **15.1 テナントDBスキーマ・マイグレーション・型定義・月次サイクル計算ヘルパーの追加 (`src/db/schema/tenant.ts`, `src/db/migrate.ts`, `src/types/index.ts`, `src/lib/recurring-helpers.ts`)**:
   - `src/db/schema/tenant.ts`: `recurring_templates` テーブル定義を追加し、`transactions` テーブルに `recurringTemplateId: varchar("recurring_template_id", { length: 64 })` カラムを追加する。
   - `src/db/migrate.ts`: `createTenantTables()` に `recurring_templates` テーブル作成 DDL、`transactions.recurring_template_id` の `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`、およびインデックスを追加する。
   - `src/types/index.ts`: `RecurringTemplateItem` 型および `TransactionItem` への `recurringTemplateId?: string` を追加する。
