@@ -2,6 +2,40 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-22] 【Phase 16.1】口座・決済手段種別の表示名称変更（「デビットカード」→「引落・デビットカード」）および既存互換正規化の実装
+
+### 1. 概要
+要件 8, 10, 11、UI/UX 仕様書 5.1、および `Plan.md` Phase 16.1 に基づき、決済手段種別の表示名称解決・編集フォーム用正規化ヘルパーを `src/lib/utils.ts` へ実装し、口座タブ（`AccountsTab.tsx`）・決済手段追加モーダル（`AddAccountModal.tsx`）・決済手段編集モーダル（`EditPaymentMethodModal.tsx`）の種別表示を「引落・デビットカード」へ統一した。また、単体テスト・静的検査スクリプト（`scripts/test-payment-method-unit.ts`）を追加し、検証ガイド（`for_agent/06_operation_and_testing_guide.md`）を最新化した。
+
+### 2. 変更内容 (Before / After)
+1. **決済手段種別表示ラベル・正規化ヘルパーの実装 (`src/lib/utils.ts`)**:
+   - Before: 各UIコンポーネント内に決済手段種別の表示ラベル文字列（「デビットカード」等）やセレクト選択肢が個別にハードコードされており、既存互換の `direct_debit` 種別が口座タブ上で「現金」へフォールバック表示されたり、編集モーダルで銀行口座限定制約が適用されない不整合があった。
+   - After: `EditablePaymentMethodType`、`PAYMENT_METHOD_TYPE_OPTIONS`（4種：`credit_card` / `qr_code` / `debit_card` / `cash`）、`normalizePaymentMethodType()`（`direct_debit` を `debit_card` へ正規化）、および `getPaymentMethodTypeLabel()`（`debit_card`・`direct_debit` ともに「引落・デビットカード」を返却）を純粋関数・共通定数として追加した。
+2. **口座タブの種別バッジ表示統一 (`src/components/AccountsTab.tsx`)**:
+   - Before: 三項演算子で `pm.type === "debit_card"` を `"デビットカード"` として表示しており、`direct_debit` は `"現金"` へフォールバックしていた。
+   - After: `getPaymentMethodTypeLabel(pm.type)` へ置換し、`debit_card` および既存互換の `direct_debit` をともに「引落・デビットカード」として統一表示するよう改修した。
+3. **決済手段追加モーダルの選択肢更新 (`src/components/AddAccountModal.tsx`)**:
+   - Before: `<option value="debit_card">デビットカード</option>` とハードコードされていた。
+   - After: `PAYMENT_METHOD_TYPE_OPTIONS` を用いたレンダリングへ統一し、`debit_card` の表示名称を「引落・デビットカード」へ変更した（DB内部値 `debit_card`・銀行口座のみ選択可の制約・通常登録時の即時減額等の既存挙動は維持）。
+4. **決済手段編集モーダルの選択肢更新と `direct_debit` 互換統一 (`src/components/EditPaymentMethodModal.tsx`)**:
+   - Before: `paymentMethod.type` を未正規のまま state へ保持し、`<option value="debit_card">デビットカード</option>` を表示していたため、`direct_debit` データを開いた際にセレクト表示および銀行口座限定制約が整合しなかった。
+   - After: 初期化時に `normalizePaymentMethodType(paymentMethod.type)` で `direct_debit` を `debit_card` へ正規化し、`PAYMENT_METHOD_TYPE_OPTIONS` で「引落・デビットカード」として整合表示するとともに、銀行口座のみ選択可の制約および種別変更時の適合口座自動補正を適用した。
+5. **単体テスト追加・検証ガイド同期 (`scripts/test-payment-method-unit.ts`, `for_agent/06_operation_and_testing_guide.md`)**:
+   - `getPaymentMethodTypeLabel`・`normalizePaymentMethodType`・`PAYMENT_METHOD_TYPE_OPTIONS` の網羅テストおよび対象3コンポーネントの静的検査を行う `scripts/test-payment-method-unit.ts` を新規作成し、`for_agent/06_operation_and_testing_guide.md` に追記した。
+
+### 3. 変更理由
+- デビットカードだけでなく銀行口座自動引き落とし用途も直感的に登録・判別できるようUI表記を「引落・デビットカード」へ統一しつつ、DB内部値や既存の会計連動・定例支払い挙動・`direct_debit` 既存データとの後方互換性を安全に維持するため。
+
+### 4. 影響範囲・検証結果
+- 変更・新規作成ファイル: `src/lib/utils.ts`, `src/components/AccountsTab.tsx`, `src/components/AddAccountModal.tsx`, `src/components/EditPaymentMethodModal.tsx`, `scripts/test-payment-method-unit.ts`（新規）, `for_agent/06_operation_and_testing_guide.md`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（全24ルート・Standalone 本番ビルド成功）
+  - `npx tsx scripts/test-payment-method-unit.ts`: 全アサーション合格・終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格（`raw.unsafe` 0件）・終了コード 0
+  - `npx tsx scripts/test-recurring-unit.ts`: 全テスト合格・終了コード 0
+  - ローカル DB / 開発サーバー総合テスト（`npx tsx scripts/comprehensive-test.ts`）: 環境制約により未実施（`npm run db:up` 実行時に `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine` で Docker Desktop デーモン停止を検出、かつローカル PostgreSQL サービスも未導入のため）
+
 ## [2026-11-20] 【全体レビュー】仕様整合性点検・会計/リバートエッジケース保護強化・仕様書最新化および全テスト検証
 
 ### 1. 概要

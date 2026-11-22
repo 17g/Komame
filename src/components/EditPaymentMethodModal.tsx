@@ -2,6 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { PaymentMethodItem, AccountItem } from "@/types";
+import {
+  EditablePaymentMethodType,
+  normalizePaymentMethodType,
+  PAYMENT_METHOD_TYPE_OPTIONS,
+} from "@/lib/utils";
 import { X, Check, Trash2, CreditCard } from "lucide-react";
 import { HelpTooltip } from "./HelpTooltip";
 
@@ -21,7 +26,7 @@ export function EditPaymentMethodModal({
   onSuccess,
 }: EditPaymentMethodModalProps) {
   const [name, setName] = useState("");
-  const [type, setType] = useState<"credit_card" | "qr_code" | "debit_card" | "cash" | "direct_debit">("credit_card");
+  const [type, setType] = useState<EditablePaymentMethodType>("credit_card");
   const [sourceAccountId, setSourceAccountId] = useState("");
   const [closingDay, setClosingDay] = useState("99");
   const [withdrawalDay, setWithdrawalDay] = useState("27");
@@ -32,13 +37,29 @@ export function EditPaymentMethodModal({
   useEffect(() => {
     if (paymentMethod) {
       setName(paymentMethod.name || "");
-      setType(paymentMethod.type || "credit_card");
+      setType(normalizePaymentMethodType(paymentMethod.type));
       setSourceAccountId(paymentMethod.sourceAccountId || accounts[0]?.id || "");
       setClosingDay(paymentMethod.closingDay ? String(paymentMethod.closingDay) : "99");
       setWithdrawalDay(paymentMethod.withdrawalDay ? String(paymentMethod.withdrawalDay) : "27");
       setWithdrawalMonthOffset(paymentMethod.withdrawalMonthOffset !== undefined ? String(paymentMethod.withdrawalMonthOffset) : "1");
     }
   }, [paymentMethod, accounts]);
+
+  const handleTypeChange = (nextType: EditablePaymentMethodType) => {
+    setType(nextType);
+    const currentAcc = accounts.find((a) => a.id === sourceAccountId);
+    const isAllowed = (accType: AccountItem["type"]) => {
+      if (nextType === "cash") return accType === "cash";
+      if (nextType === "qr_code") return accType === "bank" || accType === "prepaid_wallet";
+      return accType === "bank";
+    };
+    if (!currentAcc || !isAllowed(currentAcc.type)) {
+      const fallbackAcc = accounts.find((a) => isAllowed(a.type));
+      if (fallbackAcc) {
+        setSourceAccountId(fallbackAcc.id);
+      }
+    }
+  };
 
   if (!isOpen || !paymentMethod) return null;
 
@@ -134,13 +155,14 @@ export function EditPaymentMethodModal({
               <label className="block text-xs font-bold text-content-muted mb-1">種別</label>
               <select
                 value={type}
-                onChange={(e) => setType(e.target.value as any)}
+                onChange={(e) => handleTypeChange(normalizePaymentMethodType(e.target.value))}
                 className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-xs font-medium focus:border-primary outline-none text-content-main cursor-pointer"
               >
-                <option value="credit_card">クレジットカード</option>
-                <option value="qr_code">QR・バーコード決済</option>
-                <option value="debit_card">デビットカード</option>
-                <option value="cash">現金</option>
+                {PAYMENT_METHOD_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </div>
 

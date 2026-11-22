@@ -227,4 +227,60 @@ export function calculateUnitTotal(unitPrice: unknown, quantity: unknown): UnitT
   };
 }
 
+// =========================================================================
+// 決済手段種別の表示名称解決・正規化ヘルパー (要件 8, 10, 11 / UI仕様 5.1)
+// =========================================================================
+
+export type EditablePaymentMethodType = "credit_card" | "qr_code" | "debit_card" | "cash";
+
+export const PAYMENT_METHOD_TYPE_OPTIONS: ReadonlyArray<{
+  value: EditablePaymentMethodType;
+  label: string;
+}> = [
+  { value: "credit_card", label: "クレジットカード" },
+  { value: "qr_code", label: "QR・バーコード決済" },
+  { value: "debit_card", label: "引落・デビットカード" },
+  { value: "cash", label: "現金" },
+];
+
+/**
+ * 決済手段種別のDB内部値を編集フォーム用の4種へ正規化する。
+ * 既存互換の `direct_debit` は `debit_card`（引落・デビットカード）へ統一する。
+ */
+export function normalizePaymentMethodType(type?: string | null): EditablePaymentMethodType {
+  switch (type) {
+    case "credit_card":
+      return "credit_card";
+    case "qr_code":
+      return "qr_code";
+    case "debit_card":
+    case "direct_debit":
+      return "debit_card";
+    case "cash":
+      return "cash";
+    default:
+      return "credit_card";
+  }
+}
+
+/**
+ * 決済手段種別のDB内部値から統一されたUI表示名称を返す。
+ */
+export function getPaymentMethodTypeLabel(type?: string | null): string {
+  switch (type) {
+    case "credit_card":
+      return "クレジットカード";
+    case "qr_code":
+      return "QR・バーコード決済";
+    case "debit_card":
+    case "direct_debit":
+      return "引落・デビットカード";
+    case "cash":
+      return "現金";
+    default:
+      return "現金";
+  }
+}
+
+
 

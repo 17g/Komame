@@ -21,6 +21,8 @@
 - [x] Phase 13: 初期デモ管理者アカウントのテスト環境限定有効化およびログイン画面表示制御の実装（要件 1-9）
 - [x] Phase 14: 貯蓄目標の編集・未達成目標削除・達成済み目標アーカイブ/復元機能の実装（要件 17-2）
 - [x] Phase 15: 定例支払い（月次固定費・振替）テンプレート管理 & 自動支払い予定明細追加機能の実装（要件 2-8）
+- [x] Phase 16: 口座・決済手段種別の表示名称変更（「デビットカード」→「引落・デビットカード」）（要件 8, 10, 11 / UI仕様 5.1）
+- [ ] Phase 17: PC用サイドバーのビューポート高固定・下部アクション常時表示対応（要件 13 / UI仕様 2.4）
 
 
 ---
@@ -413,6 +415,29 @@
   - `scripts/comprehensive-test.ts` および `for_agent/06_operation_and_testing_guide.md` に定例支払いテンプレートの検証項目を追記する。
   - `npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-recurring-unit.ts`, `npx tsx scripts/test-security-unit.ts` を実行し、すべて Exit Code 0 を確認する。
   - `AICHANGELOG.md` に作業内容を記録し、Git コミットを行う。
+
+---
+
+## Phase 16: 口座・決済手段種別の表示名称変更（「デビットカード」→「引落・デビットカード」）（要件 8, 10, 11 / UI仕様 5.1）
+
+- [x] **16.1 決済手段種別表示ラベル・正規化ヘルパーの実装と口座・決済手段UIの更新 (`src/lib/utils.ts`, `src/components/AccountsTab.tsx`, `src/components/AddAccountModal.tsx`, `src/components/EditPaymentMethodModal.tsx`)**:
+  - `src/lib/utils.ts`: 決済手段種別のUI表示名称を統一解決する純粋関数 `getPaymentMethodTypeLabel(type)`（`credit_card`: クレジットカード、`qr_code`: QR・バーコード決済、`debit_card` / `direct_debit`: 引落・デビットカード、`cash`: 現金）および編集フォーム用種別正規化ヘルパー（既存 `direct_debit` → `debit_card`）を実装する。
+  - `src/components/AccountsTab.tsx`: 決済手段一覧カードの種別バッジ表示を `getPaymentMethodTypeLabel(pm.type)` へ置換し、`debit_card` および既存互換の `direct_debit` を「引落・デビットカード」に統一表示する。
+  - `src/components/AddAccountModal.tsx`: 決済手段追加モーダルの種別セレクトにおける `debit_card` オプション表示を「引落・デビットカード」へ変更する（DB内部値 `debit_card`・銀行口座のみ選択可の制約・通常登録時の即時減額等の既存挙動は維持）。
+  - `src/components/EditPaymentMethodModal.tsx`: 決済手段編集モーダルの種別セレクトにおける `debit_card` オプション表示を「引落・デビットカード」へ変更し、既存 `direct_debit` データを開いた場合も「引落・デビットカード（`debit_card`）」として整合表示・銀行口座のみ選択可の制約を適用する。
+  - 単体テスト・静的検証（`npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-security-unit.ts`）およびローカル PostgreSQL（5532）・開発サーバー（3080）上での総合テスト（`npx tsx scripts/comprehensive-test.ts`）・UI表示確認を実施し、`AICHANGELOG.md` 記録・Git コミットを行う。
+
+---
+
+## Phase 17: PC用サイドバーのビューポート高固定・下部アクション常時表示対応（要件 13 / UI仕様 2.4）
+
+- [ ] **17.1 PC用サイドバー (`src/components/Sidebar.tsx`, `src/app/page.tsx`) のビューポート高固定・上部内部スクロール・下部アクション常時下端固定の実装**:
+  - `src/components/Sidebar.tsx`:
+    - `<aside>` の `min-h-screen` を `h-screen`（または `h-dvh`）＋ `sticky top-0 self-start shrink-0` へ変更し、メインエリアの縦長に連動してサイドバーが縦に引き伸ばされないようにする。
+    - 上部エリア（ロゴ・通知ボタン・ナビゲーション・UIテーマ切替・言語切替）のコンテナに `flex-1 min-h-0 overflow-y-auto` を設定し、ウィンドウ縦幅が狭いPC画面でもメインエリアとは独立して縦スクロール可能にする。
+    - 下部フッター領域（ユーザー情報・CSVダウンロードボタン・ログアウトボタン）に `shrink-0` を設定し、常にサイドバー下端へ固定表示されてメイン画面のスクロール不要で即座にアクセスできるようにする。
+  - `src/app/page.tsx`: 親Flexコンテナのレイアウト設定がサイドバーの `sticky top-0` および高さ固定と競合しないことを確認・調整する。
+  - 静的検証（`npx tsc --noEmit`, `npm run build`, `npx tsx scripts/test-security-unit.ts`）およびローカル PostgreSQL（5532）・開発サーバー（3080）上での総合テスト（`npx tsx scripts/comprehensive-test.ts`）・PC画面（長尺スクロール時および縦幅縮小時）の実画面動作検証を実施し、`AICHANGELOG.md` 記録・Git コミットを行う。
 
 
 

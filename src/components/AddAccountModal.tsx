@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { AccountItem } from "@/types";
+import { EditablePaymentMethodType, PAYMENT_METHOD_TYPE_OPTIONS } from "@/lib/utils";
 import { X, Check, Landmark, CreditCard, Plus } from "lucide-react";
 import { HelpTooltip } from "./HelpTooltip";
 
@@ -37,7 +38,7 @@ export function AddAccountModal({
 
   // 決済手段フォーム
   const [pmName, setPmName] = useState("");
-  const [pmType, setPmType] = useState<"credit_card" | "qr_code" | "debit_card" | "cash">("credit_card");
+  const [pmType, setPmType] = useState<EditablePaymentMethodType>("credit_card");
   const [pmSourceAccId, setPmSourceAccId] = useState(accounts[0]?.id || "");
   const [pmClosingDay, setPmClosingDay] = useState("99"); // 月末
   const [pmWithdrawalDay, setPmWithdrawalDay] = useState("27");
@@ -228,13 +229,14 @@ export function AddAccountModal({
                   <label className="block text-xs font-bold text-content-muted mb-1">種別</label>
                   <select
                     value={pmType}
-                    onChange={(e) => setPmType(e.target.value as any)}
+                    onChange={(e) => setPmType(e.target.value as EditablePaymentMethodType)}
                     className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-xs font-medium focus:border-primary outline-none text-content-main cursor-pointer"
                   >
-                    <option value="credit_card">クレジットカード</option>
-                    <option value="qr_code">QR・バーコード決済</option>
-                    <option value="debit_card">デビットカード</option>
-                    <option value="cash">現金</option>
+                    {PAYMENT_METHOD_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -249,7 +251,7 @@ export function AddAccountModal({
                     className="w-full px-3 py-2 bg-app-subtle border border-border rounded-lg text-xs font-medium focus:border-primary outline-none text-content-main cursor-pointer"
                   >
                     {accounts.map((a) => {
-                      // 現金: 手元現金のみ / QR決済: 銀行口座またはプリペイド残高のみ / クレカ・デビット: 銀行口座のみ
+                      // 現金: 手元現金のみ / QR決済: 銀行口座またはプリペイド残高のみ / クレカ・引落・デビット: 銀行口座のみ
                       let isDisabled = false;
                       let hint = "";
 

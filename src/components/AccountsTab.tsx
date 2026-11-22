@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { AccountItem, AccountReservationItem, PaymentMethodItem } from "@/types";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, getPaymentMethodTypeLabel } from "@/lib/utils";
 import { Plus, Lock, ArrowRightLeft, CreditCard, Landmark, Palette, Edit2 } from "lucide-react";
 import { AddAccountModal } from "./AddAccountModal";
 import { EditAccountModal } from "./EditAccountModal";
@@ -286,13 +286,7 @@ export function AccountsTab({
                   <span className="text-xs font-bold text-content-main">{pm.name}</span>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-semibold px-2 py-0.5 bg-app-surface border border-border rounded text-content-muted">
-                      {pm.type === "credit_card"
-                        ? "クレジットカード"
-                        : pm.type === "qr_code"
-                        ? "QR・バーコード決済"
-                        : pm.type === "debit_card"
-                        ? "デビットカード"
-                        : "現金"}
+                      {getPaymentMethodTypeLabel(pm.type)}
                     </span>
                     <div className="p-1 text-content-subtle group-hover:text-primary group-hover:bg-app-surface rounded border border-transparent group-hover:border-border transition-all">
                       <Edit2 className="w-3 h-3" />
