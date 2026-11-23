@@ -60,8 +60,8 @@ export function Sidebar({
   ];
 
   return (
-    <aside className="hidden lg:flex w-64 flex-col justify-between p-5 bg-app-surface border-r border-border min-h-screen sticky top-0 transition-colors duration-200">
-      <div className="space-y-5">
+    <aside className="hidden lg:flex w-64 h-screen sticky top-0 self-start shrink-0 flex-col bg-app-surface border-r border-border transition-colors duration-200 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5">
         {/* ロゴ & 世帯名 */}
         <div className="flex items-center justify-between px-2">
           <div className="flex items-center gap-3">
@@ -180,7 +180,7 @@ export function Sidebar({
 
       {/* 下部 ユーザープロファイル & ログアウト */}
       {user && (
-        <div className="pt-4 border-t border-border space-y-3">
+        <div className="shrink-0 px-5 pt-4 pb-5 border-t border-border bg-app-surface space-y-3">
           <div className="px-2">
             <div className="text-xs font-bold text-content-main truncate">{user.email}</div>
             <div className="text-[10px] text-content-subtle">

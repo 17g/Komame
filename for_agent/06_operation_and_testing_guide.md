@@ -80,6 +80,9 @@ npx tsx scripts/test-recurring-unit.ts
 # 決済手段種別表示ラベル・正規化 (引落・デビットカード統一・direct_debit互換) 単体テスト
 npx tsx scripts/test-payment-method-unit.ts
 
+# PC用サイドバー ビューポート高固定・上部内部スクロール・下部アクション常時固定 静的レイアウト検証
+npx tsx scripts/test-sidebar-layout-unit.ts
+
 # セキュリティ単体テスト & 静的コード検査 (スキーマ検証、CSVインジェクション無害化、金額境界値、レートリミッター、raw.unsafeゼロ件検査)
 npx tsx scripts/test-security-unit.ts
 ```
@@ -132,6 +135,7 @@ docker compose --env-file .env.production -f docker-compose.prod.yml exec app np
 
 ## 4. 改訂履歴
 
+- **2026-11-23**: 単体テスト一覧に PC 用サイドバー ビューポート高固定・下部アクション常時固定レイアウト検証（`test-sidebar-layout-unit.ts`）を追加。
 - **2026-11-22**: 単体テスト一覧に決済手段種別表示ラベル・正規化単体テスト（`test-payment-method-unit.ts`）を追加。
 - **2026-11-20**: 単体テスト一覧に定例支払いテンプレート管理 & 自動支払い予定・精算判定単体テスト（`test-recurring-unit.ts`）を追加。
 - **2026-11-20**: 第2章2.3にローカル PostgreSQL・開発サーバーを起動しての総合動作検証を原則必須とする手順および例外規定を追記。

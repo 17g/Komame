@@ -2,6 +2,35 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-23] 【Phase 17.1】PC用サイドバーのビューポート高固定・上部独立スクロール・下部アクション常時表示対応
+
+### 1. 概要
+要件 13、UI/UX 仕様書 2.4、および `Plan.md` Phase 17.1 に基づき、PC表示（`lg` 以上）の左サイドバー（`src/components/Sidebar.tsx`）をウィンドウ1画面分（`h-screen`）の高さへ固定し、メインエリアの縦スクロールに引き伸ばされない常時追従レイアウトへ改修した。あわせて上部メニュー領域の独立縦スクロール（`flex-1 min-h-0 overflow-y-auto`）および下部フッター（ユーザー情報・CSVダウンロードボタン・ログアウトボタン）の常時下端固定（`shrink-0`）を実装し、親レイアウトコンテナ（`src/app/page.tsx`）の `sticky` 非阻害性を確認の上、継続的な回帰検証用テスト（`scripts/test-sidebar-layout-unit.ts`）を追加した。
+
+### 2. 変更内容 (Before / After)
+1. **PC用サイドバーのビューポート高固定・内部スクロール分離 (`src/components/Sidebar.tsx`)**:
+   - Before: `<aside>` に `min-h-screen` と `justify-between` のみが指定されていたため、親Flexコンテナ（デフォルト `items-stretch`）の影響でメインエリアの縦長に連動してサイドバー全体が引き伸ばされ、下部の「ユーザー情報・CSVダウンロード・ログアウト」へアクセスするにはメイン画面を最下部までスクロールする必要があった。また、ウィンドウ縦幅が狭い場合に上部領域が独立スクロールできなかった。
+   - After:
+     - `<aside>` を `h-screen sticky top-0 self-start shrink-0 flex-col bg-app-surface border-r border-border transition-colors duration-200 overflow-hidden` に変更し、高さをウィンドウ1画面分に固定して画面左端へ常時追従させた。
+     - 上部エリア（ロゴ・通知ボタン・ナビゲーション・UIテーマ切替・言語切替）のコンテナを `flex-1 min-h-0 overflow-y-auto p-5 space-y-5` とし、縦幅の狭いPC画面でも独立して縦スクロール可能とした。
+     - 下部フッター領域（ユーザー情報・CSVダウンロード・ログアウト）を `shrink-0 px-5 pt-4 pb-5 border-t border-border bg-app-surface space-y-3` とし、常にサイドバー下端へ固定表示した。
+2. **親Flexコンテナとのレイアウト整合性確認 (`src/app/page.tsx`)**:
+   - ログイン後ルートコンテナ `<div className="min-h-screen bg-app-bg text-content-main flex">` に `position: sticky` を阻害する `overflow-*` 指定が存在しないことを確認した。
+3. **単体・静的レイアウト検証テスト追加および検証ガイド同期 (`scripts/test-sidebar-layout-unit.ts`, `for_agent/06_operation_and_testing_guide.md`)**:
+   - `<aside>` のビューポート高固定・`min-h-screen` 排除・`sticky top-0 self-start shrink-0`、上部コンテナの `flex-1 min-h-0 overflow-y-auto`、下部フッターの `shrink-0` と主要アクション保持、および `src/app/page.tsx` 親コンテナの `overflow` 非阻害を自動検査する `scripts/test-sidebar-layout-unit.ts` を新規作成し、`for_agent/06_operation_and_testing_guide.md` へ追記した。
+
+### 3. 変更理由
+- 縦長コンテンツ（ダッシュボード・明細一覧・管理画面等）の閲覧中や、ウィンドウ縦幅が狭いPC画面での操作中でも、メイン画面のスクロールに依らずサイドバー下端のCSVダウンロード・ログアウト操作や上部ナビゲーションへ常に即座にアクセスできるようにするため。
+
+### 4. 影響範囲・検証結果
+- 変更・新規作成ファイル: `src/components/Sidebar.tsx`, `scripts/test-sidebar-layout-unit.ts`（新規）, `for_agent/06_operation_and_testing_guide.md`, `Plan.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（全24ルート・Standalone 本番ビルド成功）
+  - `npx tsx scripts/test-sidebar-layout-unit.ts`: 全アサーション合格・終了コード 0
+  - `npx tsx scripts/test-security-unit.ts`: 全テスト合格（`raw.unsafe` 0件）・終了コード 0
+  - ローカル DB / 開発サーバー総合テスト（`npx tsx scripts/comprehensive-test.ts`）およびログイン後実画面検証: 環境制約により未実施（`npm run db:up` 実行時に `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine` で Docker Desktop デーモン未起動を確認、かつローカル PostgreSQL Windows サービスも未導入のため）
+
 ## [2026-11-22] 【Phase 16.1】口座・決済手段種別の表示名称変更（「デビットカード」→「引落・デビットカード」）および既存互換正規化の実装
 
 ### 1. 概要
