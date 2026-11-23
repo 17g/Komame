@@ -97,7 +97,7 @@
 ### 2.2 `POST /api/accounts`
 - **ボディ**:
   - 口座登録: `{ "actionType": "account", "name": "...", "type": "bank", "balance": 100000, "icon": "🏛️", "color": "#2E7D32" }`
-  - 決済手段: `{ "actionType": "payment_method", "name": "...", "type": "credit_card", "sourceAccountId": "acc_xxx", "closingDay": 99, "withdrawalDay": 27, "withdrawalMonthOffset": 1 }`
+  - 決済手段: `{ "actionType": "payment_method", "name": "...", "type": "credit_card", "sourceAccountId": "acc_xxx", "closingDay": 99, "withdrawalDay": 27, "withdrawalMonthOffset": 1 }`（`type` 内部値は `credit_card` / `qr_code` / `debit_card` / `cash` および既存互換の `direct_debit` を維持。UI上の「引落・デビットカード」は `debit_card` を送信する）
   - 資金色分け: `{ "actionType": "reservation", "accountId": "acc_xxx", "name": "車検費用", "amount": 50000, "color": "#E6A15C", "note": "..." }`
 
 ### 2.3 `PUT /api/accounts`
@@ -122,7 +122,7 @@
 - **ビジネスロジック**:
   1. 24時間リバート用チェックポイント (`checkpoints`) の自動生成。
   2. 決済手段がクレジットカードの場合、締め日・引き落とし日・月オフセットから引き落とし予定日 (`scheduledWithdrawalDate`) を算出（即時残高減額は行わない）。
-  3. 現金・デビット・QR等の即時決済の場合、引き落とし元口座から即時減額 (`balance = balance - amount`)。
+  3. 現金・引落・デビットカード（`debit_card` / `direct_debit`）・QR等の即時決済の場合、引き落とし元口座から即時減額 (`balance = balance - amount`)。
   4. 資金移動 (`type === "transfer"`) の場合、`fromAccountId` を減額し、`toAccountId` を増額。
   5. 貯蓄・投資等の振替（`type === "expense"` かつ `toAccountId` 指定）の場合、出金元から引かれ、`toAccountId` へ残高加算されると同時に受入振替明細が自動生成される。
   6. 明細とタグの紐付け (`transaction_tags`) を登録。
@@ -688,6 +688,7 @@
 ---
 
 ## 改訂履歴
+- **2026-11-21**: 決済手段種別の表示名称変更（「デビットカード」→「引落・デビットカード」）に伴い、`/api/accounts` の `type` 内部値維持（`debit_card` / `direct_debit`）および `/api/transactions` 即時決済表記を整合更新。
 - **2026-11-20**: 全体レビューによるエッジケース保護を反映（`PUT /api/goals` アーカイブ済み目標の直接編集拒否、`POST /api/recurring-templates` (`action: "settle"`) 既存受入明細あり時の受入口座二重加算防止、`POST /api/admin/revert` 論理削除済み明細の二重返戻防止・既存未精算明細の精算ロールバック・`recurring_templates.last_generated_month` 再同期）。
 - **2026-11-20**: 第11章「定例支払いテンプレート & 月次自動追加・精算 API (`/api/recurring-templates`)」を追加（クレカ規定支払日の翌日および任意指定引き落とし日の翌日に次回サイクル分の支払い予定明細を自動生成、支払日到来時または手動確定時の口座残高精算、テンプレートCRUD・一時停止・監査ログ仕様）。
 - **2026-11-20**: 第5章「貯蓄目標 API (`/api/goals`)」を拡張し、`PUT /api/goals`（目標編集・達成済み目標のアーカイブ・進行中への復元）および `DELETE /api/goals`（未達成目標の物理削除・達成済み/アーカイブ済み目標の削除拒否保護・監査ログ記録）の仕様を追加。

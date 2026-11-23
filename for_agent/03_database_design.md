@@ -116,7 +116,7 @@ erDiagram
 | :--- | :--- | :--- | :--- | :--- |
 | `id` | VARCHAR(64) | PK | 決済手段ID (`pm_xxx`) | - |
 | `name` | VARCHAR(100) | NOT NULL | 決済手段名 | - |
-| `type` | VARCHAR(30) | NOT NULL | `cash`, `credit_card`, `debit_card`, `qr_code`, `direct_debit` | - |
+| `type` | VARCHAR(30) | NOT NULL | `cash`, `credit_card`, `debit_card`, `qr_code`, `direct_debit`<br>※DB内部値は維持し、UI表示名称は `debit_card` および既存 `direct_debit` を「引落・デビットカード」に統一表示 | - |
 | `source_account_id` | VARCHAR(64) | FK(accounts.id) SET NULL | 引き落とし元口座ID | - |
 | `closing_day` | INT | | 締め日 (1〜28, 99:月末) | - |
 | `withdrawal_day` | INT | | 引き落とし日 (1〜28, 99:月末) | - |
@@ -234,6 +234,7 @@ erDiagram
 
 ## 4. 改訂履歴
 
+- **2026-11-21**: `payment_methods.type` カラム説明に、DB内部値（`debit_card`, `direct_debit`）を維持しつつUI表示名称を「引落・デビットカード」へ統一する注記を追記。
 - **2026-11-20**: 定例支払いテンプレート管理および月次自動支払い予定明細追加機能（要件 2-8）のため、`recurring_templates` テーブル定義および `transactions.recurring_template_id` カラムを追記。
 - **2026-11-20**: `savings_goals` テーブルの定義を詳細化し、達成済み目標のアーカイブ・復元用カラム `is_archived`（`BOOLEAN DEFAULT FALSE NOT NULL`）および削除・アーカイブポリシーを追記。
 - **2026-11-18**: `public.households` テーブルに新規世帯登録の申請・許可制用カラム（`status`, `reviewed_by`, `reviewed_at`, `rejection_reason`）および申請時テナントスキーマ未作成方針を追記。
