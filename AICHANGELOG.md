@@ -2,6 +2,41 @@
 
 本ファイルは、AIエージェントによる作業内容、変更理由、および影響範囲を記録する変更履歴です。
 
+## [2026-11-23] 【全体レビュー】全仕様整合性点検・README最新化・フルビルドおよび全12種単体テスト検証
+
+### 1. 概要
+`/review` スキルに基づき、`for_agent/` 配下の全仕様書（`00_system_overview.md`〜`06_operation_and_testing_guide.md` および `guardrails.md`）と、Phase 1〜17 までに実装された全ソースコードを突き合わせ点検した。全要件・エッジケースが仕様書通りに実装・同期されていることを確認するとともに、`README.md` の機能一覧・5大テーマ表記・全12種単体テストコマンド一覧を最新仕様書（`for_agent/`）と完全同期し、TypeScript 型チェック・Next.js 本番 Standalone フルビルド・全12種単体テストを実行して回帰バグが 0 件であることを確認した。
+
+### 2. 変更内容 (Before / After)
+1. **仕様書 (`for_agent/`) と実装コード全体の整合性・エッジケース点検**:
+   - Phase 16（決済手段種別「引落・デビットカード」表示統一および既存互換 `direct_debit` → `debit_card` 正規化）および Phase 17（PC用サイドバーの `h-screen sticky top-0 self-start shrink-0` ビューポート高固定、上部 `flex-1 min-h-0 overflow-y-auto` 独立スクロール、下部 `shrink-0` アクション常時下端固定）を含め、全23要件・DBスキーマ・API・UI・セキュリティガードレール（`raw.unsafe` 0件、金額境界値、CSV数式インジェクション防御、デモ管理者テスト環境限定、世帯申請承認制、貯蓄目標削除保護・アーカイブ、定例支払い月次同期・24hリバート整合性）に漏れや不整合がないことを確認した。
+2. **`README.md` の最新機能・テーマ名称・単体テスト一覧の同期**:
+   - Before: `README.md` の「主な特徴・機能」および「テスト & コード検証」セクションに Phase 9〜17 で追加された機能（新規世帯申請・許可制、デモ管理者テスト環境限定、費目マスター管理、単価×個数計算補助、定例支払いテンプレート、貯蓄目標編集/アーカイブ、引落・デビットカード統一、PC固定追従サイドバー）や単体テスト3件（`test-recurring-unit.ts`, `test-payment-method-unit.ts`, `test-sidebar-layout-unit.ts`）が未記載であり、5大テーマ名も旧名称のままとなっていた。
+   - After: `for_agent/00_system_overview.md`、`05_ui_ux_and_design_system.md`、`06_operation_and_testing_guide.md` と完全一致するよう機能一覧・5大テーマ名称・全12種単体テストコマンド一覧を最新化した。
+
+### 3. 変更理由
+- 全フェーズ（Phase 0〜17）完了後の総合レビューとして、仕様書正本・プロジェクトドキュメント・テストスイート・本番ビルドの完全な整合性を保証するため。
+
+### 4. 影響範囲・検証結果
+- 変更ファイル: `README.md`, `AICHANGELOG.md`
+- 検証結果:
+  - `npx tsc --noEmit`: 終了コード 0
+  - `npm run build`: 終了コード 0（全24ルート・Standalone 本番ビルド成功）
+  - 全12種単体テスト & 静的コード検査（すべて終了コード 0・全アサーション合格）:
+    1. `npx tsx scripts/test-csv-unit.ts`
+    2. `npx tsx scripts/test-members-unit.ts`
+    3. `npx tsx scripts/test-auth-session-unit.ts`
+    4. `npx tsx scripts/test-rate-limit-csrf.ts`
+    5. `npx tsx scripts/test-categories-unit.ts`
+    6. `npx tsx scripts/test-unit-calculator.ts`
+    7. `npx tsx scripts/test-household-approval-unit.ts`
+    8. `npx tsx scripts/test-goals-unit.ts`
+    9. `npx tsx scripts/test-recurring-unit.ts`
+    10. `npx tsx scripts/test-payment-method-unit.ts`
+    11. `npx tsx scripts/test-sidebar-layout-unit.ts`
+    12. `npx tsx scripts/test-security-unit.ts`（`src/` 配下67ファイルの `raw.unsafe` 使用 0件）
+  - ローカル DB / 開発サーバー総合テスト（`npx tsx scripts/comprehensive-test.ts`）: 環境制約により未実施（`npm run db:up` 実行時に `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.` で Docker Desktop デーモン停止を確認、かつ `Test-NetConnection -ComputerName localhost -Port 5532` でもローカル PostgreSQL 非稼働を確認したため）
+
 ## [2026-11-23] 【Phase 17.1】PC用サイドバーのビューポート高固定・上部独立スクロール・下部アクション常時表示対応
 
 ### 1. 概要
