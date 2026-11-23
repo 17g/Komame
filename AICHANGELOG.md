@@ -35,7 +35,11 @@
     10. `npx tsx scripts/test-payment-method-unit.ts`
     11. `npx tsx scripts/test-sidebar-layout-unit.ts`
     12. `npx tsx scripts/test-security-unit.ts`（`src/` 配下67ファイルの `raw.unsafe` 使用 0件）
-  - ローカル DB / 開発サーバー総合テスト（`npx tsx scripts/comprehensive-test.ts`）: 環境制約により未実施（`npm run db:up` 実行時に `failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.` で Docker Desktop デーモン停止を確認、かつ `Test-NetConnection -ComputerName localhost -Port 5532` でもローカル PostgreSQL 非稼働を確認したため）
+  - `npm run db:up` & `npm run db:migrate`: 終了コード 0（PostgreSQL ポート5532 起動・全スキーママイグレーション成功）
+  - ローカル DB / 開発サーバー総合テスト（`npx tsx scripts/comprehensive-test.ts` / ポート 3080）: 全18カテゴリ完全合格・終了コード 0
+  - 実ブラウザ UI 動作検証（`http://localhost:3080`）:
+    - PC左サイドバー（`<aside>`）: `1280x800` で高さ `800px`（メイン画面の高さ `1158px` に引き伸ばされないこと）・メイン画面スクロール時の `sticky top-0` 固定追従・下部フッター（`admin@komame.local` / `CSV` / `ログアウト`）常時可視を確認。`1280x480`（狭縦幅）でもサイドバー高 `480px`・下部フッター下端固定のまま上部メニューのみ独立縦スクロールすることを確認。
+    - 口座・決済手段モーダル（`AddAccountModal` / `EditPaymentMethodModal`）: 種別セレクト選択肢に「引落・デビットカード」（`value="debit_card"`）が表示され、単独の「デビットカード」表記が存在しないことを確認（コンソールエラー・通信エラー 0件、検証後に開発サーバー停止済み）。
 
 ## [2026-11-23] 【Phase 17.1】PC用サイドバーのビューポート高固定・上部独立スクロール・下部アクション常時表示対応
 
